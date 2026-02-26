@@ -13,9 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login, getCurrentUser } from '../src/api';
+import { login, getCurrentUser } from '../../src/api';
 import { Eye, EyeOff, Lock, Phone, Check } from 'lucide-react-native';
-import { RootStackParamList } from '../navigation/types';
+import { RootStackParamList } from '../../navigation/types';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -114,7 +114,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                     <View className="w-full max-w-md self-center bg-white rounded-xl p-7 border border-gray-100 mb-7">
                         <View className="items-center mb-8">
                             <Image
-                                source={require('../assets/d9a893d37378e1ed6bcfab76f3f1ea015f60b287.png')}
+                                source={require('../../assets/d9a893d37378e1ed6bcfab76f3f1ea015f60b287.png')}
                                 resizeMode="contain"
                                 style={{ width: 240, height: 72 }}
                             />

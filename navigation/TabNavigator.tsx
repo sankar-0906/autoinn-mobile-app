@@ -1,9 +1,9 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import QuotationsListScreen from '../screens/QuotationsListScreen';
-import FollowUpsScreen from '../screens/FollowUpsScreen';
+import QuotationsListScreen from '../screens/quotation/QuotationsListScreen';
+import FollowUpsScreen from '../screens/follow-ups/FollowUpsScreen';
 import JobCardsListScreen from '../screens/job-cards/JobCardsListScreen';
-import AccountScreen from '../screens/AccountScreen';
+import AccountScreen from '../screens/account/AccountScreen';
 import { FileText, Phone, ClipboardList, CircleUserRound } from 'lucide-react-native';
 import { COLORS } from '../constants/colors';
 //in customer details page -> booking section -> i cant see that 2 buttons .. refer @FigmaDesign

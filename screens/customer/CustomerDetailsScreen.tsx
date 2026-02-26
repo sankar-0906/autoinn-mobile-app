@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Eye } from 'lucide-react-native';
-import { Button } from '../components/ui/Button';
-import { COLORS } from '../constants/colors';
+import { Button } from '../../components/ui/Button';
+import { COLORS } from '../../constants/colors';
 
 const CUSTOMER_TABS = [
     { id: 'customer-details', label: 'Customer Details' },
