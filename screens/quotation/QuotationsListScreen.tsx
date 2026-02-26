@@ -15,9 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, User, Calendar, Smartphone, Trash2, X } from 'lucide-react-native';
-import { COLORS } from '../constants/colors';
-import { Button } from '../components/ui/Button';
-import platformApi, { assignQuotationExecutive, ENDPOINT, getBranches, getQuotations, getUsers } from '../src/api';
+import { COLORS } from '../../constants/colors';
+import { Button } from '../../components/ui/Button';
+import platformApi, { assignQuotationExecutive, ENDPOINT, getBranches, getQuotations, getUsers } from '../../src/api';
 
 interface Quotation {
     id: string;
@@ -494,7 +494,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             <View className="bg-white px-4 pb-4 pt-2 shadow-sm z-20" style={{ elevation: 8 }}>
                 <View className="items-center pt-2 pb-4">
                     <Image
-                        source={require('../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
+                        source={require('../../assets/d9a893d37378e1ed6bcfab76f3f1ea015f60b287.png')}
                         resizeMode="contain"
                         style={{ width: 160, height: 36 }}
                     />

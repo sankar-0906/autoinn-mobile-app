@@ -9,12 +9,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList } from '../navigation/types';
+import { RootStackParamList } from '../../navigation/types';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { ChevronLeft, Calendar, User, MapPin, Truck, FileText } from 'lucide-react-native';
-import { COLORS } from '../constants/colors';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
+import { COLORS } from '../../constants/colors';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
 
 type QuotationDetailsRouteProp = RouteProp<RootStackParamList, 'QuotationDetails'>;
 type NavigationProp = StackNavigationProp<RootStackParamList, 'QuotationDetails'>;

@@ -9,10 +9,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, Calendar, User, Smartphone } from 'lucide-react-native';
-import { COLORS } from '../constants/colors';
+import { COLORS } from '../../constants/colors';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/types';
-import { getFollowUps } from '../src/api';
+import { RootStackParamList } from '../../navigation/types';
+import { getFollowUps } from '../../src/api';
 import { ActivityIndicator } from 'react-native';
 
 interface FollowUp {
@@ -211,7 +211,7 @@ export default function FollowUpsScreen({ navigation }: { navigation: FollowUpsN
             <View className="bg-white px-4 pb-4 pt-2 shadow-sm z-20" style={{ elevation: 8 }}>
                 <View className="items-center pt-2 pb-5">
                     <Image
-                        source={require('../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
+                        source={require('../../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
                         resizeMode="contain"
                         style={{ width: 160, height: 36 }}
                     />

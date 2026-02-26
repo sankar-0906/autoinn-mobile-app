@@ -11,10 +11,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { ChevronLeft, Eye, Edit, Phone, Car, User, Smartphone } from 'lucide-react-native';
-import { RootStackParamList } from '../navigation/types';
-import { COLORS } from '../constants/colors';
-import { Button } from '../components/ui/Button';
-import { getActivitiesByCustomer, getCustomerByPhoneNo, getQuotationByCustomerId } from '../src/api';
+import { RootStackParamList } from '../../navigation/types';
+import { COLORS } from '../../constants/colors';
+import { Button } from '../../components/ui/Button';
+import { getActivitiesByCustomer, getCustomerByPhoneNo, getQuotationByCustomerId } from '../../src/api';
 import { ActivityIndicator, Alert } from 'react-native';
 
 type DetailRouteProp = RouteProp<RootStackParamList, 'FollowUpDetail'>;

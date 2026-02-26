@@ -7,9 +7,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/types';
+import { RootStackParamList } from '../../navigation/types';
 import { User, LogOut, ChevronRight, Phone, Mail, Building2 } from 'lucide-react-native';
-import { COLORS } from '../constants/colors';
+import { COLORS } from '../../constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type AccountNavigationProp = StackNavigationProp<RootStackParamList, 'Main'>;

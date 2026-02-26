@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronDown, Check, ChevronLeft } from 'lucide-react-native';
-import { COLORS } from '../constants/colors';
-import { Button } from '../components/ui/Button';
+import { COLORS } from '../../constants/colors';
+import { Button } from '../../components/ui/Button';
 
 type Option = { label: string; value: string };
 

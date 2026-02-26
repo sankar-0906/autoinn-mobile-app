@@ -1,8 +1,8 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import LoginScreen from '../screens/LoginScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
 import TabNavigator from './TabNavigator';
-import QuotationDetailsScreen from '../screens/QuotationDetailsScreen';
+import QuotationDetailsScreen from '../screens/quotation/QuotationDetailsScreen';
 import SelectModelScreen from '../screens/vehicle-selection/SelectModelScreen';
 import SelectPriceScreen from '../screens/vehicle-selection/SelectPriceScreen';
 import SelectPaymentScreen from '../screens/vehicle-selection/SelectPaymentScreen';
@@ -10,10 +10,10 @@ import AddQuotationScreen from '../screens/quotation/AddQuotationScreen';
 import AdvancedFiltersScreen from '../screens/quotation/AdvancedFiltersScreen';
 import QuotationFormScreen from '../screens/quotation/QuotationFormScreen';
 import QuotationViewScreen from '../screens/quotation/QuotationViewScreen';
-import FollowUpDetailScreen from '../screens/FollowUpDetailScreen';
-import FollowUpFiltersScreen from '../screens/FollowUpFiltersScreen';
+import FollowUpDetailScreen from '../screens/follow-ups/FollowUpDetailScreen';
+import FollowUpFiltersScreen from '../screens/follow-ups/FollowUpFiltersScreen';
 import BookingRegisterScreen from '../screens/booking/BookingRegisterScreen';
-import CustomerDetailsScreen from '../screens/CustomerDetailsScreen';
+import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
 
 import { RootStackParamList } from './types';
 
