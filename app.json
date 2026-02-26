@@ -21,10 +21,17 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.sankar_sr.autocloudmobileapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b49e4bc6-0af7-40ee-b71b-a9b851671e31"
+      }
+    },
+    "owner": "sankar_sr"
   }
 }
