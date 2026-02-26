@@ -1,10 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// when running locally we read from a dotenv file named ".env.dev";
-// Expo (via @expo/env) will make any variable prefixed with
-// EXPO_PUBLIC_ available on `process.env` at build time.
-// If the variable is missing we fall back to a hard–coded default.
+// endpoint comes from environment variable (Expo builds will inject any
+// EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
+// development default when nothing is provided.
 const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 const platformApi = axios.create({
