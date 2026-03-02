@@ -141,17 +141,17 @@ export default function ActivityViewEditScreen() {
     const getAssociatedDocuments = useCallback(() => {
         // Return empty array if no activity detail
         if (!activityDetail) return [];
-        
+
         const docs = [];
-        
+
         try {
             // Handle quotations safely
             if (activityDetail.quotation) {
                 // Ensure quotation is treated as array
-                const quotations = Array.isArray(activityDetail.quotation) 
-                    ? activityDetail.quotation 
+                const quotations = Array.isArray(activityDetail.quotation)
+                    ? activityDetail.quotation
                     : [activityDetail.quotation];
-                
+
                 // Filter out any null/undefined quotations
                 quotations.filter(Boolean).forEach(q => {
                     // Safely check for pdfWithBrochure
@@ -163,7 +163,7 @@ export default function ActivityViewEditScreen() {
                             url: q.pdfWithBrochure
                         });
                     }
-                    
+
                     // Safely check for pdfWithOutBrochure
                     if (q?.pdfWithOutBrochure && typeof q.pdfWithOutBrochure === 'string') {
                         docs.push({
@@ -175,15 +175,15 @@ export default function ActivityViewEditScreen() {
                     }
                 });
             }
-            
+
             // Handle booking documents safely
             if (activityDetail.booking && typeof activityDetail.booking === 'object') {
                 const booking = activityDetail.booking;
-                
+
                 // Safely check authentication
                 if (booking.authentication && typeof booking.authentication === 'object') {
                     const auth = booking.authentication;
-                    
+
                     if (auth?.beforeVerification && typeof auth.beforeVerification === 'string') {
                         docs.push({
                             type: 'BEFORE VERIFICATION',
@@ -192,7 +192,7 @@ export default function ActivityViewEditScreen() {
                             url: auth.beforeVerification
                         });
                     }
-                    
+
                     if (auth?.afterVerification && typeof auth.afterVerification === 'string') {
                         docs.push({
                             type: 'AFTER VERIFICATION',
@@ -207,7 +207,7 @@ export default function ActivityViewEditScreen() {
             console.error('Error in getAssociatedDocuments:', error);
             return []; // Return empty array on error
         }
-        
+
         return docs;
     }, [activityDetail]);
 
@@ -291,7 +291,7 @@ export default function ActivityViewEditScreen() {
                                             const quotations = activityDetail?.quotation;
                                             if (!quotations) return '-';
                                             if (Array.isArray(quotations)) {
-                                                return quotations.length > 0 ? quotations.map(q => q.quotationId).join(', ') : '-';
+                                                return quotations.length > 0 ? quotations.map((q: any) => q.quotationId).join(', ') : '-';
                                             } else {
                                                 return quotations.quotationId || '-';
                                             }
@@ -306,9 +306,9 @@ export default function ActivityViewEditScreen() {
                                             if (!quotations) {
                                                 return activityDetail?.vehicleModel || activityDetail?.vehicle || '-';
                                             }
-                                            
+
                                             let allVehicles: string[] = [];
-                                            
+
                                             if (Array.isArray(quotations)) {
                                                 quotations.forEach(q => {
                                                     if (q.vehicle) {
@@ -334,8 +334,8 @@ export default function ActivityViewEditScreen() {
                                                     if (modelName) allVehicles.push(modelName);
                                                 }
                                             }
-                                            
-                                            return allVehicles.length > 0 ? allVehicles.join(', ') : (activityDetail?.vehicleModel || activityDetail?.vehicle || '-');
+
+                                            return allVehicles.length > 0 ? allVehicles.join(',\n') : (activityDetail?.vehicleModel || activityDetail?.vehicle || '-');
                                         })()}
                                     </Text>
                                 </View>
@@ -345,14 +345,15 @@ export default function ActivityViewEditScreen() {
                             <View className="mb-5">
                                 <FormLabel label="Enquiry Type" />
                                 <View className="flex-row gap-2">
-                                    {ENQUIRY_TYPES.map(t => (
+                                    {ENQUIRY_TYPES.map((t: string) => (
                                         <TouchableOpacity
+                                            ref={viewRef as React.RefObject<View>}
                                             key={t}
                                             disabled={mode === 'view'}
                                             onPress={() => setEnquiryType(t)}
                                             className={`flex-1 h-11 rounded-lg items-center justify-center border ${enquiryType === t
-                                                    ? 'bg-teal-600 border-teal-600'
-                                                    : (mode === 'view' ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300')
+                                                ? 'bg-teal-600 border-teal-600'
+                                                : (mode === 'view' ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300')
                                                 }`}
                                         >
                                             <Text className={
@@ -479,8 +480,8 @@ export default function ActivityViewEditScreen() {
                                                     <Text className="text-[10px] text-gray-500 w-16 text-center">
                                                         {doc.status || 'N/A'}
                                                     </Text>
-                                                    <TouchableOpacity 
-                                                        className="w-12 items-center" 
+                                                    <TouchableOpacity
+                                                        className="w-12 items-center"
                                                         onPress={() => doc.url && handleViewDocument(doc.url)}
                                                         disabled={!doc.url}
                                                     >
@@ -492,7 +493,7 @@ export default function ActivityViewEditScreen() {
                                     } catch (error) {
                                         console.error('Error rendering documents:', error);
                                     }
-                                    
+
                                     // Fallback UI when no documents or error
                                     return (
                                         <View className="py-12 items-center">

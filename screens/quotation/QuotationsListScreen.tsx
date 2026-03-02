@@ -36,7 +36,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     if (!navigation) {
         return null;
     }
-    
+
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('active');
     const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -135,7 +135,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 ? q.vehicle
                     .map((v: any) => v?.vehicleDetail?.modelName || v?.vehicleDetail?.modelCode)
                     .filter(Boolean)
-                    .join(', ')
+                    .join(',\n')
                 : '-';
 
         // Match autoinn-fe: customerName || (customer ? customer.name : proCustomer?.name)
@@ -290,7 +290,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 <View>
                     <View className="flex-row items-start py-1">
                         <Text className="text-gray-500 text-sm">Vehicle</Text>
-                        <Text className="text-gray-900 text-sm font-semibold flex-1 text-right ml-4" numberOfLines={2}>
+                        <Text className="text-gray-900 text-sm font-semibold flex-1 text-right ml-4">
                             {item.vehicle}
                         </Text>
                     </View>

@@ -154,10 +154,17 @@ export default function FollowUpDetailScreen() {
                 const qData = quotationRes.data?.response?.data || [];
 
                 const transformedQuotations = qData.map((q: any) => {
-                    const vehicleLabel = q.vehicleMaster?.modelName
-                        || (Array.isArray(q.vehicle) && q.vehicle.length > 0
-                            ? q.vehicle.map((v: any) => v?.modelName || v?.vehicleDetail?.modelName || v?.vehicle || 'Unknown').join(', ')
-                            : q.vehicle && typeof q.vehicle === 'string' ? q.vehicle : 'Unknown');
+                    let vehicleLabel = '-';
+                    if (q.vehicle && Array.isArray(q.vehicle) && q.vehicle.length > 0) {
+                        vehicleLabel = q.vehicle.map((v: any) =>
+                            v?.modelName ||
+                            v?.vehicleDetail?.modelName ||
+                            v?.vehicle ||
+                            'Unknown'
+                        ).join(',\n');
+                    } else {
+                        vehicleLabel = q.vehicleMaster?.modelName || (typeof q.vehicle === 'string' ? q.vehicle : 'Unknown');
+                    }
 
                     return {
                         ...q,
@@ -204,7 +211,7 @@ export default function FollowUpDetailScreen() {
                     }
 
                     const vehicleDisplay = vehicleModels.length > 0
-                        ? vehicleModels.join(', ')
+                        ? vehicleModels.join(',\n')
                         : '-';
 
                     const colorCode = a.colorCode || '-';
@@ -299,7 +306,7 @@ export default function FollowUpDetailScreen() {
                         <View key={q.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                             <Text className="text-xs text-gray-700 w-24">{formatDate(q.createdAt)}</Text>
                             <Text className="text-xs text-teal-600 flex-1">{q.quotationId}</Text>
-                            <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{q.vehicleMaster?.modelName || '-'}</Text>
+                            <Text className="text-xs text-gray-800 flex-1">{q.vehicleLabel || '-'}</Text>
                             <TouchableOpacity className="w-14 items-center">
                                 <Eye size={14} color={COLORS.primary} />
                             </TouchableOpacity>
@@ -393,7 +400,7 @@ export default function FollowUpDetailScreen() {
                         return (
                             <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                 <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
-                                <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{vehicleDisplay}</Text>
+                                <Text className="text-xs text-gray-800 flex-1">{vehicleDisplay}</Text>
                                 <Text className="text-xs text-gray-800 w-24">{formatDate(q.createdAt)}</Text>
                                 <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                     <Eye size={14} color={COLORS.gray[600]} />
@@ -460,7 +467,7 @@ export default function FollowUpDetailScreen() {
                     </View>
 
                     <View className='mt-3'>
-                        <Button 
+                        <Button
                             title='Attach Quotation'
                             onPress={openAttachQuotationModal}
                         />
