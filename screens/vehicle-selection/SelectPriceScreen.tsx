@@ -13,7 +13,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { ChevronRight, ChevronLeft, Check } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { getVehicleMasterById } from '../../src/api';
+import { ENDPOINT, getVehicleMasterById } from '../../src/api';
 
 type SelectPriceNavigationProp = StackNavigationProp<RootStackParamList, 'SelectPrice'>;
 type SelectPriceRouteProp = RouteProp<RootStackParamList, 'SelectPrice'>;
@@ -27,7 +27,19 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
     const [insuranceError, setInsuranceError] = useState(false);
 
     const activeVehicle = resolvedVehicle || vehicleData;
-    const price = viewMode ? (paymentDetails?.priceDetails || activeVehicle?.price || {}) : (activeVehicle?.price || {});
+    // Merge price sources to ensure we have both master prices and quotation-specific overrides/selections
+    const price = useMemo(() => {
+        // activeVehicle.price can be: a flat object {showroomPrice: ...}, an array [{showroomPrice: ...}], or undefined
+        let basePrice = activeVehicle?.price || {};
+        if (Array.isArray(basePrice)) {
+            basePrice = basePrice[0] || {};
+        }
+        let detailPrice = paymentDetails?.priceDetails || {};
+        if (Array.isArray(detailPrice)) {
+            detailPrice = detailPrice[0] || {};
+        }
+        return { ...basePrice, ...detailPrice };
+    }, [activeVehicle, paymentDetails]);
 
     const priceBreakdown = useMemo(() => {
         const items = [
@@ -59,8 +71,8 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
                 ...opt,
                 amount: Number(price?.[opt.id] || 0),
             }))
-            .filter((opt) => opt.amount > 0);
-    }, [price]);
+            .filter((opt) => viewMode ? (opt.amount > 0 || selectedInsurance.includes(opt.id)) : (opt.amount > 0));
+    }, [price, viewMode, selectedInsurance]);
 
     const otherOptions = useMemo(() => {
         const options = [
@@ -75,8 +87,8 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
                 ...opt,
                 amount: Number(price?.[opt.id] || 0),
             }))
-            .filter((opt) => opt.amount > 0);
-    }, [price]);
+            .filter((opt) => viewMode ? (opt.amount > 0 || selectedOthers.includes(opt.id)) : (opt.amount > 0));
+    }, [price, viewMode, selectedOthers]);
 
     const insuranceAmount = useMemo(() => {
         return selectedInsurance.reduce((sum, id) => {
@@ -154,6 +166,25 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
             });
     }, [viewMode, vehicleId]);
 
+    const getAbsoluteImageUrl = (imageInput?: any): string | null => {
+        // Handle various image formats: string, array of objects, object with url
+        let url: string | undefined;
+        if (typeof imageInput === 'string') {
+            url = imageInput;
+        } else if (Array.isArray(imageInput) && imageInput.length > 0) {
+            // Array of image objects like [{url: '...'}, ...]
+            const first = imageInput[0];
+            url = typeof first === 'string' ? first : first?.url || first?.uri || first?.path;
+        } else if (imageInput && typeof imageInput === 'object') {
+            url = imageInput.url || imageInput.uri || imageInput.path;
+        }
+        if (!url || typeof url !== 'string') return null;
+        if (url.startsWith('http')) return url;
+        const base = ENDPOINT.endsWith('/') ? ENDPOINT : `${ENDPOINT}/`;
+        const relative = url.startsWith('/') ? url.slice(1) : url;
+        return `${base}${relative}`;
+    };
+
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
             {/* Header */}
@@ -210,26 +241,34 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
                 <View style={{ padding: 16 }}>
                     {/* Vehicle Summary */}
                     <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#f3f4f6' }}>
-                        <View style={{ aspectRatio: 16 / 9, backgroundColor: '#f9fafb', borderRadius: 12, marginBottom: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                            <Image
-                                source={
-                                    activeVehicle?.imageUrl
-                                        ? { uri: activeVehicle.imageUrl }
-                                        : activeVehicle?.image?.[0]?.url
-                                            ? { uri: activeVehicle.image[0].url }
-                                            : require('../../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')
-                                }
-                                style={{ width: '100%', height: '100%' }}
-                                resizeMode="contain"
-                            />
-                        </View>
-                        <View style={{ alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={{ color: '#6b7280', fontSize: 12, marginBottom: 4 }}>Color : Cyan Blue</Text>
-                            <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#000', borderWidth: 1, borderColor: '#d1d5db' }} />
-                                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#9ca3af', borderWidth: 1, borderColor: '#d1d5db' }} />
+                        {activeVehicle && (
+                            <View style={{ marginBottom: 16 }}>
+                                {activeVehicle.image && (
+                                    <View style={{ aspectRatio: 16 / 9, backgroundColor: '#f9fafb', borderRadius: 12, marginBottom: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                        <Image
+                                            source={{ uri: getAbsoluteImageUrl(activeVehicle.image) || undefined }}
+                                            style={{ width: '100%', height: '100%' }}
+                                            resizeMode="contain"
+                                        />
+                                    </View>
+                                )}
+                                <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827', textAlign: 'center' }}>
+                                        {activeVehicle.name || activeVehicle.modelName}
+                                    </Text>
+                                    {activeVehicle.modelCode && (
+                                        <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+                                            Model Code: {activeVehicle.modelCode}
+                                        </Text>
+                                    )}
+                                    <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>Color : Cyan Blue</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                                        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#000', borderWidth: 1, borderColor: '#d1d5db' }} />
+                                        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#9ca3af', borderWidth: 1, borderColor: '#d1d5db' }} />
+                                    </View>
+                                </View>
                             </View>
-                        </View>
+                        )}
                         {!viewMode && (
                             <Text style={{ color: '#111827', fontWeight: '500', fontSize: 14, textAlign: 'center' }}>
                                 <Text style={{ color: '#6b7280' }}>Model : </Text>
@@ -364,6 +403,7 @@ export default function SelectPriceScreen({ navigation, route }: { navigation: S
                                 insuranceAmount,
                                 others: selectedOthers,
                                 othersAmount,
+                                breakdown: price, // Send the full price object from vehicle master
                             },
                             returnTo,
                             quotationId,

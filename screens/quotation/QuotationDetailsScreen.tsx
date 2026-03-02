@@ -100,7 +100,7 @@ export default function QuotationDetailsScreen({ navigation, route }: { navigati
                             ))}
                             <View className="absolute top-2 left-0 right-0 h-0.5 bg-gray-100 mx-10 -z-10" />
                             <View
-                                className="absolute top-2 left-0 h-0.5 bg-teal-600 mx-10 -z-10 transition-all duration-300"
+                                className="absolute top-2 left-0 h-0.5 bg-teal-600 mx-10 -z-10"
                                 style={{ width: `${(status / 2) * 100}%` }}
                             />
                         </View>

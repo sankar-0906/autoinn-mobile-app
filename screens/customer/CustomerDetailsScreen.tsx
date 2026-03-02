@@ -2,8 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Eye } from 'lucide-react-native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../../navigation/types';
 import { Button } from '../../components/ui/Button';
 import { COLORS } from '../../constants/colors';
+import AssociatedQuotations from '../../components/AssociatedQuotations';
 
 const CUSTOMER_TABS = [
     { id: 'customer-details', label: 'Customer Details' },
@@ -17,7 +20,17 @@ const CUSTOMER_TABS = [
     { id: 'payments', label: 'Payments' },
 ] as const;
 
-export default function CustomerDetailsScreen({ navigation }: { navigation: any }) {
+console.log('CustomerDetailsScreen module loaded');
+
+type CustomerDetailsNavigationProp = StackNavigationProp<RootStackParamList, 'CustomerDetails'>;
+
+export default function CustomerDetailsScreen({ navigation }: { navigation: CustomerDetailsNavigationProp }) {
+    // Guard against missing navigation context
+    if (!navigation) {
+        return null;
+    }
+    
+    console.log('CustomerDetailsScreen rendering');
     const [customerTab, setCustomerTab] = useState<(typeof CUSTOMER_TABS)[number]['id']>('customer-details');
 
     const customer = {
@@ -40,7 +53,7 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: any 
         { id: 'QDE/25-26/454', vehicle: 'FZ S FI V4 DLX', createdOn: '06/10/2025' },
     ];
 
-    const tabContent = useMemo(() => {
+    const renderTabContent = () => {
         if (customerTab === 'customer-details') {
             return (
                 <View>
@@ -79,24 +92,10 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: any 
 
         if (customerTab === 'quotations') {
             return (
-                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                    <View className="bg-gray-100 px-3 py-3 flex-row">
-                        <Text className="text-xs font-semibold text-gray-700 w-24">Date</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Quotation ID</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Model</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-14 text-center">Action</Text>
-                    </View>
-                    {quotations.map((q, index) => (
-                        <View key={q.id} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                            <Text className="text-xs text-gray-700 w-24">17/02/2026</Text>
-                            <Text className="text-xs text-teal-600 flex-1">{q.id}</Text>
-                            <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{q.vehicle}</Text>
-                            <TouchableOpacity className="w-14 items-center">
-                                <Eye size={14} color={COLORS.primary} />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
-                </View>
+                <AssociatedQuotations
+                    quotations={quotations}
+                    onViewQuotation={(quotation) => navigation.navigate('QuotationView', { id: quotation.id })}
+                />
             );
         }
 
@@ -105,7 +104,7 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: any 
                 <Text className="text-center text-gray-400">No data available</Text>
             </View>
         );
-    }, [customerTab]);
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
@@ -120,16 +119,16 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: any 
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 className="border-b border-gray-200 bg-white"
-                style={{ height: 34 }}
+                style={{ height: 38 }}
                 contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'center' }}
             >
                 {CUSTOMER_TABS.map((tab) => (
                     <TouchableOpacity
                         key={tab.id}
                         onPress={() => setCustomerTab(tab.id)}
-                        className={`px-3 py-1 border-b-2 ${customerTab === tab.id ? 'border-teal-600' : 'border-transparent'}`}
+                        className={`px-3 py-1.5 border-b-2 ${customerTab === tab.id ? 'border-teal-600' : 'border-transparent'}`}
                     >
-                        <Text className={`text-[11px] ${customerTab === tab.id ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>
+                        <Text className={`text-[11px] font-bold ${customerTab === tab.id ? 'text-teal-600' : 'text-gray-600'}`}>
                             {tab.label}
                         </Text>
                     </TouchableOpacity>
@@ -137,12 +136,12 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: any 
             </ScrollView>
 
             <ScrollView className="flex-1 p-4" contentContainerStyle={{ paddingBottom: 24 }}>
-                {tabContent}
+                {renderTabContent()}
             </ScrollView>
 
-            <View className="bg-white border-t border-gray-100 p-4 flex-row">
-                <Button title="Cancel" variant="outline" className="flex-1 mr-2" onPress={() => navigation.goBack()} />
-                <Button title="Save" className="flex-1 ml-2" onPress={() => navigation.goBack()} />
+            <View className="bg-white border-t border-gray-100 p-4 flex-row shadow-2xl">
+                <Button title="Cancel" variant="outline" className="flex-1 mr-2 px-0" onPress={() => navigation.goBack()} />
+                <Button title="Save" className="flex-1 ml-2 px-0" onPress={() => navigation.goBack()} />
             </View>
         </SafeAreaView>
     );

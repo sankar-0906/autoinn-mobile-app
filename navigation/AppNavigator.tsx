@@ -10,10 +10,14 @@ import AddQuotationScreen from '../screens/quotation/AddQuotationScreen';
 import AdvancedFiltersScreen from '../screens/quotation/AdvancedFiltersScreen';
 import QuotationFormScreen from '../screens/quotation/QuotationFormScreen';
 import QuotationViewScreen from '../screens/quotation/QuotationViewScreen';
+import FollowUpQuotationForm from '../screens/quotation/FollowUpQuotationForm';
 import FollowUpDetailScreen from '../screens/follow-ups/FollowUpDetailScreen';
 import FollowUpFiltersScreen from '../screens/follow-ups/FollowUpFiltersScreen';
 import BookingRegisterScreen from '../screens/booking/BookingRegisterScreen';
 import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
+import BookingActivityScreen from '../screens/follow-ups/BookingActivityScreen';
+import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
+import CallActivityScreen from '../screens/follow-ups/CallActivityScreen';
 
 import { RootStackParamList } from './types';
 
@@ -32,6 +36,7 @@ export default function AppNavigator() {
             <Stack.Screen name="QuotationDetails" component={QuotationDetailsScreen} />
             <Stack.Screen name="QuotationForm" component={QuotationFormScreen} />
             <Stack.Screen name="QuotationView" component={QuotationViewScreen} />
+            <Stack.Screen name="FollowUpQuotationForm" component={FollowUpQuotationForm} />
             <Stack.Screen name="SelectModel" component={SelectModelScreen} />
             <Stack.Screen name="SelectPrice" component={SelectPriceScreen} />
             <Stack.Screen name="SelectPayment" component={SelectPaymentScreen} />
@@ -41,6 +46,9 @@ export default function AppNavigator() {
             <Stack.Screen name="FollowUpDetail" component={FollowUpDetailScreen} />
             <Stack.Screen name="BookingRegister" component={BookingRegisterScreen} />
             <Stack.Screen name="CustomerDetails" component={CustomerDetailsScreen} />
+            <Stack.Screen name="BookingActivity" component={BookingActivityScreen} />
+            <Stack.Screen name="WalkInActivity" component={WalkInActivityScreen} />
+            <Stack.Screen name="CallActivity" component={CallActivityScreen} />
         </Stack.Navigator>
     );
 }

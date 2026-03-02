@@ -10,6 +10,7 @@ import {
     RefreshControl,
     Modal,
     Dimensions,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
@@ -21,11 +22,12 @@ import {
     ChevronDown,
     Clock,
     ChevronLeft,
+    Edit2,
 } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getBranches, getCustomerByPhoneNo, getUsers } from '../../src/api';
+import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQuotationId } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
@@ -142,7 +144,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [customerType, setCustomerType] = useState('');
     const [locality, setLocality] = useState('');
     const [followUpDate, setFollowUpDate] = useState('');
-    const [followUpTime, setFollowUpTime] = useState('');
+    const [followUpTime, setFollowUpTime] = useState('12:00');
     const [followUpDateError, setFollowUpDateError] = useState('');
     const [expectedPurchaseDateError, setExpectedPurchaseDateError] = useState('');
     const [leadSource, setLeadSource] = useState('');
@@ -151,6 +153,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [enquiryType, setEnquiryType] = useState('');
     const [remarks, setRemarks] = useState('');
     const [localityEditable, setLocalityEditable] = useState(false);
+    const [foundCustomerId, setFoundCustomerId] = useState<string | null>(null);
     const [lookupStatus, setLookupStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const lastLookupRef = useRef('');
 
@@ -163,26 +166,46 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+    const [associatedVehicles, setAssociatedVehicles] = useState<Array<{ regNo: string; name: string }>>([]);
+
+    const [saving, setSaving] = useState(false);
 
     const clearFieldError = (key: string) => setFieldErrors(prev => ({ ...prev, [key]: '' }));
 
     const validate = () => {
         const errors: Record<string, string> = {};
+
         if (!branch) errors.branch = 'Branch is required';
         if (!salesExecutive) errors.salesExecutive = 'Sales Executive is required';
-        if (!customerPhone || customerPhone.replace(/\D/g, '').length !== 10) errors.customerPhone = 'Valid 10-digit phone is required';
+        if (!customerPhone || customerPhone.replace(/\D/g, '').length !== 10) {
+            errors.customerPhone = 'Valid 10-digit phone is required';
+        }
         if (!customerName.trim()) errors.customerName = 'Customer Name is required';
         if (!locality.trim()) errors.locality = 'Locality is required';
-        if (!followUpDate.trim()) errors.followUpDate = 'Follow-Up Date is required';
-        if (followUpDate.trim() && isPastDate(followUpDate)) errors.followUpDate = 'Past date not allowed';
-        if (!followUpTime.trim()) errors.followUpTime = 'Follow-Up Time is required';
+        if (!followUpDate.trim()) {
+            errors.followUpDate = 'Follow-Up Date is required';
+        } else if (isPastDate(followUpDate)) {
+            errors.followUpDate = 'Past follow-up date not allowed';
+        }
+        if (!followUpTime.trim()) setFollowUpTime('12:00');
         if (!leadSource) errors.leadSource = 'Lead Source is required';
-        if (!expectedPurchaseDate.trim()) errors.expectedPurchaseDate = 'Expected Purchase Date is required';
-        if (expectedPurchaseDate.trim() && isPastDate(expectedPurchaseDate)) errors.expectedPurchaseDate = 'Past date not allowed';
+        if (!expectedPurchaseDate.trim()) {
+            errors.expectedPurchaseDate = 'Expected Purchase Date is required';
+        } else if (isPastDate(expectedPurchaseDate)) {
+            errors.expectedPurchaseDate = 'Past purchase date not allowed';
+        }
         if (!enquiryType) errors.enquiryType = 'Enquiry Type is required';
         if (!selectedVehicle) errors.vehicleName = 'Please select a vehicle';
+
         setFieldErrors(errors);
-        return Object.keys(errors).every(k => !errors[k]);
+
+        const errorKeys = Object.keys(errors).filter(k => !!errors[k]);
+        if (errorKeys.length > 0) {
+            const firstError = errors[errorKeys[0]];
+            Alert.alert('Incomplete Form', firstError);
+            return false;
+        }
+        return true;
     };
 
     const leadSources = useMemo(
@@ -249,10 +272,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     };
 
     const buildHourOptions = () => {
-        const now = new Date();
-        const currentHour = now.getHours();
-        const start = currentHour === 0 ? 1 : currentHour;
-        return Array.from({ length: 23 - start }, (_, idx) => start + idx);
+        return Array.from({ length: 14 }, (_, idx) => idx + 1);
     };
 
     const minuteOptions = [15, 30, 45];
@@ -337,6 +357,20 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         value: user.id,
                     }));
                 setExecutiveOptions(filtered);
+                // Auto-select the first executive if none is selected or matches pending
+                if (filtered.length > 0) {
+                    if (pendingExecutive?.id) {
+                        const match = filtered.find((o: any) => o.value === pendingExecutive.id);
+                        if (match) setSalesExecutive(match.value);
+                        else setSalesExecutive(filtered[0].value);
+                    } else if (pendingExecutive?.name) {
+                        const match = filtered.find((o: any) => o.label.includes(pendingExecutive.name!));
+                        if (match) setSalesExecutive(match.value);
+                        else setSalesExecutive(filtered[0].value);
+                    } else if (!salesExecutive) {
+                        setSalesExecutive(filtered[0].value);
+                    }
+                }
             } else {
                 setExecutiveOptions([]);
             }
@@ -349,7 +383,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
     const hydrateCustomer = (cust: any) => {
         if (!cust) return;
-        setCustomerName(cust.name || '');
+        setFoundCustomerId(cust.id || null);
+        setCustomerName(cust.name || cust.customerName || '');
         const g = String(cust.gender || '').toLowerCase();
         if (g === 'female' || g === 'male') setGender(g);
         const custType = cust.customerType || cust.type;
@@ -362,6 +397,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         }
         setLocality(cust.address?.locality || cust.locality || '');
         if (cust.leadSource) setLeadSource(cust.leadSource);
+
+        const vehiclesRaw = cust.purchasedVehicle || cust.vehicle || [];
+        const mappedVehicles = Array.isArray(vehiclesRaw) ? vehiclesRaw.map((v: any) => ({
+            regNo: v?.registerNo || v?.regNo || v?.registrationNo || '-',
+            name: v?.vehicle?.vehicleDetail?.modelName || v?.vehicleDetail?.modelName || v?.modelName || '-',
+        })) : [];
+        setAssociatedVehicles(mappedVehicles);
+
         setLocalityEditable(false);
 
         const execId =
@@ -379,12 +422,13 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     };
 
     const clearCustomerFields = () => {
+        setFoundCustomerId(null);
         setCustomerName('');
         setCustomerType('');
         setLocality('');
         setLeadSource('');
-        setPendingExecutive(null);
         setGender('male');
+        setAssociatedVehicles([]);
     };
 
     const lookupCustomerByPhone = async (phone: string) => {
@@ -648,7 +692,6 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 value={customerType}
                                 options={customerTypes}
                                 onSelect={setCustomerType}
-                                disabled
                             />
                         </View>
 
@@ -816,13 +859,25 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         <View className="mb-4">
                             <FormLabel label="Vehicle Name" required />
                             <TouchableOpacity
-                                onPress={() => { navigation.navigate('SelectModel'); clearFieldError('vehicleName'); }}
+                                onPress={() => {
+                                    if (selectedVehicle) {
+                                        navigation.navigate('SelectPrice', {
+                                            vehicleId: selectedVehicle.id,
+                                            returnTo: 'AddQuotation',
+                                            viewMode: true,
+                                            paymentDetails: selectedVehicle.paymentDetails,
+                                        });
+                                    } else {
+                                        navigation.navigate('SelectModel', { returnTo: 'AddQuotation' });
+                                    }
+                                    clearFieldError('vehicleName');
+                                }}
                                 className={`bg-white border rounded-xl px-4 h-12 flex-row items-center justify-center ${fieldErrors.vehicleName ? 'border-red-500' : 'border-gray-200'}`}
                                 activeOpacity={0.7}
                             >
                                 <FileText size={16} color={COLORS.primary} />
                                 <Text className="text-teal-600 font-bold ml-2">
-                                    {selectedVehicle ? selectedVehicle.name : 'Select Vehicle'}
+                                    {selectedVehicle ? 'View/Change Vehicle' : 'Select Vehicle'}
                                 </Text>
                             </TouchableOpacity>
                             <ErrorText message={fieldErrors.vehicleName} />
@@ -836,9 +891,37 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                     <Text className="text-white text-sm font-bold flex-1">Reg No.</Text>
                                     <Text className="text-white text-sm font-bold flex-1">Vehicle</Text>
                                 </View>
-                                <View className="py-8 items-center justify-center">
-                                    <Text className="text-gray-400 text-sm">No Data</Text>
-                                </View>
+                                {selectedVehicle && (
+                                    <View className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
+                                        <Text className="text-gray-600 text-sm flex-1">-</Text>
+                                        <Text className="text-gray-900 text-sm flex-1 font-medium">{selectedVehicle.name}</Text>
+                                        <TouchableOpacity
+                                            onPress={() => navigation.navigate('SelectPrice', {
+                                                vehicleId: selectedVehicle.id,
+                                                returnTo: 'AddQuotation',
+                                                viewMode: true,
+                                                paymentDetails: selectedVehicle.paymentDetails,
+                                            })}
+                                        >
+                                            <Edit2 size={14} color={COLORS.primary} />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                                {associatedVehicles.length > 0 ? (
+                                    associatedVehicles.map((v, i) => (
+                                        <View key={`${v.regNo}-${i}`} className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
+                                            <Text className="text-gray-600 text-sm flex-1">{v.regNo}</Text>
+                                            <Text className="text-gray-900 text-sm flex-1 font-medium">{v.name}</Text>
+                                            <View className="w-4" />
+                                        </View>
+                                    ))
+                                ) : (
+                                    !selectedVehicle && (
+                                        <View className="py-8 items-center justify-center">
+                                            <Text className="text-gray-400 text-sm">No Data</Text>
+                                        </View>
+                                    )
+                                )}
                             </View>
                         </View>
                     </View>
@@ -916,11 +999,119 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                     onPress={() => navigation.navigate('Main', { screen: 'Quotations' })}
                 />
                 <Button
-                    title="Save"
+                    title={saving ? "Saving..." : "Save"}
                     className="flex-1"
-                    onPress={() => {
-                        if (validate()) {
-                            navigation.navigate('Main', { screen: 'Quotations' });
+                    disabled={saving}
+                    onPress={async () => {
+
+                        if (!validate()) return;
+                        setSaving(true);
+                        try {
+                            const genRes = await generateQuotationId(branch);
+                            const genData = genRes.data;
+                            if (genData.code !== 200 || genData.response?.code !== 200) {
+                                throw new Error('Failed to generate Quotation ID');
+                            }
+                            const { QuotationId, id: seqId, customerId } = genData.response.data;
+
+                            const finalFollowUpTime = followUpTime.trim() || '12:00';
+                            const tenureData = selectedVehicle.financeDetails?.tenure
+                                ? { data: [{ tenure: selectedVehicle.financeDetails.tenure, emi: selectedVehicle.financeDetails.emi }] }
+                                : { data: [] };
+
+                            // Build price object matching autoinn-fe flat format
+                            const priceObj = {
+                                showroomPrice: Number(selectedVehicle.priceDetails?.breakdown?.showroomPrice || selectedVehicle.priceDetails?.totalAmount || 0),
+                                roadTax: Number(selectedVehicle.priceDetails?.breakdown?.roadTax || 0),
+                                handlingCharges: Number(selectedVehicle.priceDetails?.breakdown?.handlingCharges || 0),
+                                registrationFee: Number(selectedVehicle.priceDetails?.breakdown?.registrationFee || 0),
+                                tcs: Number(selectedVehicle.priceDetails?.breakdown?.tcs || 0),
+                                insuranceVId: null,
+                                totalAmount: Number(selectedVehicle.priceDetails?.totalAmount || 0),
+                                insurance1plus5: Number(selectedVehicle.priceDetails?.breakdown?.insurance1plus5 || 0),
+                                insurance5plus5: Number(selectedVehicle.priceDetails?.breakdown?.insurance5plus5 || 0),
+                                insurance1plus5ZD: Number(selectedVehicle.priceDetails?.breakdown?.insurance1plus5ZD || 0),
+                                insurance5plus5ZD: Number(selectedVehicle.priceDetails?.breakdown?.insurance5plus5ZD || 0),
+                                warrantyPrice: Number(selectedVehicle.priceDetails?.breakdown?.warrantyPrice || 0),
+                                amc: Number(selectedVehicle.priceDetails?.breakdown?.amc || 0),
+                                rsa: Number(selectedVehicle.priceDetails?.breakdown?.rsa || 0),
+                                otherCharges: Number(selectedVehicle.priceDetails?.breakdown?.otherCharges || 0),
+                                discount: Number(selectedVehicle.priceDetails?.breakdown?.discount || 0),
+                            };
+
+                            // Build vehicle array matching autoinn-fe flat format
+                            // autoinn-fe sends: { vehicleDetail: modelId, price: priceObj, paymentDetails: {...}, financer, downPayment, financerTenure }
+                            const vehicleArr = [{
+                                vehicleDetail: { id: String(selectedVehicle.id), modelName: selectedVehicle.name || '' },
+                                price: priceObj,
+                                paymentDetails: {
+                                    paymentType: selectedVehicle.paymentType || 'cash',
+                                    financerId: selectedVehicle.financeDetails?.financer || null,
+                                    downPayment: selectedVehicle.financeDetails?.downPayment || null,
+                                    financerTenure: tenureData,
+                                },
+                                financer: selectedVehicle.paymentType === 'finance' ? (selectedVehicle.financeDetails?.financer || null) : null,
+                                downPayment: selectedVehicle.paymentType === 'finance' ? (selectedVehicle.financeDetails?.downPayment || null) : null,
+                                financerTenure: selectedVehicle.paymentType === 'finance' ? tenureData : { data: [] },
+                            }];
+
+                            // Build quotation matching autoinn-fe structure exactly
+                            // autoinn-fe spreads ...provisional (proCustomer data) into the quotation
+                            const quotationObj: any = {
+                                // ProCustomer fields (spread like ...provisional in autoinn-fe)
+                                name: customerName.trim().toUpperCase(),
+                                gender: gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase(),
+                                locality: locality.trim().toUpperCase(),
+                                phone: customerPhone,
+                                // Quotation fields
+                                quotationId: QuotationId,
+                                id: seqId,
+                                branch: branch,
+                                quotationPhone: customerPhone,
+                                customerName: customerName.trim().toUpperCase(),
+                                leadSource: leadSource,
+                                testDriveTaken: testDriveTaken === 'yes',
+                                enquiryType: enquiryType.charAt(0).toUpperCase() + enquiryType.slice(1).toLowerCase(),
+                                remarks: remarks,
+                                executive: salesExecutive,
+                                customerType: customerType || 'Non Customer',
+                                scheduleDate: followUpDate.replace(/\//g, '-'),
+                                scheduleTime: finalFollowUpTime + ':00',
+                                expectedDateOfPurchase: expectedPurchaseDate.replace(/\//g, '-'),
+                                vehicle: vehicleArr,
+                            };
+
+
+
+                            if (lookupStatus?.type === 'success' && foundCustomerId) {
+                                quotationObj.customer = foundCustomerId;
+                                quotationObj.customerId = null;
+                            } else {
+                                quotationObj.customer = null;
+                                quotationObj.customerId = customerId;
+                            }
+
+
+                            const formData = new FormData();
+                            formData.append('finalData', JSON.stringify(quotationObj));
+
+                            const createRes = await createQuotation(formData);
+
+                            if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
+                                Alert.alert('Success', 'Quotation saved successfully');
+                                navigation.navigate('Main', { screen: 'Quotations' });
+                            } else {
+                                const msg = createRes.data.response?.message || createRes.data.message || 'Server returned failure code';
+                                throw new Error(msg);
+                            }
+                        } catch (err: any) {
+
+                            let errMsg = err.message || 'Something went wrong while saving';
+                            if (err.response?.data?.response?.message) errMsg = err.response.data.response.message;
+                            else if (err.response?.data?.message) errMsg = err.response.data.message;
+                            Alert.alert('Error', errMsg);
+                        } finally {
+                            setSaving(false);
                         }
                     }}
                 />
@@ -1034,7 +1225,6 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             <View style={{ flexDirection: 'row' }}>
                                 <ScrollView style={{ maxHeight: 200, flex: 1 }}>
                                     {buildHourOptions()
-                                        .filter((hour) => hour <= 22)
                                         .map((hour) => (
                                             <TouchableOpacity
                                                 key={`h-${hour}`}

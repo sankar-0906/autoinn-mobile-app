@@ -33,8 +33,12 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                 if (saved === 'true') {
                     const savedPhone = await AsyncStorage.getItem('rememberPhone');
                     const savedPassword = await AsyncStorage.getItem('rememberPassword');
-                    if (savedPhone) setPhone(savedPhone);
-                    if (savedPassword) setPassword(savedPassword);
+                    if (savedPhone) {
+                        setPhone(savedPhone)
+                    };
+                    if (savedPassword) {
+                        setPassword(savedPassword)
+                    };
                     setRememberMe(true);
                 }
             } catch (e) {
@@ -53,6 +57,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
         try {
             const resp = await login(phone, password);
 
+
             const data = resp?.data;
             if (data && data.code === 200 && data.response && data.response.code === 200) {
                 const token = data.response.data.token;
@@ -64,9 +69,10 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                 try {
                     const me = await getCurrentUser();
                     const meData = me?.data;
+
                     if (meData && meData.code === 200 && meData.response && meData.response.code === 200) {
                         console.log("User Logged In --");
-                        
+
                         await AsyncStorage.setItem('userProfile', JSON.stringify(meData.response.data));
                     }
                 } catch (e) {
@@ -91,6 +97,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                 });
             } else {
                 const msg = (data && data.response && data.response.message) || 'Invalid credentials';
+
                 Alert.alert('Login Failed', msg);
             }
         } catch (error) {
@@ -126,7 +133,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                                     <Phone size={18} color="#0D9488" />
                                 </View>
                                 <TextInput
-                                    placeholder="8637432140"
+                                    placeholder="Enter mobile number"
                                     value={phone}
                                     onChangeText={setPhone}
                                     keyboardType="phone-pad"

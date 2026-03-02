@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useIsFocused } from '@react-navigation/native';
 import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, User, Calendar, Smartphone, Trash2, X } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
@@ -27,12 +26,17 @@ interface Quotation {
     mobileNo: string;
     createdOn: string;
     status: 'active' | 'booked' | 'sold' | 'rejected';
+    followupDate: string;
 }
 
 const TABS = ['active', 'booked', 'rejected', 'all'];
 
 export default function QuotationsListScreen({ navigation }: { navigation: any }) {
-    const isFocused = useIsFocused();
+    // Guard against missing navigation context
+    if (!navigation) {
+        return null;
+    }
+    
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('active');
     const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -134,11 +138,10 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                     .join(', ')
                 : '-';
 
+        // Match autoinn-fe: customerName || (customer ? customer.name : proCustomer?.name)
         const customerName =
             q?.customerName ||
-            q?.proCustomer?.name ||
-            q?.customer?.name ||
-            q?.customer?.customerName ||
+            (q?.customer ? q.customer.name : q?.proCustomer?.name) ||
             '-';
 
         const mobileNo =
@@ -155,6 +158,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             mobileNo,
             createdOn: formatDate(q?.createdAt),
             status: normalizeStatus(q?.quotationStatus || q?.status),
+            followupDate: formatDate(q?.scheduleDateAndTime || q?.scheduleDate),
         };
     };
 
@@ -184,9 +188,6 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             };
             if (branchIds.length) body.branch = branchIds;
             const token = await AsyncStorage.getItem('token');
-            // console.log('[Quotations] endpoint:', ENDPOINT);
-            // console.log('[Quotations] hasToken:', !!token);
-            // console.log('[Quotations] requestBody:', JSON.stringify(body));
             const res = await getQuotations(body);
             const data = res?.data;
             if (data && data.code === 200 && data.response && data.response.code === 200) {
@@ -253,7 +254,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     };
 
     const handleOpenQuotation = useCallback(
-        (id: string) => navigation.navigate('QuotationForm', { id }),
+        (id: string) => navigation.navigate('QuotationForm', { id, viewMode: true }),
         [navigation]
     );
 
@@ -266,7 +267,15 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             >
                 <View className="flex-row items-start">
                     <View className="flex-1 pr-3">
-                        <Text className="text-teal-600 font-bold text-base">{item.displayId}</Text>
+                        <View className="flex-row justify-between items-center">
+                            <Text className="text-teal-600 font-bold text-base">{item.displayId}</Text>
+                            {item.followupDate !== '-' && (
+                                <View className="items-end mt-4">
+                                    <Text className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Followup Date</Text>
+                                    <Text className="text-gray-900 font-bold text-sm mt-0.5">{item.followupDate}</Text>
+                                </View>
+                            )}
+                        </View>
                         <View className="flex-row items-center mt-2">
                             <User size={14} color={COLORS.gray[600]} />
                             <Text className="text-gray-700 ml-1.5 font-medium" numberOfLines={1}>
@@ -328,7 +337,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 <TouchableOpacity
                     onPress={(e) => {
                         e.stopPropagation();
-                        navigation.navigate('QuotationForm', { id: item.id });
+                        navigation.navigate('QuotationForm', { id: item.id, viewMode: true });
                     }}
                     className="flex-row mt-3 pt-3 border-t border-gray-100 items-center justify-between"
                     activeOpacity={0.7}
@@ -336,7 +345,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                     <Text className="text-teal-600 font-bold text-sm">View Details</Text>
                     <ChevronRight size={18} color={COLORS.primary} />
                 </TouchableOpacity>
-            </TouchableOpacity>
+            </TouchableOpacity >
         )
     );
 
@@ -484,9 +493,8 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     }, [selectedBranch]);
 
     useEffect(() => {
-        if (!isFocused) return;
         fetchQuotations();
-    }, [isFocused, activeTab, currentPage, itemsPerPage, searchQuery]);
+    }, [activeTab, currentPage, itemsPerPage, searchQuery]);
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
@@ -494,7 +502,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             <View className="bg-white px-4 pb-4 pt-2 shadow-sm z-20" style={{ elevation: 8 }}>
                 <View className="items-center pt-2 pb-4">
                     <Image
-                        source={require('../../assets/d9a893d37378e1ed6bcfab76f3f1ea015f60b287.png')}
+                        source={require('../../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
                         resizeMode="contain"
                         style={{ width: 160, height: 36 }}
                     />

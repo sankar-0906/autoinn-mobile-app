@@ -15,7 +15,7 @@ import { RouteProp } from '@react-navigation/native';
 import { Search, ChevronRight, Check, ChevronLeft } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { getManufacturers, getVehicleModelsByManufacturer } from '../../src/api';
+import { ENDPOINT, getManufacturers, getVehicleModelsByManufacturer } from '../../src/api';
 
 interface Vehicle {
     id: string;
@@ -51,6 +51,14 @@ export default function SelectModelScreen({ navigation, route }: { navigation: S
         setNoSelectionError(false);
     };
 
+    const getAbsoluteImageUrl = (url?: string) => {
+        if (!url) return null;
+        if (url.startsWith('http')) return url;
+        const base = ENDPOINT.endsWith('/') ? ENDPOINT : `${ENDPOINT}/`;
+        const relative = url.startsWith('/') ? url.slice(1) : url;
+        return `${base}${relative}`;
+    };
+
     const renderVehicleItem = ({ item }: { item: Vehicle }) => {
         const isSelected = selectedVehicle === item.id;
         return (
@@ -74,7 +82,7 @@ export default function SelectModelScreen({ navigation, route }: { navigation: S
             >
                 <View style={{ aspectRatio: 16 / 9, backgroundColor: '#f9fafb', borderRadius: 8, marginBottom: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                     <Image
-                        source={item.imageUrl ? { uri: item.imageUrl } : placeholder}
+                        source={item.imageUrl ? { uri: getAbsoluteImageUrl(item.imageUrl) || '' } : placeholder}
                         style={{ width: '100%', height: '100%' }}
                         resizeMode="contain"
                     />
@@ -379,8 +387,10 @@ export default function SelectModelScreen({ navigation, route }: { navigation: S
                             return;
                         }
                         const selected = viewMode ? viewVehicleData : vehicles.find((v) => v.id === selectedVehicle);
+                        // Use modelId (VehicleMaster ID) not price.id for the backend
+                        const vehicleMasterId = selected?.modelId || selectedVehicle || selected?.id;
                         navigation.navigate('SelectPrice', {
-                            vehicleId: selectedVehicle || selected?.id,
+                            vehicleId: vehicleMasterId,
                             vehicleData: selected,
                             returnTo,
                             quotationId,

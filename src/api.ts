@@ -4,7 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';
+
+const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
+// const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';
+
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 const platformApi = axios.create({
   baseURL: ENDPOINT,
@@ -91,12 +94,72 @@ export const getActivitiesByCustomer = (body: any) => {
   return platformApi.post('/api/activity/customers', body);
 };
 
+export const getActivityById = (id: string) => {
+  return platformApi.get(`/api/activity/${id}`);
+};
+
+// Attach Quotation APIs
+export const attachQuotations = (quotationIds: string[]) => {
+  return platformApi.post('/api/quotation/attach', quotationIds);
+};
+
+export const searchQuotations = (searchParams: {
+  module: string;
+  column: string;
+  searchString: string;
+  searchColumns?: string[];
+  size?: number;
+  page?: number;
+  except?: any;
+}) => {
+  return platformApi.post('/api/quotation/quotationSearch', searchParams);
+};
+
+export const updateCustomerQuotations = (customerId: string, quotationIds: string[]) => {
+  return platformApi.put(`/api/customer/${customerId}`, {
+    update: "quotation",
+    quotation: quotationIds.map(id => ({ id }))
+  });
+};
+
+export const updateActivity = (id: string, body: any) => {
+  return platformApi.put(`/api/activity/${id}`, body);
+};
+
 export const getQuotationByCustomerId = (id: string) => {
   return platformApi.get(`/api/quotation/getCus/${id}`);
 };
 
 export const getCustomerById = (id: string) => {
   return platformApi.get(`/api/customer/${id}`);
+};
+
+export const getCustomerDetails = (id: string) => {
+  return platformApi.get(`/api/customer/details/${id}`);
+};
+
+export const getMergedCustomerData = (body: { ids: string[] }) => {
+  return platformApi.post('/api/customer/merge', body);
+};
+
+export const attachQuotation = (body: any) => {
+  return platformApi.post('/api/quotation/attach/', body);
+};
+
+export const searchQuotation = (body: any) => {
+  return platformApi.post('/api/quotation/quotationSearch', body);
+};
+
+export const generateQuotationId = (branchId: string) => {
+  return platformApi.post('/api/idGenerate/quotation', { branch: branchId });
+};
+
+export const createQuotation = (formData: FormData) => {
+  return platformApi.post('/api/quotation', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
 };
 
 export default platformApi;

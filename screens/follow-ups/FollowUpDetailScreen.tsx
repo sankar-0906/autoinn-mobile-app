@@ -246,64 +246,43 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         <Text className="text-lg font-bold text-gray-900">Follow-Ups</Text>
                     </View>
                 </View>
-                <View className="flex-row justify-between">
-                    <Button
-                        title="Previous"
-                        variant="outline"
-                        className="h-9 min-w-[100px] border-teal-500"
-                        onPress={() => navigation.goBack()}
-                    />
-                    <Button
-                        title="Next"
-                        variant="outline"
-                        className="h-9 min-w-[100px] border-teal-500"
-                        onPress={() => navigation.goBack()}
-                    />
-                </View>
+
             </View>
 
             <ScrollView className="flex-1 p-4" showsVerticalScrollIndicator={false}>
-                <View className="bg-white rounded-2xl border border-gray-100 p-6 mb-4 shadow-sm">
-                    <View className="flex-row items-center justify-between mb-4">
-                        <View>
-                            <Text className="text-2xl font-bold text-gray-900 mb-1">{customer.name}</Text>
-                            <View className="flex-row items-center">
-                                <View className="bg-teal-50 px-2 py-0.5 rounded-md mr-2">
-                                    <Text className="text-[10px] font-bold text-teal-700 uppercase">{customer.customerId}</Text>
-                                </View>
-                                <Text className="text-xs text-gray-500">{customer.customerType}</Text>
-                            </View>
-                        </View>
-                        <View className="w-14 h-14 bg-gray-50 rounded-full items-center justify-center border border-gray-100">
-                            <User size={28} color="#94a3b8" />
-                        </View>
+                <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4 shadow">
+                    {/* header with name centered */}
+                    <View className="flex-row items-center justify-center mb-4">
+                        <User size={20} color={COLORS.gray[900]} className="mr-2" />
+                        <Text className="text-xl font-semibold text-gray-900">
+                            {customer.name}
+                        </Text>
                     </View>
 
-                    <View className="space-y-2 mb-5">
-                        <View className="flex-row items-center">
-                            <Smartphone size={14} color="#64748b" className="mr-2" />
-                            <Text className="text-sm text-gray-700">{customer.mobile}</Text>
-                        </View>
-                        <View className="flex-row items-center mt-2">
-                            <View className="bg-gray-100 h-1.5 w-1.5 rounded-full mr-2" />
-                            <Text className="text-sm text-gray-600">{customer.gender} • {customer.age} • {customer.location}</Text>
-                        </View>
+                    {/* customer details centered */}
+                    <View className="items-center mb-4">
+                        <Text className="text-sm font-semibold text-gray-900">Customer ID: {customer.customerId}</Text>
+                        <Text className="text-sm text-gray-600 mt-1">Customer Type: {customer.customerType}</Text>
+                        <Text className="text-sm text-gray-600 mt-1">
+                            {customer.gender} | {customer.location}
+                        </Text>
                     </View>
 
-                    <View className="border-t border-gray-50 pt-4 flex-row items-center justify-around">
+                    {/* actions */}
+                    <View className="flex-row justify-center gap-3 border-t border-gray-100 pt-3">
                         <TouchableOpacity
                             onPress={() => setShowCustomerModal(true)}
-                            className="flex-row items-center px-4 py-2 bg-gray-50 rounded-xl"
+                            className="flex-row items-center px-4 py-2 bg-gray-50 rounded-lg"
                         >
                             <Eye size={18} color="#475569" />
-                            <Text className="ml-2 text-xs font-semibold text-gray-600">View Details</Text>
+                            <Text className="ml-2 text-xs font-medium text-gray-600">View Details</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => navigation.navigate('CustomerDetails')}
-                            className="flex-row items-center px-4 py-2 bg-teal-50 rounded-xl"
+                            className="flex-row items-center px-4 py-2 bg-teal-50 rounded-lg"
                         >
                             <Edit size={18} color="#0d9488" />
-                            <Text className="ml-2 text-xs font-semibold text-teal-700">Edit Profile</Text>
+                            <Text className="ml-2 text-xs font-medium text-teal-700">Edit Profile</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -335,12 +314,33 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
 
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
                     <View className="flex-row gap-3">
-                        <Button title="Booking" variant="outline" className="flex-1" onPress={() => navigation.navigate('BookingRegister')} />
-                        <Button title="Quotation" variant="outline" className="flex-1" onPress={() => navigation.navigate('QuotationForm', { id: phoneNo })} />
+                        <Button 
+                            title="Booking" 
+                            variant="outline" 
+                            className="flex-1" 
+                            onPress={() => navigation.navigate('BookingActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
+                        />
+                        <Button 
+                            title="Quotation" 
+                            variant="outline" 
+                            className="flex-1" 
+                            onPress={() => navigation.navigate('FollowUpQuotationForm', { customerName: customer.name, customerPhone: phoneNo, locality: customer.locality, customerType: customer.customerType, gender: customer.gender })} 
+                        />
                     </View>
                     <View className="flex-row gap-3 mt-3">
-                        <Button title="Walk-In" variant="outline" className="flex-1" onPress={() => openActivityModal('edit')} />
-                        <Button title="Call" variant="outline" className="flex-1" onPress={() => { }} icon={<Phone size={14} color={COLORS.primary} />} />
+                        <Button 
+                            title="Walk-In" 
+                            variant="outline" 
+                            className="flex-1" 
+                            onPress={() => navigation.navigate('WalkInActivity', { customerName: customer.name, customerId: customer.customerId })} 
+                        />
+                        <Button 
+                            title="Call" 
+                            variant="outline" 
+                            className="flex-1" 
+                            onPress={() => navigation.navigate('CallActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
+                            icon={<Phone size={14} color={COLORS.primary} />} 
+                        />
                     </View>
                 </View>
 
@@ -609,6 +609,20 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                     </View>
                 </View>
             </Modal>
+            {/* Bottom Navigation Buttons */}
+            <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
+                <Button
+                    title="Previous"
+                    variant="outline"
+                    className="flex-1 h-11"
+                    onPress={() => navigation.goBack()}
+                />
+                <Button
+                    title="Next"
+                    className="flex-1 h-11 bg-teal-600"
+                    onPress={() => navigation.goBack()}
+                />
+            </View>
         </SafeAreaView>
     );
 }

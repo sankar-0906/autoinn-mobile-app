@@ -67,7 +67,7 @@ export default function SelectPaymentScreen({ navigation, route }: { navigation:
             financeDetails: paymentType === 'finance' ? { financer, downPayment, tenure, emi } : null,
         };
         if (returnTo === 'QuotationForm') {
-            navigation.navigate('QuotationForm', {
+            navigation.popTo('QuotationForm', {
                 id: quotationId ?? 'QDE/25-26/000',
                 selectedVehicle: payload,
                 paymentDetails: {
@@ -78,7 +78,14 @@ export default function SelectPaymentScreen({ navigation, route }: { navigation:
             });
             return;
         }
-        navigation.navigate('AddQuotation', { selectedVehicle: payload });
+
+        if (returnTo === 'AddQuotation') {
+            navigation.popTo('AddQuotation', { selectedVehicle: payload });
+            return;
+        }
+
+        // Default fallback
+        navigation.popTo('AddQuotation', { selectedVehicle: payload });
     };
 
     return (
