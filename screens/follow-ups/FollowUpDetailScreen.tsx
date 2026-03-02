@@ -17,6 +17,7 @@ import { ChevronLeft, Eye, Edit, Phone, Car, User, Smartphone, CalendarDays, Clo
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
+import AttachQuotationModal from '../../components/AttachQuotationModal';
 import { getActivitiesByCustomer, getCustomerByPhoneNo, getQuotationByCustomerId } from '../../src/api';
 
 type DetailRouteProp = RouteProp<RootStackParamList, 'FollowUpDetail'>;
@@ -101,10 +102,28 @@ export default function FollowUpDetailScreen() {
     const [activityMode, setActivityMode] = useState<'view' | 'edit'>('view');
     const [activityTab, setActivityTab] = useState<'details' | 'documents'>('details');
 
+    const [showAttachQuotationModal, setShowAttachQuotationModal] = useState(false);
+
     const [enquiryType, setEnquiryType] = useState<string>('Hot');
     const [followupDate, setFollowupDate] = useState('');
     const [followupTime, setFollowupTime] = useState('');
     const [remarks, setRemarks] = useState('');
+
+    // Handler functions
+    const openAttachQuotationModal = () => {
+        setShowAttachQuotationModal(true);
+    };
+
+    const closeAttachQuotationModal = () => {
+        setShowAttachQuotationModal(false);
+    };
+
+    const handleAttachQuotation = (selectedQuotationIds: string[]) => {
+        console.log('Attached quotations:', selectedQuotationIds);
+        // Here you can add logic to actually attach the quotations
+        // For now, just close the modal
+        closeAttachQuotationModal();
+    };
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -166,14 +185,14 @@ export default function FollowUpDetailScreen() {
                     const createdBy = a.createdBy?.profile?.employeeName || '-';
                     const bookingId = a.booking?.bookingId || '-';
                     const customerAuth = a.customerAuthStatus || 'Not verified';
-                    
+
                     // Handle vehicle data - extract multiple models if available
                     let vehicleModels = [];
                     if (a.quotation?.vehicle && Array.isArray(a.quotation.vehicle)) {
-                        vehicleModels = a.quotation.vehicle.map((v: any) => 
-                            v?.vehicleDetail?.modelName || 
-                            v?.modelName || 
-                            v?.vehicle || 
+                        vehicleModels = a.quotation.vehicle.map((v: any) =>
+                            v?.vehicleDetail?.modelName ||
+                            v?.modelName ||
+                            v?.vehicle ||
                             'Unknown Model'
                         ).filter(Boolean);
                     } else if (a.quotation?.vehicleMaster?.modelName) {
@@ -183,11 +202,11 @@ export default function FollowUpDetailScreen() {
                     } else if (typeof a.quotation?.vehicle === 'string') {
                         vehicleModels = [a.quotation.vehicle.replace('.', '')];
                     }
-                    
-                    const vehicleDisplay = vehicleModels.length > 0 
-                        ? vehicleModels.join(', ') 
+
+                    const vehicleDisplay = vehicleModels.length > 0
+                        ? vehicleModels.join(', ')
                         : '-';
-                    
+
                     const colorCode = a.colorCode || '-';
                     const supervisor = a.supervisor || '-';
                     const enquiryType = a.enquiryType || '-';
@@ -385,35 +404,68 @@ export default function FollowUpDetailScreen() {
                 </View>
 
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-                    <View className="flex-row gap-3">
+
+                    <View className="gap-3">
+
                         <Button
                             title="Booking"
                             variant="outline"
-                            className="flex-1"
-                            onPress={() => navigation.navigate('BookingActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })}
+                            onPress={() =>
+                                navigation.navigate('BookingActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.customerId,
+                                    customerPhone: phoneNo
+                                })
+                            }
                         />
+
                         <Button
                             title="Quotation"
                             variant="outline"
-                            className="flex-1"
-                            onPress={() => navigation.navigate('FollowUpQuotationForm', { customerName: customer.name, customerPhone: phoneNo, locality: customer.locality, customerType: customer.customerType, gender: customer.gender })}
+                            onPress={() =>
+                                navigation.navigate('FollowUpQuotationForm', {
+                                    customerName: customer.name,
+                                    customerPhone: phoneNo,
+                                    locality: customer.locality,
+                                    customerType: customer.customerType,
+                                    gender: customer.gender
+                                })
+                            }
                         />
-                    </View>
-                    <View className="flex-row gap-3 mt-3">
+
                         <Button
                             title="Walk-In"
                             variant="outline"
-                            className="flex-1"
-                            onPress={() => navigation.navigate('WalkInActivity', { customerName: customer.name, customerId: customer.customerId })}
+                            onPress={() =>
+                                navigation.navigate('WalkInActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.customerId
+                                })
+                            }
                         />
+
                         <Button
                             title="Call"
                             variant="outline"
-                            className="flex-1"
-                            onPress={() => navigation.navigate('CallActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })}
+                            onPress={() =>
+                                navigation.navigate('CallActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.customerId,
+                                    customerPhone: phoneNo
+                                })
+                            }
                             icon={<Phone size={14} color={COLORS.primary} />}
                         />
+
                     </View>
+
+                    <View className='mt-3'>
+                        <Button 
+                            title='Attach Quotation'
+                            onPress={openAttachQuotationModal}
+                        />
+                    </View>
+
                 </View>
 
                 <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Activity</Text>
@@ -421,29 +473,18 @@ export default function FollowUpDetailScreen() {
                     if (!activity || typeof activity !== 'object') return null;
 
                     return <View key={activity.id} className="bg-white rounded-2xl shadow-md overflow-hidden border-0 mb-4">
-                        {/* Log vehicle and quotation data for debugging */}
-                        {console.log('=== Activity Data ===', {
-                            activityId: activity.activityId,
-                            quotationId: activity.quotationId || 'N/A',
-                            vehicleRaw: activity.vehicle,
-                            vehicleDisplay: activity.vehicle,
-                            interactionType: activity.interactionType,
-                            employee: activity.employee,
-                            scheduleDateAndTime: activity.scheduleDateAndTime
-                        })}
-                        
                         {/* Header */}
                         <View className="bg-white px-4 py-4 flex-row items-center justify-between border-b border-gray-100">
-                            <View className="flex-1">
+                            <View className="ml-1 flex-1">
                                 <Text className="text-gray-800 font-semibold text-base mb-0.5">
                                     {activity.type || 'Activity'}
                                 </Text>
                                 <Text className="text-gray-500 text-xs">{activity.date || '-'}</Text>
                             </View>
 
-                            <View className={`px-3 py-1.5 rounded-full ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
-                                    activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
-                                        'bg-blue-400'
+                            <View className={`mr-4 px-3 py-1.5 rounded ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
+                                activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
+                                    'bg-blue-400'
                                 }`}>
                                 <Text className="text-white text-xs font-bold">
                                     {activity.enquiryType || '-'}
@@ -534,18 +575,18 @@ export default function FollowUpDetailScreen() {
                         </View>
 
                         {/* Footer Buttons */}
-                        <View className="border-t border-gray-100 px-4 py-3 flex-row gap-3 bg-white">
+                        <View className="border-t border-gray-100 px-4 py-3 flex-row gap-3 bg-white ">
                             <TouchableOpacity
                                 onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'view', activityId: activity.id || '' })}
-                                className="flex-1 flex-row items-center justify-center gap-2 bg-gray-50 py-3 rounded-lg border border-gray-200"
+                                className="flex-1 flex-row items-center justify-center gap-2 py-3 rounded-lg bg-teal-100"
                             >
                                 <Eye size={14} color="#6b7280" />
-                                <Text className="text-blue-600 text-sm font-semibold">View</Text>
+                                <Text className="text-teal-600 text-sm font-semibold ">View</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id || '' })}
-                                className="flex-1 flex-row items-center justify-center gap-2 bg-gray-800 py-3 rounded-lg"
+                                className="flex-1 flex-row items-center justify-center gap-2 bg-teal-600 py-3 rounded-lg"
                             >
                                 <Edit size={14} color="white" />
                                 <Text className="text-white text-sm font-semibold">Edit</Text>
@@ -733,6 +774,15 @@ export default function FollowUpDetailScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Attach Quotation Modal */}
+            <AttachQuotationModal
+                visible={showAttachQuotationModal}
+                onClose={closeAttachQuotationModal}
+                onAttach={handleAttachQuotation}
+                customerId={customer.customerId}
+                excludeIds={quotations.map(q => q.id)}
+            />
 
             {/* Bottom Navigation Buttons */}
             <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
