@@ -9,13 +9,13 @@ import {
     KeyboardAvoidingView,
     Platform,
     Modal,
+    Dimensions,
     ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Calendar, Clock, X, Eye } from 'lucide-react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { ChevronLeft, Calendar, Clock, X, ChevronDown, Eye } from 'lucide-react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
@@ -86,6 +86,7 @@ export default function ActivityViewEditScreen() {
                 }
             }
         } catch (err) {
+            console.error('Error fetching activity:', err);
             Alert.alert('Error', 'Failed to load activity details');
         } finally {
             setLoading(false);
@@ -131,6 +132,7 @@ export default function ActivityViewEditScreen() {
                 { text: 'OK', onPress: () => navigation.goBack() }
             ]);
         } catch (err) {
+            console.error('Error updating activity:', err);
             Alert.alert('Error', 'Failed to update activity');
         }
     };
@@ -157,70 +159,27 @@ export default function ActivityViewEditScreen() {
         </Text>
     );
 
-    const getAssociatedDocuments = useCallback(() => {
+    const getAssociatedDocuments = () => {
         if (!activityDetail) return [];
-
-        const docs = [];
-
-        try {
-            if (activityDetail.quotation) {
-                const quotations = Array.isArray(activityDetail.quotation)
-                    ? activityDetail.quotation
-                    : [activityDetail.quotation];
-
-                quotations.forEach(q => {
-                    if (q?.pdfWithBrochure) {
-                        docs.push({
-                            type: 'PDF WITH BROCHURE',
-                            id: q.quotationId,
-                            status: 'Generated',
-                            url: q.pdfWithBrochure
-                        });
-                    }
-                    if (q?.pdfWithOutBrochure) {
-                        docs.push({
-                            type: 'PDF WITHOUT BROCHURE',
-                            id: q.quotationId,
-                            status: 'Generated',
-                            url: q.pdfWithOutBrochure
-                        });
-                    }
-                });
-            }
-
-            if (activityDetail.booking?.authentication) {
-                const auth = activityDetail.booking.authentication;
-                if (auth.beforeVerification) {
-                    docs.push({
-                        type: 'BEFORE VERIFICATION',
-                        id: activityDetail.booking.bookingId,
-                        status: 'Generated',
-                        url: auth.beforeVerification
-                    });
-                }
-                if (auth.afterVerification) {
-                    docs.push({
-                        type: 'AFTER VERIFICATION',
-                        id: activityDetail.booking.bookingId,
-                        status: 'Generated',
-                        url: auth.afterVerification
-                    });
-                }
-            }
-        } catch (error) {
-            return [];
+        const docs: any[] = [];
+        if (activityDetail.quotation) {
+            const q = activityDetail.quotation;
+            if (q.pdfWithBrochure) docs.push({ type: 'PDF WITH BROCHURE', id: q.quotationId, status: 'Generated', url: q.pdfWithBrochure });
+            if (q.pdfWithOutBrochure) docs.push({ type: 'PDF WITHOUT BROCHURE', id: q.quotationId, status: 'Generated', url: q.pdfWithOutBrochure });
         }
-
+        if (activityDetail.booking) {
+            const b = activityDetail.booking;
+            if (b.authentication?.beforeVerification) docs.push({ type: 'BEFORE VERIFICATION', id: b.bookingId, status: 'Generated', url: b.authentication.beforeVerification });
+            if (b.authentication?.afterVerification) docs.push({ type: 'AFTER VERIFICATION', id: b.bookingId, status: 'Generated', url: b.authentication.afterVerification });
+        }
         return docs;
-    }, [activityDetail]);
+    };
 
     const handleViewDocument = (url: string) => {
         if (!url) return;
         const absoluteUrl = url.startsWith('http') ? url : (ENDPOINT.endsWith('/') ? ENDPOINT : `${ENDPOINT}/`) + (url.startsWith('/') ? url.slice(1) : url);
         Alert.alert('View Document', `Opening document: ${absoluteUrl}`);
     };
-
-    const handleGoBack = () => navigation.goBack();
 
     if (loading) {
         return (
@@ -235,12 +194,12 @@ export default function ActivityViewEditScreen() {
             {/* Header */}
             <View className="bg-white border-b border-gray-100 px-4 py-3 flex-row items-center justify-between">
                 <View className="flex-row items-center">
-                    <TouchableOpacity onPress={handleGoBack} className="mr-3">
+                    <TouchableOpacity onPress={() => navigation.goBack()} className="mr-3">
                         <ChevronLeft size={22} color={COLORS.gray[900]} />
                     </TouchableOpacity>
                     <Text className="text-gray-900 text-lg font-bold">Activity Editor</Text>
                 </View>
-                <TouchableOpacity onPress={handleGoBack}>
+                <TouchableOpacity onPress={() => navigation.goBack()}>
                     <X size={22} color={COLORS.gray[400]} />
                 </TouchableOpacity>
             </View>
@@ -248,10 +207,16 @@ export default function ActivityViewEditScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
                 {/* Tabs */}
                 <View className="border-b border-gray-200 bg-white flex-row">
-                    <TouchableOpacity onPress={() => setActiveTab('details')} className={`px-6 py-3 border-b-2 ${activeTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}>
+                    <TouchableOpacity
+                        onPress={() => setActiveTab('details')}
+                        className={`px-6 py-3 border-b-2 ${activeTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}
+                    >
                         <Text className={`text-sm font-bold ${activeTab === 'details' ? 'text-teal-600' : 'text-gray-600'}`}>Activity Details</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setActiveTab('documents')} className={`px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}>
+                    <TouchableOpacity
+                        onPress={() => setActiveTab('documents')}
+                        className={`px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
+                    >
                         <Text className={`text-sm font-bold ${activeTab === 'documents' ? 'text-teal-600' : 'text-gray-600'}`}>Associated Documents</Text>
                     </TouchableOpacity>
                 </View>
@@ -259,14 +224,14 @@ export default function ActivityViewEditScreen() {
                 <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
                     {activeTab === 'details' ? (
                         <View className="p-5">
-                            {/* Session Info */}
+                            {/* Session Info Rows */}
                             <View className="flex-row gap-4 mb-5">
                                 <View className="flex-1 bg-white p-3 rounded-xl border border-gray-100">
                                     <Text className="text-[11px] text-gray-500 mb-0.5">Activity Session ID:</Text>
                                     <Text className="text-xs font-bold text-gray-900">{activityDetail?.activityId || '-'}</Text>
                                 </View>
                                 <View className="flex-1 bg-white p-3 rounded-xl border border-gray-100">
-                                    <Text className="text-[11px] text-gray-500 mb-0.5"></Text>
+                                    <Text className="text-[11px] text-gray-500 mb-0.5">Session Date:</Text>
                                     <Text className="text-xs font-bold text-gray-900">
                                         {activityDetail?.createdAt ? moment(activityDetail.createdAt).format('DD-MM-YYYY') : '-'}
                                     </Text>
@@ -286,25 +251,16 @@ export default function ActivityViewEditScreen() {
                                 </View>
                             </View>
 
-                            {(activityDetail?.quotation && (Array.isArray(activityDetail.quotation) ? activityDetail.quotation.length > 0 : activityDetail.quotation)) && (
+                            {activityDetail?.quotation && (
                                 <View className="flex-row gap-4 mb-5">
                                     <View className="flex-1 bg-white p-3 rounded-xl border border-gray-100">
                                         <Text className="text-[11px] text-gray-500 mb-0.5">Quotation ID:</Text>
-                                        <Text className="text-xs font-bold text-teal-600">
-                                            {Array.isArray(activityDetail.quotation)
-                                                ? activityDetail.quotation[0]?.quotationId || '-'
-                                                : activityDetail.quotation?.quotationId || '-'}
-                                        </Text>
+                                        <Text className="text-xs font-bold text-teal-600">{activityDetail.quotation.quotationId}</Text>
                                     </View>
                                     <View className="flex-1 bg-white p-3 rounded-xl border border-gray-100">
                                         <Text className="text-[11px] text-gray-500 mb-0.5">Vehicles:</Text>
                                         <Text className="text-xs font-bold text-gray-900" numberOfLines={1}>
-                                            {(() => {
-                                                const quotation = Array.isArray(activityDetail.quotation)
-                                                    ? activityDetail.quotation[0]
-                                                    : activityDetail.quotation;
-                                                return quotation?.vehicle?.map((v: any) => v.vehicleDetail?.modelName || v.modelName).join(', ') || '-';
-                                            })()}
+                                            {activityDetail.quotation.vehicle?.map((v: any) => v.vehicleDetail?.modelName || v.modelName).join(', ') || '-'}
                                         </Text>
                                     </View>
                                 </View>
@@ -332,23 +288,15 @@ export default function ActivityViewEditScreen() {
                                             key={t}
                                             disabled={mode === 'view'}
                                             onPress={() => setEnquiryType(t)}
-                                            className={`flex-1 h-11 rounded-lg items-center justify-center border ${
-                                                enquiryType === t
-                                                    ? 'bg-teal-600 border-teal-600'
-                                                    : (mode === 'view' ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300')
-                                            }`}
+                                            className={`flex-1 h-11 rounded-lg items-center justify-center border ${enquiryType === t ? 'bg-teal-600 border-teal-600' : (mode === 'view' ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300')}`}
                                         >
-                                            <Text className={
-                                                enquiryType === t
-                                                    ? 'text-white font-bold'
-                                                    : (mode === 'view' ? 'text-gray-400' : 'text-gray-700 font-medium')
-                                            }>{t}</Text>
+                                            <Text className={enquiryType === t ? 'text-white font-bold' : (mode === 'view' ? 'text-gray-400' : 'text-gray-700 font-medium')}>{t}</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </View>
                             </View>
 
-                            {/* Next Followup Date & Time */}
+                            {/* Next Followup Date & Time - REQUIRED VERTICAL */}
                             <View className="mb-5">
                                 <FormLabel label="Next Follow-up Date" required />
                                 {mode === 'edit' ? (
@@ -403,15 +351,13 @@ export default function ActivityViewEditScreen() {
                                     onChangeText={setRemarks}
                                     textAlignVertical="top"
                                     placeholder="Enter remarks here..."
-                                    className={`min-h-[100px] rounded-xl px-4 py-3 text-gray-900 border ${
-                                        mode === 'edit' ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-200'
-                                    }`}
+                                    className={`min-h-[100px] rounded-xl px-4 py-3 text-gray-900 border ${mode === 'edit' ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-200'}`}
                                 />
                             </View>
                         </View>
                     ) : (
                         <View className="p-4">
-                            <View className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                            <View className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm shadow-black/5">
                                 <View className="bg-gray-100 px-3 py-3 flex-row border-b border-gray-200">
                                     <Text className="text-[10px] font-bold text-gray-700 flex-1">Document Type</Text>
                                     <Text className="text-[10px] font-bold text-gray-700 w-24">Document ID</Text>
@@ -424,7 +370,10 @@ export default function ActivityViewEditScreen() {
                                             <Text className="text-[10px] text-gray-900 flex-1 font-semibold" numberOfLines={2}>{doc.type}</Text>
                                             <Text className="text-[10px] text-gray-500 w-24">{doc.id}</Text>
                                             <Text className="text-[10px] text-gray-500 w-16 text-center">{doc.status}</Text>
-                                            <TouchableOpacity className="w-12 items-center" onPress={() => handleViewDocument(doc.url)}>
+                                            <TouchableOpacity
+                                                className="w-12 items-center"
+                                                onPress={() => handleViewDocument(doc.url)}
+                                            >
                                                 <Eye size={16} color={COLORS.primary} />
                                             </TouchableOpacity>
                                         </View>
@@ -441,15 +390,26 @@ export default function ActivityViewEditScreen() {
             </KeyboardAvoidingView>
 
             {/* Bottom Actions */}
-            <View className="bg-white border-t border-gray-200 p-4 flex-row justify-end gap-3">
-                <Button title={mode === 'edit' ? 'Cancel' : 'Close'} variant="outline" onPress={handleGoBack} className="flex-1" />
-                {mode === 'edit' && <Button title="Save" onPress={handleSave} className="flex-[2]" />}
+            <View className="bg-white border-t border-gray-200 p-4 flex-row justify-end gap-3 shadow-2xl">
+                <Button
+                    title={mode === 'edit' ? 'Cancel' : 'Close'}
+                    variant="outline"
+                    onPress={() => navigation.goBack()}
+                    className="flex-1"
+                />
+                {mode === 'edit' && (
+                    <Button
+                        title="Save"
+                        onPress={handleSave}
+                        className="flex-[2]"
+                    />
+                )}
             </View>
 
             {/* Calendar Modal */}
             <Modal visible={showDatePicker} transparent animationType="fade" onRequestClose={() => setShowDatePicker(false)}>
                 <View className="flex-1 bg-black/50 items-center justify-center px-4">
-                    <View className="bg-white rounded-2xl p-4 w-full max-w-sm">
+                    <View className="bg-white rounded-2xl p-4 w-full max-w-sm shadow-2xl">
                         <View className="flex-row items-center justify-between mb-4 border-b border-gray-100 pb-3">
                             <Text className="text-gray-900 font-bold text-lg">Select Date</Text>
                             <TouchableOpacity onPress={() => setShowDatePicker(false)}>
@@ -469,8 +429,15 @@ export default function ActivityViewEditScreen() {
                                 selectedDayBackgroundColor: COLORS.primary,
                                 selectedDayTextColor: '#fff',
                                 arrowColor: COLORS.primary,
+                                textDayFontWeight: '500',
+                                textMonthFontWeight: 'bold',
+                                textDayHeaderFontWeight: '600',
                             }}
-                            markedDates={toCalendarDate(followupDate) ? { [toCalendarDate(followupDate)]: { selected: true } } : undefined}
+                            markedDates={
+                                toCalendarDate(followupDate)
+                                    ? { [toCalendarDate(followupDate)]: { selected: true, selectedColor: COLORS.primary } }
+                                    : undefined
+                            }
                         />
                     </View>
                 </View>
@@ -503,9 +470,7 @@ export default function ActivityViewEditScreen() {
                             <View className="flex-row">
                                 {/* Hours */}
                                 <View style={{ flex: 1 }}>
-                                    <View className="bg-gray-50 py-2 items-center border-b border-gray-100">
-                                        <Text className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">Hour</Text>
-                                    </View>
+                                    <View className="bg-gray-50 py-2 items-center border-b border-gray-100"><Text className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">Hour</Text></View>
                                     <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
                                         {buildHourOptions().map((hour) => (
                                             <TouchableOpacity
@@ -523,9 +488,7 @@ export default function ActivityViewEditScreen() {
                                 <View style={{ width: 1, backgroundColor: '#f1f5f9' }} />
                                 {/* Minutes */}
                                 <View style={{ flex: 1 }}>
-                                    <View className="bg-gray-50 py-2 items-center border-b border-gray-100">
-                                        <Text className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">Minute</Text>
-                                    </View>
+                                    <View className="bg-gray-50 py-2 items-center border-b border-gray-100"><Text className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">Minute</Text></View>
                                     <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
                                         {minuteOptions.map((minute) => (
                                             <TouchableOpacity
@@ -562,3 +525,7 @@ export default function ActivityViewEditScreen() {
         </SafeAreaView>
     );
 }
+
+
+
+

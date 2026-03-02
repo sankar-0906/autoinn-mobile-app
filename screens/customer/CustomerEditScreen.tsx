@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Edit2, Trash2 } from 'lucide-react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
@@ -164,18 +164,9 @@ const EmptyState = ({ message }: { message: string }) => (
 
 // ── Main Screen ─────────────────────────────────────────────────────────────
 
-// Add debug logging at module level
-console.log('CustomerEditScreen module loaded');
-
-export default function CustomerEditScreen({ navigation, route }: { navigation: CustomerEditNavigationProp; route: CustomerEditRouteProp }) {
-    // Guard against missing navigation context
-    if (!navigation || !route) {
-        return null;
-    }
-    
-    console.log('CustomerEditScreen rendering');
-    console.log('Route params:', route.params);
-
+export default function CustomerEditScreen() {
+    const navigation = useNavigation<CustomerEditNavigationProp>();
+    const route = useRoute<CustomerEditRouteProp>();
     const customerId = route.params?.customerId || '';
     const customerName = route.params?.customerName || '';
 

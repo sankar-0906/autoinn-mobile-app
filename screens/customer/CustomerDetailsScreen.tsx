@@ -2,11 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Eye } from 'lucide-react-native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../navigation/types';
+import { useNavigation } from '@react-navigation/native';
 import { Button } from '../../components/ui/Button';
 import { COLORS } from '../../constants/colors';
-import AssociatedQuotations from '../../components/AssociatedQuotations';
 
 const CUSTOMER_TABS = [
     { id: 'customer-details', label: 'Customer Details' },
@@ -20,17 +18,8 @@ const CUSTOMER_TABS = [
     { id: 'payments', label: 'Payments' },
 ] as const;
 
-console.log('CustomerDetailsScreen module loaded');
-
-type CustomerDetailsNavigationProp = StackNavigationProp<RootStackParamList, 'CustomerDetails'>;
-
-export default function CustomerDetailsScreen({ navigation }: { navigation: CustomerDetailsNavigationProp }) {
-    // Guard against missing navigation context
-    if (!navigation) {
-        return null;
-    }
-    
-    console.log('CustomerDetailsScreen rendering');
+export default function CustomerDetailsScreen() {
+    const navigation = useNavigation<any>();
     const [customerTab, setCustomerTab] = useState<(typeof CUSTOMER_TABS)[number]['id']>('customer-details');
 
     const customer = {
@@ -92,10 +81,27 @@ export default function CustomerDetailsScreen({ navigation }: { navigation: Cust
 
         if (customerTab === 'quotations') {
             return (
-                <AssociatedQuotations
-                    quotations={quotations}
-                    onViewQuotation={(quotation) => navigation.navigate('QuotationView', { id: quotation.id })}
-                />
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row border-b border-gray-200">
+                        <Text className="text-[10px] font-bold text-gray-700 w-24">Date</Text>
+                        <Text className="text-[10px] font-bold text-gray-700 flex-1">Quotation ID</Text>
+                        <Text className="text-[10px] font-bold text-gray-700 flex-1">Model</Text>
+                        <Text className="text-[10px] font-bold text-gray-700 w-14 text-center">Action</Text>
+                    </View>
+                    {quotations.map((q, index) => (
+                        <View key={q.id} className={`px-3 py-3 flex-row items-center border-b border-gray-50 ${index % 2 ? 'bg-gray-50/50' : 'bg-white'}`}>
+                            <Text className="text-[10px] text-gray-600 w-24">17/02/2026</Text>
+                            <Text className="text-[10px] text-teal-600 font-bold flex-1">{q.id}</Text>
+                            <Text className="text-[10px] text-gray-800 flex-1" numberOfLines={1}>{q.vehicle}</Text>
+                            <TouchableOpacity
+                                className="w-14 items-center"
+                                onPress={() => navigation.navigate('QuotationView', { id: q.id })}
+                            >
+                                <Eye size={16} color={COLORS.primary} />
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                </View>
             );
         }
 

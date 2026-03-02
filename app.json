@@ -13,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sankar-sr.autocloudmobileapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +33,9 @@
         "projectId": "b49e4bc6-0af7-40ee-b71b-a9b851671e31"
       }
     },
-    "owner": "sankar_sr"
+    "owner": "sankar_sr",
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
