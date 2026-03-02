@@ -139,61 +139,75 @@ export default function ActivityViewEditScreen() {
     );
 
     const getAssociatedDocuments = useCallback(() => {
+        // Return empty array if no activity detail
         if (!activityDetail) return [];
+        
         const docs = [];
-
+        
         try {
-            // Handle quotations
+            // Handle quotations safely
             if (activityDetail.quotation) {
-                const quotations = Array.isArray(activityDetail.quotation)
-                    ? activityDetail.quotation
+                // Ensure quotation is treated as array
+                const quotations = Array.isArray(activityDetail.quotation) 
+                    ? activityDetail.quotation 
                     : [activityDetail.quotation];
-
-                quotations.forEach(q => {
-                    if (q?.pdfWithBrochure) {
+                
+                // Filter out any null/undefined quotations
+                quotations.filter(Boolean).forEach(q => {
+                    // Safely check for pdfWithBrochure
+                    if (q?.pdfWithBrochure && typeof q.pdfWithBrochure === 'string') {
                         docs.push({
                             type: 'PDF WITH BROCHURE',
-                            id: q.quotationId,
+                            id: q.quotationId || q.id || 'N/A',
                             status: 'Generated',
                             url: q.pdfWithBrochure
                         });
                     }
-                    if (q?.pdfWithOutBrochure) {
+                    
+                    // Safely check for pdfWithOutBrochure
+                    if (q?.pdfWithOutBrochure && typeof q.pdfWithOutBrochure === 'string') {
                         docs.push({
                             type: 'PDF WITHOUT BROCHURE',
-                            id: q.quotationId,
+                            id: q.quotationId || q.id || 'N/A',
                             status: 'Generated',
                             url: q.pdfWithOutBrochure
                         });
                     }
                 });
             }
-
-            // Handle booking
-            if (activityDetail.booking?.authentication) {
-                const auth = activityDetail.booking.authentication;
-                if (auth.beforeVerification) {
-                    docs.push({
-                        type: 'BEFORE VERIFICATION',
-                        id: activityDetail.booking.bookingId,
-                        status: 'Generated',
-                        url: auth.beforeVerification
-                    });
-                }
-                if (auth.afterVerification) {
-                    docs.push({
-                        type: 'AFTER VERIFICATION',
-                        id: activityDetail.booking.bookingId,
-                        status: 'Generated',
-                        url: auth.afterVerification
-                    });
+            
+            // Handle booking documents safely
+            if (activityDetail.booking && typeof activityDetail.booking === 'object') {
+                const booking = activityDetail.booking;
+                
+                // Safely check authentication
+                if (booking.authentication && typeof booking.authentication === 'object') {
+                    const auth = booking.authentication;
+                    
+                    if (auth?.beforeVerification && typeof auth.beforeVerification === 'string') {
+                        docs.push({
+                            type: 'BEFORE VERIFICATION',
+                            id: booking.bookingId || booking.id || 'N/A',
+                            status: 'Generated',
+                            url: auth.beforeVerification
+                        });
+                    }
+                    
+                    if (auth?.afterVerification && typeof auth.afterVerification === 'string') {
+                        docs.push({
+                            type: 'AFTER VERIFICATION',
+                            id: booking.bookingId || booking.id || 'N/A',
+                            status: 'Generated',
+                            url: auth.afterVerification
+                        });
+                    }
                 }
             }
         } catch (error) {
-            console.error('Error processing documents:', error);
-            return [];
+            console.error('Error in getAssociatedDocuments:', error);
+            return []; // Return empty array on error
         }
-
+        
         return docs;
     }, [activityDetail]);
 
@@ -440,32 +454,52 @@ export default function ActivityViewEditScreen() {
                             <Text className="text-sm font-bold text-gray-900 mb-3">Documents Generated:</Text>
 
                             {/* Documents Generated Table */}
-                            <View className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                            <View className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm shadow-black/5">
                                 {/* Table Header - Fixed */}
                                 <View className="bg-gray-100 px-3 py-3 flex-row border-b border-gray-200">
-                                    <Text className="text-[11px] font-bold text-gray-800 flex-1">Document Type</Text>
-                                    <Text className="text-[11px] font-bold text-gray-800 w-24">Document</Text>
-                                    <Text className="text-[11px] font-bold text-gray-800 w-16 text-center">Status</Text>
-                                    <Text className="text-[11px] font-bold text-gray-800 w-12 text-center">Action</Text>
+                                    <Text className="text-[10px] font-bold text-gray-700 flex-1">Document Type</Text>
+                                    <Text className="text-[10px] font-bold text-gray-700 w-24">Document ID</Text>
+                                    <Text className="text-[10px] font-bold text-gray-700 w-16 text-center">Status</Text>
+                                    <Text className="text-[10px] font-bold text-gray-700 w-12 text-center">Action</Text>
                                 </View>
 
-                                {/* Document Table Content - Real Data */}
-                                {getAssociatedDocuments().length > 0 ? (
-                                    getAssociatedDocuments().map((doc, idx) => (
-                                        <View key={idx} className={`px-3 py-4 flex-row items-center border-b border-gray-50 ${idx % 2 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                            <Text className="text-[10px] text-gray-900 font-semibold flex-1" numberOfLines={2}>{doc.type}</Text>
-                                            <Text className="text-[10px] text-gray-500 w-24">{doc.id}</Text>
-                                            <Text className="text-[10px] text-gray-500 w-16 text-center">{doc.status}</Text>
-                                            <TouchableOpacity className="w-12 items-center" onPress={() => handleViewDocument(doc.url)}>
-                                                <Eye size={16} color={COLORS.primary} />
-                                            </TouchableOpacity>
+                                {/* Safely get documents */}
+                                {(() => {
+                                    try {
+                                        const documents = getAssociatedDocuments();
+                                        if (documents && documents.length > 0) {
+                                            return documents.map((doc, idx) => (
+                                                <View key={idx} className={`px-3 py-4 flex-row items-center border-b border-gray-50 ${idx % 2 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                    <Text className="text-[10px] text-gray-900 flex-1 font-semibold" numberOfLines={2}>
+                                                        {doc.type || 'Unknown'}
+                                                    </Text>
+                                                    <Text className="text-[10px] text-gray-500 w-24">
+                                                        {doc.id || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-[10px] text-gray-500 w-16 text-center">
+                                                        {doc.status || 'N/A'}
+                                                    </Text>
+                                                    <TouchableOpacity 
+                                                        className="w-12 items-center" 
+                                                        onPress={() => doc.url && handleViewDocument(doc.url)}
+                                                        disabled={!doc.url}
+                                                    >
+                                                        <Eye size={16} color={doc.url ? COLORS.primary : COLORS.gray[400]} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            ));
+                                        }
+                                    } catch (error) {
+                                        console.error('Error rendering documents:', error);
+                                    }
+                                    
+                                    // Fallback UI when no documents or error
+                                    return (
+                                        <View className="py-12 items-center">
+                                            <Text className="text-gray-400 italic text-sm">No documents found</Text>
                                         </View>
-                                    ))
-                                ) : (
-                                    <View className="py-12 items-center">
-                                        <Text className="text-gray-400 italic text-sm">No documents found</Text>
-                                    </View>
-                                )}
+                                    );
+                                })()}
                             </View>
                         </View>
                     )}

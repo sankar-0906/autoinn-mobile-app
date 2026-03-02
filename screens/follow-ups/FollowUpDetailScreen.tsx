@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
     Modal,
     ScrollView,
@@ -6,22 +6,25 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
+    Alert,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { ChevronLeft, Eye, Edit, Phone, Car, User, Smartphone } from 'lucide-react-native';
+import { ChevronLeft, Eye, Edit, Phone, Car, User, Smartphone, CalendarDays, Clock } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { getActivitiesByCustomer, getCustomerByPhoneNo, getQuotationByCustomerId } from '../../src/api';
-import { ActivityIndicator, Alert } from 'react-native';
 
 type DetailRouteProp = RouteProp<RootStackParamList, 'FollowUpDetail'>;
 type DetailNavProp = StackNavigationProp<RootStackParamList, 'FollowUpDetail'>;
 
 type Activity = {
     id: string;
+    activityId: string;
     type: string;
     date: string;
     bookingId: string;
@@ -30,6 +33,10 @@ type Activity = {
     colorCode: string;
     supervisor: string;
     employee: string;
+    enquiryType: string;
+    remarks: string;
+    interactionType: string;
+    scheduleDateAndTime: string;
 };
 
 const CUSTOMER_TABS = [
@@ -44,16 +51,48 @@ const CUSTOMER_TABS = [
     { id: 'payments', label: 'Payments' },
 ] as const;
 
-export default function FollowUpDetailScreen({ navigation, route }: { navigation: DetailNavProp; route: DetailRouteProp }) {
+// Safe date formatting function that works in React Native
+const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}-${month}-${year}`;
+    } catch {
+        return '-';
+    }
+};
+
+const formatDateTime = (dateString: string | undefined) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${day}-${month}-${year} ${hours}:${minutes}`;
+    } catch {
+        return '-';
+    }
+};
+
+export default function FollowUpDetailScreen() {
+    const navigation = useNavigation<DetailNavProp>();
+    const route = useRoute<DetailRouteProp>();
     const { id: phoneNo } = route.params;
 
     const [loading, setLoading] = useState(true);
     const [customer, setCustomer] = useState<any>(null);
     const [quotations, setQuotations] = useState<any[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
-
-    const [showAttachModal, setShowAttachModal] = useState(false);
-    const [quotationId, setQuotationId] = useState('');
 
     const [showCustomerModal, setShowCustomerModal] = useState(false);
     const [customerTab, setCustomerTab] = useState<(typeof CUSTOMER_TABS)[number]['id']>('customer-details');
@@ -67,15 +106,15 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
     const [followupTime, setFollowupTime] = useState('');
     const [remarks, setRemarks] = useState('');
 
-    const fetchData = React.useCallback(async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            // 1. Fetch customers by phone
             const customerRes = await getCustomerByPhoneNo(phoneNo);
             const customers = customerRes.data?.response?.data?.customers || [];
 
             if (customers.length > 0) {
                 const firstCustomer = customers[0];
+
                 setCustomer({
                     name: firstCustomer.name || 'Unknown',
                     customerId: firstCustomer.id,
@@ -92,11 +131,9 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
 
                 const customerIds = customers.map((c: any) => c.id);
 
-                // 2. Fetch quotations (using the first customer's ID for now, similar to web)
                 const quotationRes = await getQuotationByCustomerId(firstCustomer.id);
                 const qData = quotationRes.data?.response?.data || [];
 
-                // Transform quotations data safely
                 const transformedQuotations = qData.map((q: any) => {
                     const vehicleLabel = q.vehicleMaster?.modelName
                         || (Array.isArray(q.vehicle) && q.vehicle.length > 0
@@ -116,36 +153,78 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                     setFollowupTime(latest.scheduleTime || '');
                 }
 
-                // 3. Fetch activities for all associated customer IDs
                 const activityRes = await getActivitiesByCustomer({
                     ids: customerIds,
                     limit: 15,
                     offset: 0
                 });
+
                 const aData = activityRes.data?.response?.data || [];
-                setActivities(aData.map((a: any) => ({
-                    id: a.id,
-                    type: a.activityType || 'Activity',
-                    date: a.createdAt ? (new Date(a.createdAt)).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-',
-                    bookingId: a.bookingId || '-',
-                    customerAuth: a.customerAuthStatus || 'Not verified',
-                    vehicle: a.vehicleModel || '-',
-                    colorCode: a.colorCode || '-',
-                    supervisor: a.supervisor || '-',
-                    employee: a.employeeName || '-',
-                })));
+
+                setActivities(aData.map((a: any) => {
+                    // Safely extract values with null checks
+                    const createdBy = a.createdBy?.profile?.employeeName || '-';
+                    const bookingId = a.booking?.bookingId || '-';
+                    const customerAuth = a.customerAuthStatus || 'Not verified';
+                    
+                    // Handle vehicle data - extract multiple models if available
+                    let vehicleModels = [];
+                    if (a.quotation?.vehicle && Array.isArray(a.quotation.vehicle)) {
+                        vehicleModels = a.quotation.vehicle.map((v: any) => 
+                            v?.vehicleDetail?.modelName || 
+                            v?.modelName || 
+                            v?.vehicle || 
+                            'Unknown Model'
+                        ).filter(Boolean);
+                    } else if (a.quotation?.vehicleMaster?.modelName) {
+                        vehicleModels = [a.quotation.vehicleMaster.modelName];
+                    } else if (a.vehicleModel) {
+                        vehicleModels = [a.vehicleModel];
+                    } else if (typeof a.quotation?.vehicle === 'string') {
+                        vehicleModels = [a.quotation.vehicle.replace('.', '')];
+                    }
+                    
+                    const vehicleDisplay = vehicleModels.length > 0 
+                        ? vehicleModels.join(', ') 
+                        : '-';
+                    
+                    const colorCode = a.colorCode || '-';
+                    const supervisor = a.supervisor || '-';
+                    const enquiryType = a.enquiryType || '-';
+                    const remarks = a.remarks || '-';
+                    const interactionType = a.interactionType || '-';
+                    const scheduleDateAndTime = a.scheduleDateAndTime ? formatDateTime(a.scheduleDateAndTime) : '-';
+
+                    return {
+                        id: a.id,
+                        activityId: a.activityId || '-',
+                        type: a.activityType || 'Activity',
+                        date: a.createdAt ? formatDateTime(a.createdAt) : '-',
+                        bookingId: bookingId,
+                        customerAuth: customerAuth,
+                        vehicle: vehicleDisplay,
+                        colorCode: colorCode,
+                        supervisor: supervisor,
+                        employee: createdBy,
+                        enquiryType: enquiryType,
+                        remarks: remarks,
+                        interactionType: interactionType,
+                        scheduleDateAndTime: scheduleDateAndTime,
+                        quotationId: a.quotation?.quotationId || '-',
+                    };
+                }));
             } else {
                 Alert.alert('Error', 'Customer not found');
             }
         } catch (error) {
-            console.error('Error fetching detail data:', error);
+            console.error('Error in fetchData:', error);
             Alert.alert('Error', 'Failed to load data');
         } finally {
             setLoading(false);
         }
     }, [phoneNo]);
 
-    React.useEffect(() => {
+    useEffect(() => {
         fetchData();
     }, [fetchData]);
 
@@ -198,8 +277,8 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         <Text className="text-xs font-semibold text-gray-700 w-14 text-center">Action</Text>
                     </View>
                     {quotations.map((q, index) => (
-                        <View key={q.id} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                            <Text className="text-xs text-gray-700 w-24">{(new Date(q.createdAt)).toLocaleDateString('en-GB')}</Text>
+                        <View key={q.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                            <Text className="text-xs text-gray-700 w-24">{formatDate(q.createdAt)}</Text>
                             <Text className="text-xs text-teal-600 flex-1">{q.quotationId}</Text>
                             <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{q.vehicleMaster?.modelName || '-'}</Text>
                             <TouchableOpacity className="w-14 items-center">
@@ -246,12 +325,10 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         <Text className="text-lg font-bold text-gray-900">Follow-Ups</Text>
                     </View>
                 </View>
-
             </View>
 
             <ScrollView className="flex-1 p-4" showsVerticalScrollIndicator={false}>
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4 shadow">
-                    {/* header with name centered */}
                     <View className="flex-row items-center justify-center mb-4">
                         <User size={20} color={COLORS.gray[900]} className="mr-2" />
                         <Text className="text-xl font-semibold text-gray-900">
@@ -259,7 +336,6 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         </Text>
                     </View>
 
-                    {/* customer details centered */}
                     <View className="items-center mb-4">
                         <Text className="text-sm font-semibold text-gray-900">Customer ID: {customer.customerId}</Text>
                         <Text className="text-sm text-gray-600 mt-1">Customer Type: {customer.customerType}</Text>
@@ -268,7 +344,6 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         </Text>
                     </View>
 
-                    {/* actions */}
                     <View className="flex-row justify-center gap-3 border-t border-gray-100 pt-3">
                         <TouchableOpacity
                             onPress={() => setShowCustomerModal(true)}
@@ -278,7 +353,7 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                             <Text className="ml-2 text-xs font-medium text-gray-600">View Details</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('CustomerDetails')}
+                            onPress={() => navigation.navigate('CustomerEdit', { customerId: customer.customerId })}
                             className="flex-row items-center px-4 py-2 bg-teal-50 rounded-lg"
                         >
                             <Edit size={18} color="#0d9488" />
@@ -300,136 +375,191 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                             <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                 <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
                                 <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{vehicleDisplay}</Text>
-                                <Text className="text-xs text-gray-800 w-24">{q.createdAt ? new Date(q.createdAt).toLocaleDateString('en-GB') : '-'}</Text>
+                                <Text className="text-xs text-gray-800 w-24">{formatDate(q.createdAt)}</Text>
                                 <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                     <Eye size={14} color={COLORS.gray[600]} />
                                 </TouchableOpacity>
                             </View>
                         );
                     })}
-                    <View className="p-3 border-t border-gray-100">
-                        <Button title="Attach Quotation" className="w-full" onPress={() => setShowAttachModal(true)} />
-                    </View>
                 </View>
 
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
                     <View className="flex-row gap-3">
-                        <Button 
-                            title="Booking" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('BookingActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
+                        <Button
+                            title="Booking"
+                            variant="outline"
+                            className="flex-1"
+                            onPress={() => navigation.navigate('BookingActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })}
                         />
-                        <Button 
-                            title="Quotation" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('FollowUpQuotationForm', { customerName: customer.name, customerPhone: phoneNo, locality: customer.locality, customerType: customer.customerType, gender: customer.gender })} 
+                        <Button
+                            title="Quotation"
+                            variant="outline"
+                            className="flex-1"
+                            onPress={() => navigation.navigate('FollowUpQuotationForm', { customerName: customer.name, customerPhone: phoneNo, locality: customer.locality, customerType: customer.customerType, gender: customer.gender })}
                         />
                     </View>
                     <View className="flex-row gap-3 mt-3">
-                        <Button 
-                            title="Walk-In" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('WalkInActivity', { customerName: customer.name, customerId: customer.customerId })} 
+                        <Button
+                            title="Walk-In"
+                            variant="outline"
+                            className="flex-1"
+                            onPress={() => navigation.navigate('WalkInActivity', { customerName: customer.name, customerId: customer.customerId })}
                         />
-                        <Button 
-                            title="Call" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('CallActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
-                            icon={<Phone size={14} color={COLORS.primary} />} 
+                        <Button
+                            title="Call"
+                            variant="outline"
+                            className="flex-1"
+                            onPress={() => navigation.navigate('CallActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })}
+                            icon={<Phone size={14} color={COLORS.primary} />}
                         />
                     </View>
                 </View>
 
                 <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Activity</Text>
-                {activities.map((activity) => (
-                    <View key={activity.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
-                        <View className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex-row items-center justify-between">
-                            <Text className="text-sm font-semibold text-gray-900">{activity.type}</Text>
-                            <Text className="text-xs text-gray-500">{activity.date}</Text>
+                {activities && activities.length > 0 ? activities.map((activity) => {
+                    if (!activity || typeof activity !== 'object') return null;
+
+                    return <View key={activity.id} className="bg-white rounded-2xl shadow-md overflow-hidden border-0 mb-4">
+                        {/* Log vehicle and quotation data for debugging */}
+                        {console.log('=== Activity Data ===', {
+                            activityId: activity.activityId,
+                            quotationId: activity.quotationId || 'N/A',
+                            vehicleRaw: activity.vehicle,
+                            vehicleDisplay: activity.vehicle,
+                            interactionType: activity.interactionType,
+                            employee: activity.employee,
+                            scheduleDateAndTime: activity.scheduleDateAndTime
+                        })}
+                        
+                        {/* Header */}
+                        <View className="bg-white px-4 py-4 flex-row items-center justify-between border-b border-gray-100">
+                            <View className="flex-1">
+                                <Text className="text-gray-800 font-semibold text-base mb-0.5">
+                                    {activity.type || 'Activity'}
+                                </Text>
+                                <Text className="text-gray-500 text-xs">{activity.date || '-'}</Text>
+                            </View>
+
+                            <View className={`px-3 py-1.5 rounded-full ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
+                                    activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
+                                        'bg-blue-400'
+                                }`}>
+                                <Text className="text-white text-xs font-bold">
+                                    {activity.enquiryType || '-'}
+                                </Text>
+                            </View>
                         </View>
-                        <View className="p-4">
-                            <View className="flex-row items-start justify-between mb-3">
-                                <View>
-                                    <Text className="text-xs text-gray-500">Booking ID</Text>
-                                    <Text className="text-sm font-medium text-gray-900">{activity.bookingId}</Text>
+
+                        {/* Content */}
+                        <View className="px-4 py-4 space-y-4 bg-white">
+                            {/* Row 1 - Activity ID and Interaction Type */}
+                            <View className="ml-2 flex-row gap-4 mb-2">
+                                <View className="flex-1">
+                                    <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                        Activity ID
+                                    </Text>
+                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                        {activity.activityId || '-'}
+                                    </Text>
                                 </View>
-                                <View className="items-end">
-                                    <Text className="text-xs text-red-600 mb-2">next</Text>
-                                    <View className="flex-row">
-                                        <TouchableOpacity className="mr-3" onPress={() => openActivityModal('view')}>
-                                            <Eye size={16} color={COLORS.gray[600]} />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id })}>
-                                            <Edit size={16} color={COLORS.gray[600]} />
-                                        </TouchableOpacity>
+
+                                <View className="flex-1">
+                                    <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                        Interaction Type
+                                    </Text>
+                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                        {activity.interactionType || '-'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Row 2 - Follow-up Date and Time */}
+                            <View className="flex-row gap-4 mb-2 mt-4">
+                                <View className="flex-1 flex-row items-center gap-2">
+                                    <CalendarDays size={14} color="#6b7280" />
+                                    <View className="flex-1">
+                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                            Followup Date
+                                        </Text>
+                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                            {activity.scheduleDateAndTime?.split(' ')[0] || '-'}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View className="flex-1 flex-row items-center gap-2">
+                                    <Clock size={14} color="#6b7280" />
+                                    <View className="flex-1">
+                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                            Followup Time
+                                        </Text>
+                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                            {activity.scheduleDateAndTime?.split(' ')[1] || '-'}
+                                        </Text>
                                     </View>
                                 </View>
                             </View>
 
-                            <Text className="text-xs text-gray-500 mb-1">Customer Authentication</Text>
-                            <Text className="text-sm text-red-600 font-semibold mb-3">{activity.customerAuth}</Text>
-
-                            <View className="bg-gray-50 rounded-xl p-3 mb-3 flex-row">
-                                <View className="w-12 h-12 rounded-full bg-white items-center justify-center mr-3">
-                                    <Car size={20} color={COLORS.gray[600]} />
+                            {/* Row 3 - Vehicle and Employee */}
+                            <View className="flex-row gap-4 mb-2 mt-4">
+                                <View className="flex-1 flex-row items-start gap-2">
+                                    <Car size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                    <View className="flex-1">
+                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                            Vehicle
+                                        </Text>
+                                        <Text className="text-gray-800 text-sm font-semibold leading-relaxed">
+                                            {activity.vehicle || '-'}
+                                        </Text>
+                                    </View>
                                 </View>
-                                <View className="flex-1">
-                                    <Text className="text-xs text-gray-500">Vehicle</Text>
-                                    <Text className="text-xs text-gray-800 mb-1" numberOfLines={2}>{activity.vehicle}</Text>
-                                    <Text className="text-xs text-gray-500">Color Code: <Text className="text-gray-900">{activity.colorCode}</Text></Text>
-                                    <Text className="text-xs text-gray-500">Supervisor: <Text className="text-gray-900">{activity.supervisor}</Text></Text>
+
+                                <View className="flex-1 flex-row items-center gap-2">
+                                    <View className="w-5 h-5 bg-gray-200 rounded-full items-center justify-center">
+                                        <Text className="text-gray-600 text-xs font-bold">
+                                            {activity.employee?.charAt(0)?.toUpperCase() || '-'}
+                                        </Text>
+                                    </View>
+                                    <View className="flex-1">
+                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                            Employee
+                                        </Text>
+                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                            {activity.employee || '-'}
+                                        </Text>
+                                    </View>
                                 </View>
                             </View>
+                        </View>
 
-                            <Text className="text-xs text-gray-500">Employee: <Text className="text-gray-900">{activity.employee}</Text></Text>
+                        {/* Footer Buttons */}
+                        <View className="border-t border-gray-100 px-4 py-3 flex-row gap-3 bg-white">
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'view', activityId: activity.id || '' })}
+                                className="flex-1 flex-row items-center justify-center gap-2 bg-gray-50 py-3 rounded-lg border border-gray-200"
+                            >
+                                <Eye size={14} color="#6b7280" />
+                                <Text className="text-blue-600 text-sm font-semibold">View</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id || '' })}
+                                className="flex-1 flex-row items-center justify-center gap-2 bg-gray-800 py-3 rounded-lg"
+                            >
+                                <Edit size={14} color="white" />
+                                <Text className="text-white text-sm font-semibold">Edit</Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
-                ))}
+                }) : (
+                    <View className="bg-white rounded-xl border border-gray-200 p-8 mb-4">
+                        <Text className="text-center text-gray-400">No activities found</Text>
+                    </View>
+                )}
             </ScrollView>
 
-            <Modal
-                visible={showAttachModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowAttachModal(false)}
-            >
-                <View className="flex-1 bg-black/40 justify-center px-4">
-                    <View className="bg-white rounded-xl overflow-hidden">
-                        <View className="bg-gray-500 px-4 py-3">
-                            <Text className="text-white font-semibold">Attach Quotation</Text>
-                        </View>
-                        <View className="p-4">
-                            <TextInput
-                                placeholder="Enter Quotation"
-                                value={quotationId}
-                                onChangeText={setQuotationId}
-                                className="h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                        </View>
-                        <View className="flex-row px-4 pb-4">
-                            <Button
-                                title="Cancel"
-                                variant="outline"
-                                className="flex-1 mr-2"
-                                onPress={() => setShowAttachModal(false)}
-                            />
-                            <Button
-                                title="Attach"
-                                className="flex-1 ml-2"
-                                onPress={() => {
-                                    setShowAttachModal(false);
-                                    setQuotationId('');
-                                }}
-                            />
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
+            {/* Customer Details Modal */}
             <Modal
                 visible={showCustomerModal}
                 transparent
@@ -471,6 +601,7 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                 </View>
             </Modal>
 
+            {/* Activity Modal */}
             <Modal
                 visible={showActivityModal}
                 transparent
@@ -582,16 +713,9 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                                         <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
                                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
                                     </View>
-                                    {[{ type: 'PDFWITHOUTBROCHURE', id: 'QDB/25-26/115' }, { type: 'PDFWITHBROCHURE', id: 'QDB/25-26/115' }].map((doc, idx) => (
-                                        <View key={doc.type} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-white' : 'bg-gray-50'}`}>
-                                            <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{doc.type}</Text>
-                                            <Text className="text-xs text-gray-700 w-28">{doc.id}</Text>
-                                            <Text className="text-xs text-gray-700 w-20">Initiated</Text>
-                                            <TouchableOpacity className="w-12 items-center">
-                                                <Text className="text-xs text-teal-600 font-semibold">View</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    ))}
+                                    <View className="py-8 items-center">
+                                        <Text className="text-gray-400 text-sm">No documents available</Text>
+                                    </View>
                                 </View>
                             )}
                         </ScrollView>
@@ -609,6 +733,7 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                     </View>
                 </View>
             </Modal>
+
             {/* Bottom Navigation Buttons */}
             <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
                 <Button
