@@ -363,7 +363,7 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                                         <TouchableOpacity className="mr-3" onPress={() => openActivityModal('view')}>
                                             <Eye size={16} color={COLORS.gray[600]} />
                                         </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => openActivityModal('edit')}>
+                                        <TouchableOpacity onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id })}>
                                             <Edit size={16} color={COLORS.gray[600]} />
                                         </TouchableOpacity>
                                     </View>

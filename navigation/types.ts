@@ -18,4 +18,5 @@ export type RootStackParamList = {
     BookingActivity: { customerName?: string; customerId?: string; customerPhone?: string };
     WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string };
     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string };
+    ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
 };

@@ -18,6 +18,7 @@ import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
 import BookingActivityScreen from '../screens/follow-ups/BookingActivityScreen';
 import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
 import CallActivityScreen from '../screens/follow-ups/CallActivityScreen';
+import ActivityViewEditScreen from '../screens/follow-ups/ActivityViewEditScreen';
 
 import { RootStackParamList } from './types';
 
@@ -49,6 +50,7 @@ export default function AppNavigator() {
             <Stack.Screen name="BookingActivity" component={BookingActivityScreen} />
             <Stack.Screen name="WalkInActivity" component={WalkInActivityScreen} />
             <Stack.Screen name="CallActivity" component={CallActivityScreen} />
+            <Stack.Screen name="ActivityViewEdit" component={ActivityViewEditScreen} />
         </Stack.Navigator>
     );
 }
