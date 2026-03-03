@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login, getCurrentUser } from '../../src/api';
 import { Eye, EyeOff, Lock, Phone, Check } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
+import { useToast } from '../../src/ToastContext';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -25,6 +26,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
     const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(false);
     const [loading, setLoading] = useState(false);
+    const toast = useToast();
 
     useEffect(() => {
         (async () => {
@@ -49,7 +51,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
 
     const handleLogin = async () => {
         if (!phone || !password) {
-            Alert.alert('Error', 'Please enter phone and password');
+            toast.error('Please enter phone and password');
             return;
         }
 
@@ -97,12 +99,11 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                 });
             } else {
                 const msg = (data && data.response && data.response.message) || 'Invalid credentials';
-
-                Alert.alert('Login Failed', msg);
+                toast.error(msg);
             }
         } catch (error) {
             console.error('Login error', error);
-            Alert.alert('Login Failed', 'Something went wrong. Please try again.');
+            toast.error('Something went wrong. Please try again.');
         } finally {
             setLoading(false);
         }

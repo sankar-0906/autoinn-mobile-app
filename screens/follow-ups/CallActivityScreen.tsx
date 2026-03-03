@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
     Text,
@@ -18,8 +19,9 @@ import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft, ChevronRight, Calendar, Clock, X, ChevronDown } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { getCustomerByPhoneNo } from '../../src/api';
+import { getCustomerByPhoneNo, placeCloudCall } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
+import { useToast } from '../../src/ToastContext';
 
 type CallActivityRouteProp = RouteProp<RootStackParamList, 'CallActivity'>;
 type CallActivityNavigationProp = StackNavigationProp<RootStackParamList, 'CallActivity'>;
@@ -130,6 +132,9 @@ export default function CallActivityScreen({
     const [dateError, setDateError] = useState('');
     const [timeError, setTimeError] = useState('');
     const [discardReasonError, setDiscardReasonError] = useState('');
+    const [loadingCall, setLoadingCall] = useState(false);
+    const [employeePhone, setEmployeePhone] = useState('');
+    const toast = useToast();
 
     const buildHourOptions = () => {
         const now = new Date();
@@ -166,15 +171,38 @@ export default function CallActivityScreen({
         });
     };
 
-    const handleCallCustomer = () => {
-        setDateError('');
-        setTimeError('');
-        let ok = true;
-        if (!scheduleDateValue) { setDateError('Required'); ok = false; }
-        if (!scheduleTimeValue) { setTimeError('Required'); ok = false; }
-        if (!ok) return;
-        Alert.alert('Success', 'Call customer');
-        navigation.goBack();
+    const handleCallCustomer = async () => {
+        if (!phone) {
+            toast.error('Please select a customer number first');
+            return;
+        }
+
+        const ePhone = await AsyncStorage.getItem('userPhone');
+        if (!ePhone) {
+            toast.error('Could not find your phone number. Please log in again.');
+            return;
+        }
+
+        try {
+            setLoadingCall(true);
+            const response = await placeCloudCall({
+                phone1: ePhone,
+                phone2: phone,
+                customerId: customerId,
+                type: 'CallActivity'
+            });
+
+            if (response.data.code === 200) {
+                toast.success('Call Initiated: TeleCMI is dialing your phone first.');
+            } else {
+                toast.error(response.data.message || 'Could not initiate bridge call.');
+            }
+        } catch (error) {
+            console.error('Cloud Call Error:', error);
+            toast.error('Something went wrong while placing the call.');
+        } finally {
+            setLoadingCall(false);
+        }
     };
 
     const handleDiscard = () => {
@@ -183,7 +211,7 @@ export default function CallActivityScreen({
             setDiscardReasonError('Required');
             return;
         }
-        Alert.alert('Success', 'Call activity discarded successfully');
+        toast.success('Call activity discarded successfully');
         setShowDiscardModal(false);
         navigation.goBack();
     };
@@ -327,7 +355,12 @@ export default function CallActivityScreen({
                         {/* Action buttons */}
                         <View className="mb-4 flex-row justify-between">
                             <Button title="Create Quotation" variant="outline" className="flex-1 mr-2" onPress={handleCreateQuotation} />
-                            <Button title="Call Customer" className="flex-1" onPress={handleCallCustomer} />
+                            <Button
+                                title={loadingCall ? "Calling..." : "Call Customer"}
+                                className="flex-1"
+                                disabled={loadingCall}
+                                onPress={handleCallCustomer}
+                            />
                         </View>
 
                         {/* Remarks */}

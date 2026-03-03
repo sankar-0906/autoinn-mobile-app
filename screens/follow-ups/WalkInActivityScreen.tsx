@@ -20,6 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { Dimensions } from 'react-native';
 import { getCustomerByPhoneNo } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
+import { useToast } from '../../src/ToastContext';
 
 export const SelectField = ({
     placeholder,
@@ -136,6 +137,7 @@ export default function WalkInActivityScreen({
     const [timeError, setTimeError] = useState('');
     const [phoneError, setPhoneError] = useState('');
     const [discardReasonError, setDiscardReasonError] = useState('');
+    const toast = useToast();
 
     const buildHourOptions = () => {
         const now = new Date();
@@ -225,7 +227,7 @@ export default function WalkInActivityScreen({
 
         if (!ok) return;
 
-        Alert.alert('Success', 'Walk-In activity created successfully');
+        toast.success('Walk-In activity created successfully');
         navigation.goBack();
     };
 
@@ -235,7 +237,7 @@ export default function WalkInActivityScreen({
             setDiscardReasonError('Required');
             return;
         }
-        Alert.alert('Success', 'Walk-In activity discarded successfully');
+        toast.success('Walk-In activity discarded successfully');
         setShowDiscardModal(false);
         navigation.goBack();
     };

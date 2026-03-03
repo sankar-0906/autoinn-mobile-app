@@ -82,16 +82,8 @@ export const getFinancers = () => {
   return platformApi.get('/api/financer');
 };
 
-export const getCustomerByPhoneNo = (phone: string) => {
-  return platformApi.get(`/api/customer/phone-no/${phone}`);
-};
-
 export const getFollowUps = (body: any) => {
   return platformApi.post('/api/customer/unique/phone', body);
-};
-
-export const getActivitiesByCustomer = (body: any) => {
-  return platformApi.post('/api/activity/customers', body);
 };
 
 export const getActivityById = (id: string) => {
@@ -111,6 +103,8 @@ export const searchQuotations = (searchParams: {
   size?: number;
   page?: number;
   except?: any;
+  matchType?: string;
+  caseSensitive?: boolean;
 }) => {
   return platformApi.post('/api/quotation/quotationSearch', searchParams);
 };
@@ -126,40 +120,95 @@ export const updateActivity = (id: string, body: any) => {
   return platformApi.put(`/api/activity/${id}`, body);
 };
 
-export const getQuotationByCustomerId = (id: string) => {
-  return platformApi.get(`/api/quotation/getCus/${id}`);
-};
-
 export const getCustomerById = (id: string) => {
   return platformApi.get(`/api/customer/${id}`);
 };
 
 export const getCustomerDetails = (id: string) => {
-  return platformApi.get(`/api/customer/details/${id}`);
+  return platformApi.get(`/api/customer/${id}`);
+};
+
+export const getQuotationsByCustomerId = (customerId: string) => {
+  return platformApi.get(`/api/quotation/customer/${customerId}`);
+};
+
+export const getCustomerByPhoneNo = (phoneNo: string) => {
+  return platformApi.get(`/api/customer/phone-no/${phoneNo}`);
+};
+
+export const getCustomerQuotations = (customerId: string) => {
+  return platformApi.get(`/api/quotation/getCus/${customerId}`);
 };
 
 export const getMergedCustomerData = (body: { ids: string[] }) => {
   return platformApi.post('/api/customer/merge', body);
 };
 
-export const attachQuotation = (body: any) => {
-  return platformApi.post('/api/quotation/attach/', body);
+export const getActivitiesByCustomer = (body: { ids: string[]; limit?: number; offset?: number }) => {
+  return platformApi.post('/api/activity/customers', body);
 };
 
-export const searchQuotation = (body: any) => {
-  return platformApi.post('/api/quotation/quotationSearch', body);
+export const updateCustomer = (customerId: string, customerData: any) => {
+  return platformApi.put(`/api/customer/${customerId}`, customerData);
+};
+
+export const attachQuotation = (quotationIds: string[]) => {
+  return platformApi.post('/api/quotation/attach/', quotationIds);
+};
+
+export const createQuotation = (quotationData: FormData) => {
+  return platformApi.post('/api/quotation', quotationData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+};
+
+export const scheduleFollowUp = (data: {
+  fupDateTime: string;
+  next?: boolean;
+  status?: string;
+  last_quotation?: string;
+  quotations?: string[];
+  phone: string;
+  filter?: any;
+}) => {
+  return platformApi.post('/api/quotation/scheduled', data);
+};
+
+// Dropdown data APIs from autoinn-fe
+export const getCountries = () => {
+  return platformApi.get('/api/csc/country');
+};
+
+export const getStates = (countryId: string) => {
+  return platformApi.post('/api/csc/states', { id: countryId });
+};
+
+export const getCities = (stateId: string) => {
+  return platformApi.post('/api/csc/cities', { id: stateId });
+};
+
+export const verifyGST = (gst: string) => {
+  return platformApi.post('/api/gstVerify', { gst });
+};
+
+export const generateCustomerId = () => {
+  return platformApi.post('/api/idGenerate/customer');
+};
+
+export const getReferredCustomers = (id: string) => {
+  return platformApi.get(`api/customer/reffered/${id}`);
+};
+
+export const deleteCustomerPhone = (phoneId: string) => {
+  return platformApi.delete(`api/customer/phone/${phoneId}`);
 };
 
 export const generateQuotationId = (branchId: string) => {
   return platformApi.post('/api/idGenerate/quotation', { branch: branchId });
 };
 
-export const createQuotation = (formData: FormData) => {
-  return platformApi.post('/api/quotation', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+export const placeCloudCall = (data: { phone1: string; phone2: string; customerId: string; type?: string }) => {
+  return platformApi.post('/api/cloudCall', data);
 };
 
 export default platformApi;

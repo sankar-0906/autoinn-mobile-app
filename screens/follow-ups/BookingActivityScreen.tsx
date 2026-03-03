@@ -16,6 +16,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
+import { useToast } from '../../src/ToastContext';
 
 type BookingActivityRouteProp = RouteProp<RootStackParamList, 'BookingActivity'>;
 type BookingActivityNavigationProp = StackNavigationProp<RootStackParamList, 'BookingActivity'>;
@@ -35,6 +36,7 @@ export default function BookingActivityScreen({
     route: BookingActivityRouteProp;
 }) {
     const { customerName = 'Customer', customerId = '', customerPhone = '' } = route.params || {};
+    const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<'customer' | 'vehicle' | 'payment'>('customer');
     const [paymentMode, setPaymentMode] = useState('cash');
@@ -144,7 +146,7 @@ export default function BookingActivityScreen({
             setActiveTab('vehicle');
         } else if (activeTab === 'vehicle') {
             if (!model) {
-                Alert.alert('Error', 'Please select a vehicle model');
+                toast.error('Please select a vehicle model');
                 return;
             }
             setActiveTab('payment');
@@ -160,7 +162,7 @@ export default function BookingActivityScreen({
     };
 
     const handleSaveComplete = () => {
-        Alert.alert('Success', 'Booking registered successfully');
+        toast.success('Booking registered successfully');
         navigation.goBack();
     };
 
@@ -195,14 +197,14 @@ export default function BookingActivityScreen({
                     <TouchableOpacity
                         onPress={() => setActiveTab('customer')}
                         className={`flex-1 py-3 flex-row items-center justify-center gap-2 border-b-2 ${activeTab === 'customer'
-                                ? 'border-teal-600'
-                                : 'border-transparent'
+                            ? 'border-teal-600'
+                            : 'border-transparent'
                             }`}
                     >
                         <Text
                             className={`text-sm font-medium ${activeTab === 'customer'
-                                    ? 'text-teal-600'
-                                    : 'text-gray-600'
+                                ? 'text-teal-600'
+                                : 'text-gray-600'
                                 }`}
                         >
                             Customer
@@ -215,14 +217,14 @@ export default function BookingActivityScreen({
                     <TouchableOpacity
                         onPress={() => setActiveTab('vehicle')}
                         className={`flex-1 py-3 flex-row items-center justify-center gap-2 border-b-2 ${activeTab === 'vehicle'
-                                ? 'border-teal-600'
-                                : 'border-transparent'
+                            ? 'border-teal-600'
+                            : 'border-transparent'
                             }`}
                     >
                         <Text
                             className={`text-sm font-medium ${activeTab === 'vehicle'
-                                    ? 'text-teal-600'
-                                    : 'text-gray-600'
+                                ? 'text-teal-600'
+                                : 'text-gray-600'
                                 }`}
                         >
                             Vehicle
@@ -235,14 +237,14 @@ export default function BookingActivityScreen({
                     <TouchableOpacity
                         onPress={() => setActiveTab('payment')}
                         className={`flex-1 py-3 flex-row items-center justify-center gap-2 border-b-2 ${activeTab === 'payment'
-                                ? 'border-teal-600'
-                                : 'border-transparent'
+                            ? 'border-teal-600'
+                            : 'border-transparent'
                             }`}
                     >
                         <Text
                             className={`text-sm font-medium ${activeTab === 'payment'
-                                    ? 'text-teal-600'
-                                    : 'text-gray-600'
+                                ? 'text-teal-600'
+                                : 'text-gray-600'
                                 }`}
                         >
                             Payment

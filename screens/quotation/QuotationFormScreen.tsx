@@ -24,6 +24,7 @@ import { ENDPOINT, getQuotationById } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useToast } from '../../src/ToastContext';
 
 type QuotationFormRouteProp = RouteProp<RootStackParamList, 'QuotationForm'>;
 type QuotationFormNavigationProp = StackNavigationProp<RootStackParamList, 'QuotationForm'>;
@@ -52,6 +53,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
     const [showExpectedPicker, setShowExpectedPicker] = useState(false);
     const [scheduleDateValue, setScheduleDateValue] = useState<Date | null>(null);
     const [expectedDateValue, setExpectedDateValue] = useState<Date | null>(null);
+    const toast = useToast();
 
     const formatDate = (value?: string) => {
         if (!value) return '-';
@@ -112,6 +114,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             .catch((err) => {
                 console.error('[QuotationForm] Fetch error:', err);
                 setQuotation(null);
+                toast.error('Failed to load quotation details');
             })
             .finally(() => { });
     }, [id]);
@@ -614,11 +617,6 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
                 </ScrollView>
             </KeyboardAvoidingView>
-
-            <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
-                <Button title="Back" variant="outline" className="flex-1" onPress={() => navigation.goBack()} />
-                <Button title="Save" className="flex-1 opacity-50" onPress={() => { }} />
-            </View>
 
             <Modal visible={showSchedulePicker} transparent animationType="fade" onRequestClose={() => setShowSchedulePicker(false)}>
                 <View className="flex-1 bg-black/40 items-center justify-center px-4">

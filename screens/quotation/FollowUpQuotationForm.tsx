@@ -20,6 +20,7 @@ import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { getCustomerByPhoneNo, getCurrentUser } from '../../src/api';
+import { useToast } from '../../src/ToastContext';
 
 type FollowUpQuotationFormRouteProp = RouteProp<RootStackParamList, 'FollowUpQuotationForm'>;
 type FollowUpQuotationFormNavigationProp = StackNavigationProp<RootStackParamList, 'FollowUpQuotationForm'>;
@@ -35,6 +36,8 @@ const STATUS_STEPS = ['Quoted', 'Booked', 'Sold'];
 
 export default function FollowUpQuotationForm({ navigation, route }: { navigation: FollowUpQuotationFormNavigationProp; route: FollowUpQuotationFormRouteProp }) {
     const { customerName: initialCustomerName, customerPhone: initialCustomerPhone, locality: initialLocality, customerType: initialCustomerType, gender: passedGender } = route.params;
+
+    const toast = useToast();
 
     // editable values
     const [phone, setPhone] = useState(initialCustomerPhone);
@@ -114,7 +117,7 @@ export default function FollowUpQuotationForm({ navigation, route }: { navigatio
                     if (name) setBranch(name);
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     const validate = () => {
@@ -177,12 +180,12 @@ export default function FollowUpQuotationForm({ navigation, route }: { navigatio
                             <FormLabel label="Customer Type" />
                             <TextInput value={customerType || '-'} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                         </View>
-                        
+
                         <View className="mb-4">
                             <FormLabel label="Locality" />
                             <TextInput value={locality || '-'} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                         </View>
-                        
+
                         <View className="mb-4">
                             <FormLabel label="Customer Phone" required />
                             <View className="flex-row gap-2">
@@ -249,14 +252,13 @@ export default function FollowUpQuotationForm({ navigation, route }: { navigatio
                         <View className="mb-4">
                             <FormLabel label="Schedule Follow-Up Time" required />
                             <View className="relative">
-                                <TextInput 
+                                <TextInput
                                     value={scheduleTimeValue || formatTime(scheduleDateValue || undefined)}
                                     editable={!!scheduleDateValue}
                                     onChangeText={(v) => { setScheduleTimeValue(v); setFieldErrors(prev => ({ ...prev, scheduleTime: '' })); }}
                                     placeholder="HH:MM"
-                                    className={`h-12 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800 ${
-                                        scheduleDateValue ? 'bg-white' : 'bg-gray-100'
-                                    }`} 
+                                    className={`h-12 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800 ${scheduleDateValue ? 'bg-white' : 'bg-gray-100'
+                                        }`}
                                 />
                                 <View className="absolute right-4 top-3.5">
                                     <Clock size={18} color={COLORS.gray[400]} />
@@ -281,12 +283,11 @@ export default function FollowUpQuotationForm({ navigation, route }: { navigatio
                         <View className="mb-4">
                             <FormLabel label="Expected Date of Purchase" required />
                             <View className="relative">
-                                <TextInput 
-                                    value={formatDate(expectedDateValue || undefined)} 
-                                    editable={!!scheduleDateValue} 
-                                    className={`h-12 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800 ${
-                                        scheduleDateValue ? 'bg-white' : 'bg-gray-100'
-                                    }`} 
+                                <TextInput
+                                    value={formatDate(expectedDateValue || undefined)}
+                                    editable={!!scheduleDateValue}
+                                    className={`h-12 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800 ${scheduleDateValue ? 'bg-white' : 'bg-gray-100'
+                                        }`}
                                 />
                                 <TouchableOpacity
                                     disabled={!scheduleDateValue}
@@ -396,7 +397,7 @@ export default function FollowUpQuotationForm({ navigation, route }: { navigatio
                     className="flex-1"
                     onPress={() => {
                         if (validate()) {
-                            Alert.alert('Saved', 'Form validation passed (save logic not implemented)');
+                            toast.success('Form validation passed (save logic not implemented)');
                         }
                     }}
                 />

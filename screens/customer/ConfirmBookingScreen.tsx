@@ -10,6 +10,7 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
+import { useToast } from '../../src/ToastContext';
 
 type Props = {
     navigation: StackNavigationProp<RootStackParamList, 'ConfirmBooking'>;
@@ -322,6 +323,7 @@ const StepCustomerAuth = () => (
 // ── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function ConfirmBookingScreen({ navigation, route }: Props) {
+    const toast = useToast();
     const { customerId, customerName, bookingType } = route.params;
     const [currentStep, setCurrentStep] = useState(1);
     const screenTitle = bookingType === 'advanced' ? 'Advanced Booking' : 'Confirm Booking';
@@ -333,9 +335,8 @@ export default function ConfirmBookingScreen({ navigation, route }: Props) {
     const handleNext = () => {
         if (currentStep < steps.length) { setCurrentStep(currentStep + 1); }
         else {
-            Alert.alert('Success', 'Booking saved successfully!', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            toast.success('Booking saved successfully!');
+            navigation.goBack();
         }
     };
 

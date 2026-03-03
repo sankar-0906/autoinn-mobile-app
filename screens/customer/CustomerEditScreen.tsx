@@ -10,6 +10,7 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
+import { useToast } from '../../src/ToastContext';
 
 type CustomerEditRouteProp = RouteProp<RootStackParamList, 'CustomerEdit'>;
 type CustomerEditNavigationProp = StackNavigationProp<RootStackParamList, 'CustomerEdit'>;
@@ -165,6 +166,7 @@ const EmptyState = ({ message }: { message: string }) => (
 // ── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function CustomerEditScreen() {
+    const toast = useToast();
     const navigation = useNavigation<CustomerEditNavigationProp>();
     const route = useRoute<CustomerEditRouteProp>();
     const customerId = route.params?.customerId || '';
@@ -217,7 +219,7 @@ export default function CustomerEditScreen() {
     const clearError = (key: string) => setErrors((p) => { const n = { ...p }; delete n[key]; return n; });
 
     const handleAddContact = () => {
-        if (!newPhone.trim()) { Alert.alert('Error', 'Please enter a phone number'); return; }
+        if (!newPhone.trim()) { toast.error('Please enter a phone number'); return; }
         setContacts([...contacts, {
             id: Date.now().toString(),
             phoneNumber: newPhone.trim(),
@@ -250,15 +252,14 @@ export default function CustomerEditScreen() {
     };
 
     const handleSave = async () => {
-        if (!validate()) { Alert.alert('Validation Error', 'Please fill all required fields (*).'); return; }
+        if (!validate()) { toast.error('Please fill all required fields (*).'); return; }
         setSaving(true);
         try {
             await new Promise((r) => setTimeout(r, 800)); // API call placeholder
-            Alert.alert('Success', 'Customer updated successfully.', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            toast.success('Customer updated successfully.');
+            navigation.goBack();
         } catch {
-            Alert.alert('Error', 'Failed to save. Please try again.');
+            toast.error('Failed to save. Please try again.');
         } finally { setSaving(false); }
     };
 

@@ -10,6 +10,7 @@ import {
 import { ChevronRight, Calendar, FileText } from 'lucide-react-native';
 import { COLORS } from '../constants/colors';
 import { getQuotationById } from '../src/api';
+import { useToast } from '../src/ToastContext';
 
 interface Quotation {
   id: string;
@@ -34,6 +35,7 @@ export default function AssociatedQuotations({
   onViewQuotation,
   loading = false,
 }: AssociatedQuotationsProps) {
+  const toast = useToast();
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
@@ -62,11 +64,11 @@ export default function AssociatedQuotations({
       if (response.data.code === 200 && response.data.response.code === 200) {
         setSelectedQuotation(response.data.response.data);
       } else {
-        Alert.alert('Error', 'Failed to load quotation details');
+        toast.error('Failed to load quotation details');
       }
     } catch (error) {
       console.error('Error fetching quotation:', error);
-      Alert.alert('Error', 'Failed to load quotation details');
+      toast.error('Failed to load quotation details');
     } finally {
       setLoadingDetail(false);
     }

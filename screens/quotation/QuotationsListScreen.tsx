@@ -12,11 +12,13 @@ import {
     Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, User, Calendar, Smartphone, Trash2, X } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import platformApi, { assignQuotationExecutive, ENDPOINT, getBranches, getQuotations, getUsers } from '../../src/api';
+import { useToast } from '../../src/ToastContext';
 
 interface Quotation {
     id: string;
@@ -54,6 +56,8 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     const [assigning, setAssigning] = useState(false);
     const [loadingBranches, setLoadingBranches] = useState(false);
     const [loadingExecutives, setLoadingExecutives] = useState(false);
+    const [activeFiltersCount, setActiveFiltersCount] = useState(0);
+    const toast = useToast();
 
     const totalPages = Math.max(1, Math.ceil(count / itemsPerPage));
 
@@ -162,6 +166,22 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
         };
     };
 
+    const getActiveFiltersCount = (filters: any) => {
+        let count = 0;
+        if (filters.model && filters.model.length > 0) count++;
+        if (filters.category && filters.category.length > 0) count++;
+        if (filters.enquiryType && filters.enquiryType.length > 0) count++;
+        if (filters.testDriven && filters.testDriven.length > 0) count++;
+        if (filters.paymentMode && filters.paymentMode.length > 0) count++;
+        if (filters.leadSource && filters.leadSource.length > 0) count++;
+        if (filters.salesExecutive && filters.salesExecutive.length > 0) count++;
+        if (filters.expectedPurchaseDatefromDate) count++;
+        if (filters.expectedPurchaseDatetoDate) count++;
+        if (filters.fromDate) count++;
+        if (filters.toDate) count++;
+        return count;
+    };
+
     const fetchQuotations = async () => {
         setLoading(true);
         try {
@@ -169,6 +189,12 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             const storedFiltersRaw = await AsyncStorage.getItem('quotationFilters');
             const storedFilters = storedFiltersRaw ? JSON.parse(storedFiltersRaw) : {};
             const sanitizedFilters: any = { ...storedFilters };
+
+            // Update active filters count
+            setActiveFiltersCount(getActiveFiltersCount(storedFilters));
+
+            console.log('Applied filters:', storedFilters);
+
             if (Array.isArray(sanitizedFilters.category)) {
                 sanitizedFilters.category = sanitizedFilters.category
                     .map((val: string) => (typeof val === 'string' ? val.toUpperCase() : val))
@@ -196,10 +222,9 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 setQuotations(list.map(mapQuotation));
                 setCount(total);
             } else {
-                setQuotations([]);
                 setCount(0);
                 const msg = data?.response?.message || 'Unable to fetch quotations';
-                Alert.alert('Error', msg);
+                toast.error(msg);
             }
         } catch (e) {
             console.error('Fetch quotations error', e);
@@ -208,18 +233,24 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             setCount(0);
             const status = (e as any)?.response?.status;
             if (status === 401) {
-                Alert.alert('Session Expired', 'Please login again.');
+                toast.error('Session Expired: Please login again.');
                 navigation.reset({
                     index: 0,
                     routes: [{ name: 'Login' }],
                 });
             } else {
                 const msg = (e as any)?.response?.data?.response?.message || 'Unable to fetch quotations';
-                Alert.alert('Error', msg);
+                toast.error(msg);
             }
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleClearFilters = async () => {
+        await AsyncStorage.removeItem('quotationFilters');
+        setActiveFiltersCount(0);
+        fetchQuotations();
     };
 
     const handleReassign = (quotationId: string) => {
@@ -242,10 +273,11 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                         platformApi
                             .delete(`/api/quotation/${quotationId}`)
                             .then(() => {
+                                toast.success('Quotation deleted successfully');
                                 fetchQuotations();
                             })
                             .catch(() => {
-                                Alert.alert('Error', 'Unable to delete quotation');
+                                toast.error('Unable to delete quotation');
                             });
                     },
                 },
@@ -457,13 +489,13 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
 
     const handleAssignExecutive = async () => {
         if (!selectedBranch || !selectedExecutive || !selectedQuotation) {
-            Alert.alert('Error', 'Please select branch and sales executive');
+            toast.error('Please select branch and sales executive');
             return;
         }
         const branchObj = branchOptions.find((b) => b.id === selectedBranch);
         const execObj = executiveOptions.find((e) => e.id === selectedExecutive);
         if (!branchObj || !execObj) {
-            Alert.alert('Error', 'Invalid branch or executive');
+            toast.error('Invalid branch or executive');
             return;
         }
         setAssigning(true);
@@ -471,12 +503,12 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             await assignQuotationExecutive({
                 branch: { id: branchObj.id, name: branchObj.name },
                 executive: { id: execObj.id, name: execObj.name },
-                quotationId: selectedQuotation,
             });
+            toast.success('Executive reassigned successfully');
             setShowReassignModal(false);
             fetchQuotations();
         } catch (e) {
-            Alert.alert('Error', 'Unable to assign executive');
+            toast.error('Unable to assign executive');
         } finally {
             setAssigning(false);
         }
@@ -495,6 +527,13 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     useEffect(() => {
         fetchQuotations();
     }, [activeTab, currentPage, itemsPerPage, searchQuery]);
+
+    // Refresh data when screen comes into focus (after applying filters)
+    useFocusEffect(
+        useCallback(() => {
+            fetchQuotations();
+        }, [activeTab, currentPage, itemsPerPage, searchQuery])
+    );
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
@@ -568,10 +607,25 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                     {/* Filter Button Outside */}
                     <TouchableOpacity
                         onPress={() => navigation.navigate('AdvancedFilters')}
-                        className="ml-3 bg-teal-50 p-3 rounded-xl"
+                        className="ml-3 bg-teal-50 p-3 rounded-xl relative"
                     >
                         <Filter size={20} color={COLORS.primary} />
+                        {activeFiltersCount > 0 && (
+                            <View className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 items-center justify-center">
+                                <Text className="text-white text-[10px] font-bold">{activeFiltersCount}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
+
+                    {/* Clear Filters Button */}
+                    {activeFiltersCount > 0 && (
+                        <TouchableOpacity
+                            onPress={handleClearFilters}
+                            className="ml-2 bg-red-50 px-3 py-2 rounded-xl"
+                        >
+                            <Text className="text-red-600 text-xs font-medium">Clear</Text>
+                        </TouchableOpacity>
+                    )}
 
                 </View>
             </View>

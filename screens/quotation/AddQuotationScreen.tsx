@@ -29,6 +29,7 @@ import { Button } from '../../components/ui/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQuotationId } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
+import { useToast } from '../../src/ToastContext';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -169,6 +170,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [associatedVehicles, setAssociatedVehicles] = useState<Array<{ regNo: string; name: string }>>([]);
 
     const [saving, setSaving] = useState(false);
+    const toast = useToast();
 
     const clearFieldError = (key: string) => setFieldErrors(prev => ({ ...prev, [key]: '' }));
 
@@ -202,7 +204,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         const errorKeys = Object.keys(errors).filter(k => !!errors[k]);
         if (errorKeys.length > 0) {
             const firstError = errors[errorKeys[0]];
-            Alert.alert('Incomplete Form', firstError);
+            toast.error(firstError);
             return false;
         }
         return true;
@@ -1098,18 +1100,18 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             const createRes = await createQuotation(formData);
 
                             if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
-                                Alert.alert('Success', 'Quotation saved successfully');
-                                navigation.navigate('Main', { screen: 'Quotations' });
+                                toast.success('Quotation saved successfully');
+                                navigation.goBack();
                             } else {
-                                const msg = createRes.data.response?.message || createRes.data.message || 'Server returned failure code';
-                                throw new Error(msg);
+                                const errMsg = createRes.data.response?.message || createRes.data.message || 'Unable to save quotation';
+                                toast.error(errMsg);
                             }
                         } catch (err: any) {
 
                             let errMsg = err.message || 'Something went wrong while saving';
                             if (err.response?.data?.response?.message) errMsg = err.response.data.response.message;
                             else if (err.response?.data?.message) errMsg = err.response.data.message;
-                            Alert.alert('Error', errMsg);
+                            toast.error(errMsg);
                         } finally {
                             setSaving(false);
                         }

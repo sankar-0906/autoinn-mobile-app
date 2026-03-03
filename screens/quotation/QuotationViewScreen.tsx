@@ -17,6 +17,7 @@ import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { ENDPOINT, getQuotationById } from '../../src/api';
 import { Button } from '../../components/ui/Button';
+import { useToast } from '../../src/ToastContext';
 
 type QuotationViewRouteProp = RouteProp<RootStackParamList, 'QuotationView'>;
 type QuotationViewNavigationProp = StackNavigationProp<RootStackParamList, 'QuotationView'>;
@@ -44,7 +45,7 @@ interface QuotationData {
     vehicleId?: string;
     vehicleColor: string;
     vehicleImage: string | null;
-    associatedVehicles: any[];
+    associatedVehicles: AssociatedVehicle[];
     exShowroomPrice: number;
     roadTax: number;
     registrationFee: number;
@@ -55,12 +56,40 @@ interface QuotationData {
     downPayment?: number;
     tenure?: number;
     emi?: number;
-    insuranceType?: any[];
-    optionalType?: any[];
+    insuranceType?: InsuranceCharge[];
+    optionalType?: OptionalCharge[];
     insuranceInfo?: string;
     insuranceAmount?: number;
-    optionalCharges?: { type: string; amount: number }[];
+    optionalCharges?: OptionalCharge[];
     tcs?: number;
+}
+
+interface AssociatedVehicle {
+    regNo: string;
+    registrationNo?: string;
+    modelName: string;
+    vehicleModel: string;
+    vehicleName: string;
+    id: string;
+    dateOfSale?: string;
+    engineNo?: string;
+    vehicleType?: string;
+}
+
+interface InsuranceCharge {
+    id: string;
+    type: string;
+    amount: number;
+    name?: string;
+    price?: number;
+    onRoad?: number;
+}
+
+interface OptionalCharge {
+    id: string;
+    type: string;
+    amount: number;
+    price?: number;
 }
 
 export default function QuotationViewScreen({ navigation, route }: { navigation: QuotationViewNavigationProp; route: QuotationViewRouteProp }) {
@@ -68,10 +97,11 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
     if (!navigation || !route) {
         return null;
     }
-    
+
     const { id } = route.params;
     const [quotation, setQuotation] = useState<QuotationData | null>(null);
     const [loading, setLoading] = useState(true);
+    const toast = useToast();
 
     useEffect(() => {
         fetchQuotationData();
@@ -115,24 +145,24 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                     id: data.id || id,
                     quotationId: data.quotationId || id,
                     branch: data.branch?.name || data.branchName || 'N/A',
-                    customerPhone: 
-                    data.customerPhone || 
-                    data.phone || 
-                    data.mobile || 
-                    data.phoneNumber ||
-                    data.customer?.phone || 
-                    data.customer?.mobile || 
-                    data.customer?.mobileNo ||
-                    data.customer?.phoneNumber ||
-                    data.customer?.contacts?.[0]?.phone ||
-                    data.proCustomer?.phone || 
-                    data.proCustomer?.mobile || 
-                    data.proCustomer?.mobileNo ||
-                    data.proCustomer?.phoneNumber ||
-                    data.contact?.phone ||
-                    data.contact?.mobile ||
-                    data.contactNumber ||
-                    'N/A',
+                    customerPhone:
+                        data.customerPhone ||
+                        data.phone ||
+                        data.mobile ||
+                        data.phoneNumber ||
+                        data.customer?.phone ||
+                        data.customer?.mobile ||
+                        data.customer?.mobileNo ||
+                        data.customer?.phoneNumber ||
+                        data.customer?.contacts?.[0]?.phone ||
+                        data.proCustomer?.phone ||
+                        data.proCustomer?.mobile ||
+                        data.proCustomer?.mobileNo ||
+                        data.proCustomer?.phoneNumber ||
+                        data.contact?.phone ||
+                        data.contact?.mobile ||
+                        data.contactNumber ||
+                        'N/A',
                     customerName: data.customerName || data.proCustomer?.name || data.customer?.name || 'N/A',
                     gender: data.customer?.gender || data.proCustomer?.gender || data.gender || 'N/A',
                     locality: data.customer?.locality || data.customer?.location || data.location || data.locality || 'N/A',
@@ -142,14 +172,14 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                     remarks: data.remarks || '',
                     createdOn: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-GB') : 'N/A',
                     salesExecutive: data.salesExecutive?.name || data.executive?.profile?.employeeName || data.salesExecutiveName || 'N/A',
-                    customerType: 
-                    data.customer?.type || 
-                    data.proCustomer?.type || 
-                    data.customerType || 
-                    data.customer?.customerType || 
-                    data.proCustomer?.customerType ||
-                    data.type ||
-                    'N/A',
+                    customerType:
+                        data.customer?.type ||
+                        data.proCustomer?.type ||
+                        data.customerType ||
+                        data.customer?.customerType ||
+                        data.proCustomer?.customerType ||
+                        data.type ||
+                        'N/A',
                     scheduleDate: data.scheduleDate ? new Date(data.scheduleDate).toLocaleDateString('en-GB') : 'N/A',
                     scheduleTime: data.scheduleTime || 'N/A',
                     expectedDate: data.expectedDateOfPurchase ? new Date(data.expectedDateOfPurchase).toLocaleDateString('en-GB') : 'N/A',
@@ -180,9 +210,9 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                 };
 
                 // Extract all vehicles - both from vehicle array and associated vehicles
-                const allVehicles = [
+                const allVehicles: AssociatedVehicle[] = [
                     // Vehicles from the main vehicle array (junction records)
-                    ...(Array.isArray(data.vehicle) ? data.vehicle.map(v => ({
+                    ...(Array.isArray(data.vehicle) ? data.vehicle.map((v: any) => ({
                         regNo: v.registrationNo || v.regNo || '-',
                         modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
                         vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
@@ -190,7 +220,7 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         id: v.vehicleDetail?.id || v.id
                     })) : []),
                     // Vehicles from customer.purchasedVehicle (different structure)
-                    ...(Array.isArray(data.customer?.purchasedVehicle) ? data.customer.purchasedVehicle.map(v => ({
+                    ...(Array.isArray(data.customer?.purchasedVehicle) ? data.customer.purchasedVehicle.map((v: any) => ({
                         regNo: v.registerNo || v.registrationNo || '-',
                         modelName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
                         vehicleModel: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
@@ -201,7 +231,7 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         vehicleType: v.vehicleType
                     })) : []),
                     // Other associated vehicles
-                    ...(data.associatedVehicles || [])
+                    ...(Array.isArray(data.associatedVehicles) ? data.associatedVehicles : [])
                 ];
 
                 // Update the associated vehicles in the quotation data
@@ -209,7 +239,7 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
 
                 setQuotation(quotationData);
             } else {
-                Alert.alert('Error', 'Failed to load quotation data');
+                toast.error('Failed to load quotation data');
             }
         } catch (error) {
             console.error('Error fetching quotation:', error);
@@ -277,10 +307,10 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
             optionalType: quotation.optionalType,
         };
 
-        quotation.insuranceType?.forEach((ins: any) => {
+        quotation.insuranceType?.forEach((ins: InsuranceCharge) => {
             if (ins.type) priceDetails[ins.type] = ins.amount || ins.price || ins.onRoad || 0;
         });
-        quotation.optionalType?.forEach((opt: any) => {
+        quotation.optionalType?.forEach((opt: OptionalCharge) => {
             if (opt.type) priceDetails[opt.type] = opt.amount || opt.price || 0;
         });
 

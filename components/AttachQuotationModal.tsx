@@ -12,6 +12,7 @@ import {
 import { Search, X, Check } from 'lucide-react-native';
 import { COLORS } from '../constants/colors';
 import { searchQuotations, getQuotationById } from '../src/api';
+import { useToast } from '../src/ToastContext';
 
 interface Quotation {
   id: string;
@@ -53,9 +54,8 @@ const QuotationItem = React.memo(({
   return (
     <TouchableOpacity
       onPress={onPress}
-      className={`flex-row p-4 border-b border-gray-100 items-center ${
-        isSelected ? 'bg-teal-50' : 'bg-white'
-      }`}
+      className={`flex-row p-4 border-b border-gray-100 items-center ${isSelected ? 'bg-teal-50' : 'bg-white'
+        }`}
     >
       <View className="flex-1">
         <Text className="font-semibold text-gray-900 text-base">
@@ -75,6 +75,7 @@ export default function AttachQuotationModal({
   onAttach,
   excludeIds = [],
 }: AttachQuotationModalProps) {
+  const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [filteredQuotations, setFilteredQuotations] = useState<Quotation[]>([]);
@@ -82,8 +83,8 @@ export default function AttachQuotationModal({
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
-  
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const searchTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const currentPageRef = useRef(1);
   const totalPagesRef = useRef(1);
   const hasMoreRef = useRef(true);
@@ -111,7 +112,7 @@ export default function AttachQuotationModal({
     if (loadedPages.has(page) || !hasMoreRef.current) return;
 
     setLoading(page === 1);
-    
+
     try {
       const response = await searchQuotations({
         module: 'quotations',
@@ -155,7 +156,7 @@ export default function AttachQuotationModal({
     } catch (error) {
       console.error(`Error loading page ${page}:`, error);
       if (page === 1) {
-        Alert.alert('Error', 'Failed to load quotations');
+        toast.error('Failed to load quotations');
       }
     } finally {
       setLoading(false);
@@ -171,11 +172,11 @@ export default function AttachQuotationModal({
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
     setSearching(true);
-    
+
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-    
+
     searchTimeoutRef.current = setTimeout(() => {
       if (!query.trim()) {
         // Reset to show all loaded quotations
@@ -183,16 +184,16 @@ export default function AttachQuotationModal({
         setSearching(false);
         return;
       }
-      
+
       // Search locally in already loaded quotations - ONLY by Quotation ID
       const searchLower = query.toLowerCase().trim();
-      const results = quotations.filter(item => 
+      const results = quotations.filter(item =>
         item.quotationId?.toLowerCase().includes(searchLower)
       );
-      
+
       setFilteredQuotations(results);
       setSearching(false);
-      
+
       console.log(`🔍 Found ${results.length} local results for "${query}"`);
     }, 300); // 300ms debounce
   }, [quotations]);
@@ -209,7 +210,7 @@ export default function AttachQuotationModal({
 
   const handleAttach = () => {
     if (selectedQuotations.size === 0) {
-      Alert.alert('Warning', 'Please select at least one quotation');
+      toast.warn('Please select at least one quotation');
       return;
     }
     onAttach(Array.from(selectedQuotations));
@@ -336,7 +337,7 @@ export default function AttachQuotationModal({
               {selectedQuotations.size} selected
             </Text>
             <View className="flex-row gap-4">
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setSelectedQuotations(new Set())}
                 disabled={selectedQuotations.size === 0}
               >
@@ -344,7 +345,7 @@ export default function AttachQuotationModal({
                   Clear
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   const allIds = new Set(filteredQuotations.map(q => q.id));
                   setSelectedQuotations(allIds);
@@ -360,13 +361,11 @@ export default function AttachQuotationModal({
           <TouchableOpacity
             onPress={handleAttach}
             disabled={selectedQuotations.size === 0}
-            className={`py-3 rounded-lg items-center ${
-              selectedQuotations.size > 0 ? 'bg-teal-600' : 'bg-gray-300'
-            }`}
+            className={`py-3 rounded-lg items-center ${selectedQuotations.size > 0 ? 'bg-teal-600' : 'bg-gray-300'
+              }`}
           >
-            <Text className={`font-semibold ${
-              selectedQuotations.size > 0 ? 'text-white' : 'text-gray-500'
-            }`}>
+            <Text className={`font-semibold ${selectedQuotations.size > 0 ? 'text-white' : 'text-gray-500'
+              }`}>
               Attach {selectedQuotations.size} Quotation{selectedQuotations.size !== 1 ? 's' : ''}
             </Text>
           </TouchableOpacity>

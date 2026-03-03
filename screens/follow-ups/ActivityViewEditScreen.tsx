@@ -23,6 +23,7 @@ import { Calendar as RNCalendar } from 'react-native-calendars';
 import { getActivityById, updateActivity, ENDPOINT } from '../../src/api';
 import moment from 'moment';
 import { TimePickerModal } from '../../components/TimePickerModal';
+import { useToast } from '../../src/ToastContext';
 
 type ActivityViewEditRouteProp = RouteProp<RootStackParamList, 'ActivityViewEdit'>;
 type ActivityViewEditNavigationProp = StackNavigationProp<RootStackParamList, 'ActivityViewEdit'>;
@@ -31,6 +32,7 @@ const ENQUIRY_TYPES = ['Hot', 'Warm', 'Cold'] as const;
 
 export default function ActivityViewEditScreen() {
     let navigation, route;
+    const toast = useToast();
 
     try {
         navigation = useNavigation<ActivityViewEditNavigationProp>();
@@ -46,7 +48,7 @@ export default function ActivityViewEditScreen() {
                 <Button
                     title="Go Back"
                     onPress={() => {
-                        Alert.alert('Error', 'Navigation not available');
+                        toast.error('Navigation not available');
                     }}
                     className="mt-4"
                 />
@@ -104,7 +106,7 @@ export default function ActivityViewEditScreen() {
             }
         } catch (err) {
             console.error('❌ Error fetching activity:', err);
-            Alert.alert('Error', 'Failed to load activity details');
+            toast.error('Failed to load activity details');
         } finally {
             setLoading(false);
         }
@@ -120,12 +122,12 @@ export default function ActivityViewEditScreen() {
         if (activeTab === 'documents') {
             console.log('🔍 Documents tab activated, checking data...');
             setDebugInfo('Documents tab loaded');
-            
+
             // Force a re-render to check if error persists
             const timer = setTimeout(() => {
                 console.log('🔍 Documents tab still active after 1 second');
             }, 1000);
-            
+
             return () => clearTimeout(timer);
         }
     }, [activeTab]);
@@ -159,10 +161,11 @@ export default function ActivityViewEditScreen() {
                 scheduleDateAndTime: combinedDateTime
             };
             await updateActivity(activityId, payload);
-            Alert.alert('Success', 'Activity updated', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+            toast.success('Activity updated');
+            navigation.goBack();
         } catch (err) {
             console.error('Error updating activity:', err);
-            Alert.alert('Error', 'Failed to update activity');
+            toast.error('Failed to update activity');
         }
     };
 
@@ -185,7 +188,7 @@ export default function ActivityViewEditScreen() {
 
     const getAssociatedDocuments = useCallback(() => {
         console.log('🔍 getAssociatedDocuments called');
-        
+
         if (!activityDetail) {
             console.log('🔍 No activity detail, returning empty array');
             return [];
@@ -204,11 +207,11 @@ export default function ActivityViewEditScreen() {
             // Handle quotations safely
             if (activityDetail.quotation) {
                 console.log('🔍 Processing quotations');
-                
+
                 const quotations = Array.isArray(activityDetail.quotation)
                     ? activityDetail.quotation
                     : [activityDetail.quotation];
-                
+
                 console.log('🔍 Quotations array length:', quotations.length);
 
                 quotations.filter(Boolean).forEach((q, index) => {
@@ -217,7 +220,7 @@ export default function ActivityViewEditScreen() {
                         hasPdfWithOutBrochure: !!q?.pdfWithOutBrochure,
                         quotationId: q?.quotationId
                     });
-                    
+
                     if (q?.pdfWithBrochure && typeof q.pdfWithBrochure === 'string') {
                         console.log('🔍 Adding PDF WITH BROCHURE document');
                         docs.push({
@@ -283,9 +286,9 @@ export default function ActivityViewEditScreen() {
 
     const handleViewDocument = (url: string) => {
         if (!url) return;
-        const absoluteUrl = url.startsWith('http') ? url : (ENDPOINT.endsWith('/') ? ENDPOINT : `${ENDPOINT}/`) + (url.startsWith('/') ? url.slice(1) : url);
-        console.log('🔍 Viewing document:', absoluteUrl);
-        Alert.alert('View Document', `Opening: ${absoluteUrl}`);
+        const absoluteUrl = url.startsWith('http') ? url : `${ENDPOINT}${url.startsWith('/') ? url : '/' + url}`;
+        toast.success(`Opening document...`);
+        // For production, you'd use Linking.openURL(absoluteUrl) or a proper viewer
     };
 
     const handleGoBack = () => navigation.goBack();
@@ -293,7 +296,7 @@ export default function ActivityViewEditScreen() {
     // Add error boundary component
     const DocumentsTabContent = () => {
         console.log('🔍 Rendering DocumentsTabContent');
-        
+
         try {
             const documents = getAssociatedDocuments();
             console.log('🔍 Documents to render:', documents.length);
@@ -415,30 +418,30 @@ export default function ActivityViewEditScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
                 {/* Tabs */}
                 <View className="border-b border-gray-200 bg-white flex-row">
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={() => {
                             console.log('🔍 Switching to details tab');
                             setActiveTab('details');
-                        }} 
+                        }}
                         className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}
                     >
                         <Text className={`text-sm font-bold text-center ${activeTab === 'details' ? 'text-teal-600' : 'text-gray-600'}`}>Activity Details</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={() => {
                             console.log('🔍 Switching to documents tab');
                             setActiveTab('documents');
-                        }} 
+                        }}
                         className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
                     >
                         <Text className={`text-sm font-bold text-center ${activeTab === 'documents' ? 'text-teal-600' : 'text-gray-600'}`}>Associated Documents</Text>
                     </TouchableOpacity>
                 </View>
 
-                <ScrollView 
+                <ScrollView
                     key={activeTab} // Force re-render on tab change
-                    className="flex-1" 
-                    showsVerticalScrollIndicator={false} 
+                    className="flex-1"
+                    showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 100 }}
                 >
                     {activeTab === 'details' ? (
