@@ -372,14 +372,14 @@ export default function FollowUpDetailScreen() {
 
                     <View className="flex-row justify-center gap-3 border-t border-gray-100 pt-3">
                         <TouchableOpacity
-                            onPress={() => setShowCustomerModal(true)}
+                            onPress={() => navigation.navigate('CustomerDetails', { customerId: customer.customerId })}
                             className="flex-row items-center px-4 py-2 bg-gray-50 rounded-lg"
                         >
                             <Eye size={18} color="#475569" />
                             <Text className="ml-2 text-xs font-medium text-gray-600">View Details</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('CustomerEdit', { customerId: customer.customerId })}
+                            onPress={() => navigation.navigate('CustomerDetails', { customerId: customer.customerId })}
                             className="flex-row items-center px-4 py-2 bg-teal-50 rounded-lg"
                         >
                             <Edit size={18} color="#0d9488" />

@@ -30,8 +30,30 @@ type ActivityViewEditNavigationProp = StackNavigationProp<RootStackParamList, 'A
 const ENQUIRY_TYPES = ['Hot', 'Warm', 'Cold'] as const;
 
 export default function ActivityViewEditScreen() {
-    const navigation = useNavigation<ActivityViewEditNavigationProp>();
-    const route = useRoute<ActivityViewEditRouteProp>();
+    let navigation, route;
+
+    try {
+        navigation = useNavigation<ActivityViewEditNavigationProp>();
+        route = useRoute<ActivityViewEditRouteProp>();
+    } catch (error) {
+        console.error('Navigation context not available:', error);
+        return (
+            <SafeAreaView className="flex-1 bg-white items-center justify-center">
+                <Text className="text-red-500 mb-4">Navigation Error</Text>
+                <Text className="text-gray-600 text-center px-4">
+                    This screen cannot be accessed directly. Please go back and try again.
+                </Text>
+                <Button
+                    title="Go Back"
+                    onPress={() => {
+                        Alert.alert('Error', 'Navigation not available');
+                    }}
+                    className="mt-4"
+                />
+            </SafeAreaView>
+        );
+    }
+
     const { mode, activityId } = route.params;
 
     const [loading, setLoading] = useState(true);
@@ -52,12 +74,21 @@ export default function ActivityViewEditScreen() {
     const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
     const timeFieldRef = useRef<View | null>(null);
 
+    // Add debug state
+    const [debugInfo, setDebugInfo] = useState<string>('');
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
+            console.log('🔍 Fetching activity data for ID:', activityId);
             const res = await getActivityById(activityId);
             const data = res.data?.response?.data;
             if (data) {
+                console.log('🔍 Activity data received:', {
+                    hasQuotation: !!data.quotation,
+                    hasBooking: !!data.booking,
+                    quotationType: data.quotation ? typeof data.quotation : 'none'
+                });
                 setActivityDetail(data);
                 setEnquiryType(data.enquiryType || 'Hot');
                 setRemarks(data.remarks || '');
@@ -72,7 +103,7 @@ export default function ActivityViewEditScreen() {
                 }
             }
         } catch (err) {
-            console.error('Error fetching activity:', err);
+            console.error('❌ Error fetching activity:', err);
             Alert.alert('Error', 'Failed to load activity details');
         } finally {
             setLoading(false);
@@ -82,6 +113,22 @@ export default function ActivityViewEditScreen() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Add debug effect for tab changes
+    useEffect(() => {
+        console.log('🔍 Active tab changed to:', activeTab);
+        if (activeTab === 'documents') {
+            console.log('🔍 Documents tab activated, checking data...');
+            setDebugInfo('Documents tab loaded');
+            
+            // Force a re-render to check if error persists
+            const timer = setTimeout(() => {
+                console.log('🔍 Documents tab still active after 1 second');
+            }, 1000);
+            
+            return () => clearTimeout(timer);
+        }
+    }, [activeTab]);
 
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
@@ -120,8 +167,6 @@ export default function ActivityViewEditScreen() {
     };
 
     const openTimeDropdown = () => {
-        // Just open the modal - no measurement needed here
-        // The TimePickerModal component handles its own positioning
         setTimeDropdownOpen(true);
     };
 
@@ -139,23 +184,42 @@ export default function ActivityViewEditScreen() {
     );
 
     const getAssociatedDocuments = useCallback(() => {
-        // Return empty array if no activity detail
-        if (!activityDetail) return [];
+        console.log('🔍 getAssociatedDocuments called');
+        
+        if (!activityDetail) {
+            console.log('🔍 No activity detail, returning empty array');
+            return [];
+        }
+
+        console.log('🔍 activityDetail structure:', JSON.stringify({
+            hasQuotation: !!activityDetail.quotation,
+            hasBooking: !!activityDetail.booking,
+            quotationKeys: activityDetail.quotation ? Object.keys(activityDetail.quotation) : [],
+            bookingKeys: activityDetail.booking ? Object.keys(activityDetail.booking) : []
+        }));
 
         const docs = [];
 
         try {
             // Handle quotations safely
             if (activityDetail.quotation) {
-                // Ensure quotation is treated as array
+                console.log('🔍 Processing quotations');
+                
                 const quotations = Array.isArray(activityDetail.quotation)
                     ? activityDetail.quotation
                     : [activityDetail.quotation];
+                
+                console.log('🔍 Quotations array length:', quotations.length);
 
-                // Filter out any null/undefined quotations
-                quotations.filter(Boolean).forEach(q => {
-                    // Safely check for pdfWithBrochure
+                quotations.filter(Boolean).forEach((q, index) => {
+                    console.log(`🔍 Processing quotation ${index}:`, {
+                        hasPdfWithBrochure: !!q?.pdfWithBrochure,
+                        hasPdfWithOutBrochure: !!q?.pdfWithOutBrochure,
+                        quotationId: q?.quotationId
+                    });
+                    
                     if (q?.pdfWithBrochure && typeof q.pdfWithBrochure === 'string') {
+                        console.log('🔍 Adding PDF WITH BROCHURE document');
                         docs.push({
                             type: 'PDF WITH BROCHURE',
                             id: q.quotationId || q.id || 'N/A',
@@ -164,8 +228,8 @@ export default function ActivityViewEditScreen() {
                         });
                     }
 
-                    // Safely check for pdfWithOutBrochure
                     if (q?.pdfWithOutBrochure && typeof q.pdfWithOutBrochure === 'string') {
+                        console.log('🔍 Adding PDF WITHOUT BROCHURE document');
                         docs.push({
                             type: 'PDF WITHOUT BROCHURE',
                             id: q.quotationId || q.id || 'N/A',
@@ -178,13 +242,15 @@ export default function ActivityViewEditScreen() {
 
             // Handle booking documents safely
             if (activityDetail.booking && typeof activityDetail.booking === 'object') {
+                console.log('🔍 Processing booking');
                 const booking = activityDetail.booking;
 
-                // Safely check authentication
                 if (booking.authentication && typeof booking.authentication === 'object') {
+                    console.log('🔍 Processing authentication');
                     const auth = booking.authentication;
 
                     if (auth?.beforeVerification && typeof auth.beforeVerification === 'string') {
+                        console.log('🔍 Adding BEFORE VERIFICATION document');
                         docs.push({
                             type: 'BEFORE VERIFICATION',
                             id: booking.bookingId || booking.id || 'N/A',
@@ -194,6 +260,7 @@ export default function ActivityViewEditScreen() {
                     }
 
                     if (auth?.afterVerification && typeof auth.afterVerification === 'string') {
+                        console.log('🔍 Adding AFTER VERIFICATION document');
                         docs.push({
                             type: 'AFTER VERIFICATION',
                             id: booking.bookingId || booking.id || 'N/A',
@@ -204,20 +271,123 @@ export default function ActivityViewEditScreen() {
                 }
             }
         } catch (error) {
-            console.error('Error in getAssociatedDocuments:', error);
-            return []; // Return empty array on error
+            console.error('❌ Error in getAssociatedDocuments:', error);
+            console.error('❌ Error details:', error.message);
+            console.error('❌ Error stack:', error.stack);
+            return [];
         }
 
+        console.log('🔍 Total documents found:', docs.length);
         return docs;
     }, [activityDetail]);
 
     const handleViewDocument = (url: string) => {
         if (!url) return;
         const absoluteUrl = url.startsWith('http') ? url : (ENDPOINT.endsWith('/') ? ENDPOINT : `${ENDPOINT}/`) + (url.startsWith('/') ? url.slice(1) : url);
+        console.log('🔍 Viewing document:', absoluteUrl);
         Alert.alert('View Document', `Opening: ${absoluteUrl}`);
     };
 
     const handleGoBack = () => navigation.goBack();
+
+    // Add error boundary component
+    const DocumentsTabContent = () => {
+        console.log('🔍 Rendering DocumentsTabContent');
+        
+        try {
+            const documents = getAssociatedDocuments();
+            console.log('🔍 Documents to render:', documents.length);
+
+            return (
+                <View className="p-4">
+                    {/* Activity Session Information */}
+                    <View className="flex-row gap-4 mb-5">
+                        <View className="flex-1">
+                            <View className="bg-white p-3 rounded-xl border border-gray-100">
+                                <Text className="text-[11px] text-gray-500 mb-1">Activity Session ID:</Text>
+                                <Text className="text-xs font-bold text-gray-900">{activityDetail?.activityId || '-'}</Text>
+                            </View>
+                        </View>
+                        <View className="flex-1">
+                            <View className="bg-white p-3 rounded-xl border border-gray-100">
+                                <Text className="text-[11px] text-gray-500 mb-1">Session Date:</Text>
+                                <Text className="text-xs font-bold text-gray-900">
+                                    {activityDetail?.createdAt ? moment(activityDetail.createdAt).format('DD-MM-YYYY') : '-'}
+                                </Text>
+                            </View>
+                            <View className="bg-white p-3 rounded-xl border border-gray-100 mt-4">
+                                <Text className="text-[11px] text-gray-500 mb-1">Session Time:</Text>
+                                <Text className="text-xs font-bold text-gray-900">
+                                    {activityDetail?.createdAt ? moment(activityDetail.createdAt).format('HH:mm') : '-'}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Documents Generated Title */}
+                    <Text className="text-sm font-bold text-gray-900 mb-3">Documents Generated:</Text>
+
+                    {/* Documents Generated Table */}
+                    <View className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm shadow-black/5">
+                        {/* Table Header */}
+                        <View className="bg-gray-100 px-3 py-3 flex-row border-b border-gray-200">
+                            <Text className="text-[10px] font-bold text-gray-700 flex-1">Document Type</Text>
+                            <Text className="text-[10px] font-bold text-gray-700 w-24">Document ID</Text>
+                            <Text className="text-[10px] font-bold text-gray-700 w-16 text-center">Status</Text>
+                            <Text className="text-[10px] font-bold text-gray-700 w-12 text-center">Action</Text>
+                        </View>
+
+                        {/* Documents */}
+                        {documents.length > 0 ? (
+                            documents.map((doc, idx) => {
+                                console.log(`🔍 Rendering document ${idx}:`, doc.type);
+                                return (
+                                    <View key={idx} className={`px-3 py-4 flex-row items-center border-b border-gray-50 ${idx % 2 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                        <Text className="text-[10px] text-gray-900 flex-1 font-semibold" numberOfLines={2}>
+                                            {doc.type || 'Unknown'}
+                                        </Text>
+                                        <Text className="text-[10px] text-gray-500 w-24">
+                                            {doc.id || 'N/A'}
+                                        </Text>
+                                        <Text className="text-[10px] text-gray-500 w-16 text-center">
+                                            {doc.status || 'N/A'}
+                                        </Text>
+                                        <TouchableOpacity
+                                            className="w-12 items-center"
+                                            onPress={() => {
+                                                console.log('🔍 View document pressed:', doc.url);
+                                                if (doc.url) {
+                                                    handleViewDocument(doc.url);
+                                                }
+                                            }}
+                                            disabled={!doc.url}
+                                        >
+                                            <Eye size={16} color={doc.url ? COLORS.primary : COLORS.gray[400]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            })
+                        ) : (
+                            <View className="py-12 items-center">
+                                <Text className="text-gray-400 italic text-sm">No documents found</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            );
+        } catch (error) {
+            console.error('❌ Error in DocumentsTabContent:', error);
+            console.error('❌ Error stack:', error.stack);
+            return (
+                <View className="p-4">
+                    <View className="bg-red-100 p-4 rounded-xl">
+                        <Text className="text-red-600 font-bold mb-2">Error Loading Documents</Text>
+                        <Text className="text-red-500 text-sm">{error.message}</Text>
+                    </View>
+                </View>
+            );
+        }
+    };
 
     if (loading) {
         return (
@@ -245,15 +415,32 @@ export default function ActivityViewEditScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
                 {/* Tabs */}
                 <View className="border-b border-gray-200 bg-white flex-row">
-                    <TouchableOpacity onPress={() => setActiveTab('details')} className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            console.log('🔍 Switching to details tab');
+                            setActiveTab('details');
+                        }} 
+                        className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}
+                    >
                         <Text className={`text-sm font-bold text-center ${activeTab === 'details' ? 'text-teal-600' : 'text-gray-600'}`}>Activity Details</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setActiveTab('documents')} className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            console.log('🔍 Switching to documents tab');
+                            setActiveTab('documents');
+                        }} 
+                        className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
+                    >
                         <Text className={`text-sm font-bold text-center ${activeTab === 'documents' ? 'text-teal-600' : 'text-gray-600'}`}>Associated Documents</Text>
                     </TouchableOpacity>
                 </View>
 
-                <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+                <ScrollView 
+                    key={activeTab} // Force re-render on tab change
+                    className="flex-1" 
+                    showsVerticalScrollIndicator={false} 
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                >
                     {activeTab === 'details' ? (
                         <View className="p-5">
                             {/* Session Info */}
@@ -347,7 +534,6 @@ export default function ActivityViewEditScreen() {
                                 <View className="flex-row gap-2">
                                     {ENQUIRY_TYPES.map((t: string) => (
                                         <TouchableOpacity
-                                            ref={viewRef as React.RefObject<View>}
                                             key={t}
                                             disabled={mode === 'view'}
                                             onPress={() => setEnquiryType(t)}
@@ -426,83 +612,7 @@ export default function ActivityViewEditScreen() {
                             </View>
                         </View>
                     ) : (
-                        <View className="p-4">
-                            {/* Activity Session Information */}
-                            <View className="flex-row gap-4 mb-5">
-                                <View className="flex-1">
-                                    <View className="bg-white p-3 rounded-xl border border-gray-100">
-                                        <Text className="text-[11px] text-gray-500 mb-1">Activity Session ID:</Text>
-                                        <Text className="text-xs font-bold text-gray-900">{activityDetail?.activityId || '-'}</Text>
-                                    </View>
-                                </View>
-                                <View className="flex-1">
-                                    <View className="bg-white p-3 rounded-xl border border-gray-100">
-                                        <Text className="text-[11px] text-gray-500 mb-1">Session Date:</Text>
-                                        <Text className="text-xs font-bold text-gray-900">
-                                            {activityDetail?.createdAt ? moment(activityDetail.createdAt).format('DD-MM-YYYY') : '-'}
-                                        </Text>
-                                    </View>
-                                    <View className="bg-white p-3 rounded-xl border border-gray-100 mt-4">
-                                        <Text className="text-[11px] text-gray-500 mb-1">Session Time:</Text>
-                                        <Text className="text-xs font-bold text-gray-900">
-                                            {activityDetail?.createdAt ? moment(activityDetail.createdAt).format('HH:mm') : '-'}
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-
-                            {/* Documents Generated Title */}
-                            <Text className="text-sm font-bold text-gray-900 mb-3">Documents Generated:</Text>
-
-                            {/* Documents Generated Table */}
-                            <View className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm shadow-black/5">
-                                {/* Table Header - Fixed */}
-                                <View className="bg-gray-100 px-3 py-3 flex-row border-b border-gray-200">
-                                    <Text className="text-[10px] font-bold text-gray-700 flex-1">Document Type</Text>
-                                    <Text className="text-[10px] font-bold text-gray-700 w-24">Document ID</Text>
-                                    <Text className="text-[10px] font-bold text-gray-700 w-16 text-center">Status</Text>
-                                    <Text className="text-[10px] font-bold text-gray-700 w-12 text-center">Action</Text>
-                                </View>
-
-                                {/* Safely get documents */}
-                                {(() => {
-                                    try {
-                                        const documents = getAssociatedDocuments();
-                                        if (documents && documents.length > 0) {
-                                            return documents.map((doc, idx) => (
-                                                <View key={idx} className={`px-3 py-4 flex-row items-center border-b border-gray-50 ${idx % 2 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                                    <Text className="text-[10px] text-gray-900 flex-1 font-semibold" numberOfLines={2}>
-                                                        {doc.type || 'Unknown'}
-                                                    </Text>
-                                                    <Text className="text-[10px] text-gray-500 w-24">
-                                                        {doc.id || 'N/A'}
-                                                    </Text>
-                                                    <Text className="text-[10px] text-gray-500 w-16 text-center">
-                                                        {doc.status || 'N/A'}
-                                                    </Text>
-                                                    <TouchableOpacity
-                                                        className="w-12 items-center"
-                                                        onPress={() => doc.url && handleViewDocument(doc.url)}
-                                                        disabled={!doc.url}
-                                                    >
-                                                        <Eye size={16} color={doc.url ? COLORS.primary : COLORS.gray[400]} />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            ));
-                                        }
-                                    } catch (error) {
-                                        console.error('Error rendering documents:', error);
-                                    }
-
-                                    // Fallback UI when no documents or error
-                                    return (
-                                        <View className="py-12 items-center">
-                                            <Text className="text-gray-400 italic text-sm">No documents found</Text>
-                                        </View>
-                                    );
-                                })()}
-                            </View>
-                        </View>
+                        <DocumentsTabContent />
                     )}
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -543,12 +653,14 @@ export default function ActivityViewEditScreen() {
                 </View>
             </Modal>
 
-            <TimePickerModal
-                visible={timeDropdownOpen}
-                onClose={() => setTimeDropdownOpen(false)}
-                onSelect={(time) => setFollowupTime(time)}
-                anchorRef={timeFieldRef}
-            />
+            {timeDropdownOpen && (
+                <TimePickerModal
+                    visible={timeDropdownOpen}
+                    onClose={() => setTimeDropdownOpen(false)}
+                    onSelect={(time) => setFollowupTime(time)}
+                    anchorRef={timeFieldRef}
+                />
+            )}
         </SafeAreaView>
     );
 }
