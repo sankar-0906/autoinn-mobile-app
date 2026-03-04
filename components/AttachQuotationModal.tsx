@@ -9,9 +9,9 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Search, X, Check } from 'lucide-react-native';
+import { Search, X, Check, Phone, FileText } from 'lucide-react-native';
 import { COLORS } from '../constants/colors';
-import { searchQuotations, getQuotationById } from '../src/api';
+import { searchQuotations, getQuotationById, getCustomerByPhoneNo, getCustomerQuotations } from '../src/api';
 import { useToast } from '../src/ToastContext';
 
 interface Quotation {
@@ -28,6 +28,7 @@ interface Quotation {
     modelCode?: string;
   };
   createdAt: string;
+  _id?: string; // MongoDB _id field
 }
 
 interface AttachQuotationModalProps {
@@ -83,6 +84,9 @@ export default function AttachQuotationModal({
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
+  const [searchMode, setSearchMode] = useState<'quotationId' | 'mobile'>('quotationId');
+  const [preventInitialLoad, setPreventInitialLoad] = useState(false);
+  const [mobileSearchActive, setMobileSearchActive] = useState(false);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const currentPageRef = useRef(1);
@@ -98,18 +102,26 @@ export default function AttachQuotationModal({
 
   const resetAndLoad = () => {
     setSearchQuery('');
+    setSearchMode('quotationId');
     setQuotations([]);
     setFilteredQuotations([]);
     setSelectedQuotations(new Set());
     setLoadedPages(new Set());
     currentPageRef.current = 1;
     totalPagesRef.current = 1;
-    hasMoreRef.current = true;
-    loadPage(1);
+    hasMoreRef.current = true; // Restore loading capability
+    setMobileSearchActive(false);
+    
+    // Only load initial data if not prevented
+    if (!preventInitialLoad) {
+      loadPage(1);
+    }
+    // Reset the flag after using it
+    setPreventInitialLoad(false);
   };
 
   const loadPage = async (page: number) => {
-    if (loadedPages.has(page) || !hasMoreRef.current) return;
+    if (loadedPages.has(page) || !hasMoreRef.current || mobileSearchActive) return;
 
     setLoading(page === 1);
 
@@ -164,11 +176,109 @@ export default function AttachQuotationModal({
   };
 
   const loadMore = () => {
-    if (!hasMoreRef.current || loading) return;
+    if (!hasMoreRef.current || loading || mobileSearchActive) return;
     loadPage(currentPageRef.current + 1);
   };
 
-  // Optimized search with debounce - ONLY searches Quotation ID
+  // Function to search quotations by mobile number
+  const searchByMobileNumber = async (mobileNumber: string) => {
+    setSearching(true);
+    setMobileSearchActive(true); // Prevent other data loading
+    
+    try {
+      // First, get customer by mobile number
+      const customerResponse = await getCustomerByPhoneNo(mobileNumber);
+      
+      // Check multiple possible response structures
+      let customers = [];
+      
+      if (customerResponse.data.code === 200) {
+        if (customerResponse.data.response && customerResponse.data.response.data) {
+          if (Array.isArray(customerResponse.data.response.data.customers)) {
+            customers = customerResponse.data.response.data.customers;
+          } else if (Array.isArray(customerResponse.data.response.data)) {
+            customers = customerResponse.data.response.data;
+          }
+        } else if (Array.isArray(customerResponse.data.data)) {
+          customers = customerResponse.data.data;
+        } else if (Array.isArray(customerResponse.data.response)) {
+          customers = customerResponse.data.response;
+        }
+      }
+      
+      if (customers.length > 0) {
+        // Use the first customer found
+        const customer = customers[0];
+        
+        // Get customer ID from different possible structures
+        const customerId = customer.id || customer.customerId || customer._id;
+        
+        if (!customerId) {
+          setFilteredQuotations([]);
+          toast.success('Customer found but no valid ID');
+          setMobileSearchActive(false);
+          return;
+        }
+        
+        // Then get quotations for this customer
+        const quotationsResponse = await getCustomerQuotations(customerId);
+        
+        let customerQuotations = [];
+        
+        // Check multiple possible response structures for quotations
+        if (quotationsResponse.data.code === 200) {
+          if (quotationsResponse.data.response && quotationsResponse.data.response.data) {
+            customerQuotations = quotationsResponse.data.response.data;
+          } else if (quotationsResponse.data.data) {
+            customerQuotations = quotationsResponse.data.data;
+          } else if (quotationsResponse.data.response) {
+            customerQuotations = Array.isArray(quotationsResponse.data.response) 
+              ? quotationsResponse.data.response 
+              : [];
+          }
+        }
+        
+        if (customerQuotations.length > 0) {
+          // Filter out excluded IDs
+          const filteredQuotations = customerQuotations.filter((q: Quotation) => {
+            const quotationId = q.id || q.quotationId || q._id;
+            return quotationId && !excludeIds.includes(quotationId);
+          });
+          
+          // COMPLETELY REPLACE ALL DATA with only mobile search results
+          setQuotations([...filteredQuotations]);
+          setFilteredQuotations([...filteredQuotations]);
+          
+          // Clear loaded pages to prevent any further loading
+          setLoadedPages(new Set());
+          currentPageRef.current = 1;
+          totalPagesRef.current = 1;
+          hasMoreRef.current = false; // Prevent loadMore from working
+          
+          toast.success(`Found ${filteredQuotations.length} quotations for this mobile number`);
+        } else {
+          setQuotations([]);
+          setFilteredQuotations([]);
+          setLoadedPages(new Set());
+          currentPageRef.current = 1;
+          totalPagesRef.current = 1;
+          hasMoreRef.current = false;
+          toast.success('No quotations found for this mobile number');
+        }
+      } else {
+        setFilteredQuotations([]);
+        toast.success('No customer found with this mobile number');
+      }
+    } catch (error) {
+      setFilteredQuotations([]);
+      toast.error('Failed to search by mobile number');
+    } finally {
+      setSearching(false);
+      setMobileSearchActive(false); // Allow other data loading again
+    }
+  };
+
+  // Enhanced search with debounce - supports both Quotation ID and Mobile Number
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
     setSearching(true);
@@ -179,22 +289,34 @@ export default function AttachQuotationModal({
 
     searchTimeoutRef.current = setTimeout(() => {
       if (!query.trim()) {
-        // Reset to show all loaded quotations
-        setFilteredQuotations(quotations);
+        // Reset to show all loaded quotations and reload initial data
+        setSearchMode('quotationId');
         setSearching(false);
+        setMobileSearchActive(false); // Clear mobile search flag
+        setPreventInitialLoad(false); // Allow initial load when clearing search
+        resetAndLoad();
         return;
       }
 
-      // Search locally in already loaded quotations - ONLY by Quotation ID
-      const searchLower = query.toLowerCase().trim();
-      const results = quotations.filter(item =>
-        item.quotationId?.toLowerCase().includes(searchLower)
-      );
+      // Check if the query is exactly 10 digits (mobile number)
+      const isMobileNumber = /^\d{10}$/.test(query.trim());
+      
+      if (isMobileNumber) {
+        setSearchMode('mobile');
+        setPreventInitialLoad(true); // Prevent initial load during mobile search
+        searchByMobileNumber(query.trim());
+      } else {
+        setSearchMode('quotationId');
+        setMobileSearchActive(false); // Clear mobile search flag for ID search
+        // Search locally in already loaded quotations - by Quotation ID
+        const searchLower = query.toLowerCase().trim();
+        const results = quotations.filter(item =>
+          item.quotationId?.toLowerCase().includes(searchLower)
+        );
 
-      setFilteredQuotations(results);
-      setSearching(false);
-
-      console.log(`🔍 Found ${results.length} local results for "${query}"`);
+        setFilteredQuotations(results);
+        setSearching(false);
+      }
     }, 300); // 300ms debounce
   }, [quotations]);
 
@@ -217,15 +339,17 @@ export default function AttachQuotationModal({
     onClose();
   };
 
-  const renderItem = useCallback(({ item }: { item: Quotation }) => (
-    <QuotationItem
-      item={item}
-      isSelected={selectedQuotations.has(item.id)}
-      onPress={() => toggleQuotationSelection(item.id)}
-    />
-  ), [selectedQuotations]);
+  const renderItem = useCallback(({ item }: { item: Quotation }) => {
+    return (
+      <QuotationItem
+        item={item}
+        isSelected={selectedQuotations.has(item.quotationId)}
+        onPress={() => toggleQuotationSelection(item.quotationId)}
+      />
+    );
+  }, [selectedQuotations]);
 
-  const keyExtractor = useCallback((item: Quotation) => item.id, []);
+  const keyExtractor = useCallback((item: Quotation) => item.quotationId, []);
 
   const getItemLayout = useCallback((data: any, index: number) => ({
     length: 60, // Reduced height for single line (ID only)
@@ -262,12 +386,14 @@ export default function AttachQuotationModal({
             <Search size={20} color={COLORS.gray[400]} />
             <TextInput
               className="flex-1 ml-2 text-gray-900"
-              placeholder="Search by Quotation ID..."
+              placeholder={searchMode === 'mobile' ? "Enter 10-digit Mobile Number..." : "Search by Quotation ID..."}
               value={searchQuery}
               onChangeText={handleSearch}
               placeholderTextColor={COLORS.gray[400]}
               autoCapitalize="none"
               autoCorrect={false}
+              keyboardType={searchMode === 'mobile' ? 'phone-pad' : 'default'}
+              maxLength={searchMode === 'mobile' ? 10 : undefined}
             />
             {searching ? (
               <ActivityIndicator size="small" color={COLORS.primary} />
@@ -278,9 +404,19 @@ export default function AttachQuotationModal({
             )}
           </View>
           {searchQuery.length > 0 && (
-            <Text className="text-xs text-gray-400 mt-2">
-              Found {filteredQuotations.length} matching quotations
-            </Text>
+            <View className="flex-row items-center mt-2">
+              {searchMode === 'mobile' ? (
+                <Phone size={12} color={COLORS.gray[400]} className="mr-1" />
+              ) : (
+                <FileText size={12} color={COLORS.gray[400]} className="mr-1" />
+              )}
+              <Text className="text-xs text-gray-400">
+                {searchMode === 'mobile' 
+                  ? `Mobile search requires 10 digits (${searchQuery.length}/10)`
+                  : `Searching by quotation ID... Found ${filteredQuotations.length} quotations`
+                }
+              </Text>
+            </View>
           )}
         </View>
 

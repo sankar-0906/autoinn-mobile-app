@@ -135,22 +135,12 @@ export default function CustomerDetailsScreen() {
     const route = useRoute<CustomerDetailsRouteProp>();
     const toast = useToast();
 
-    console.log('🔍 CustomerDetailsScreen - Navigation and Route check:', {
-        hasNavigation: !!navigation,
-        navigationType: typeof navigation,
-        hasRoute: !!route,
-        routeType: typeof route,
-        routeParams: route.params,
-        navigationMethods: navigation ? Object.keys(navigation) : []
-    });
-
-    const { customerId } = route.params ?? {};
+    // Memoize customerId to prevent infinite re-renders
+    const customerId = useMemo(() => route.params?.customerId, [route.params?.customerId]);
 
     // Guard for missing customerId
     if (!customerId) {
-        console.log('❌ No customerId found in route params');
-        console.log('🔍 Route params:', route.params);
-        console.log('🔍 Available params:', Object.keys(route.params || {}));
+        console.log('❌ No customerId found');
 
         // Try to get customerId from other sources
         const customerIdFromParams = route.params?.customerId;
@@ -169,7 +159,7 @@ export default function CustomerDetailsScreen() {
                     No customer selected. Please navigate to this screen from the customer list.
                 </Text>
                 <Text className="text-sm text-gray-600 text-center px-4 mt-2">
-                    Debug: Route params available: {Object.keys(route.params || {}).join(', ') || 'none'}
+                    Debug: No route params available
                 </Text>
             </SafeAreaView>
         );
@@ -484,14 +474,7 @@ export default function CustomerDetailsScreen() {
             });
 
             // Debug the actual response structure
-            console.log('🔍 Strategy 1 - Full response structure:', {
-                response1: response1,
-                responseData: response1?.data,
-                responseResponse: response1?.data?.response,
-                responseResponseData: response1?.data?.response?.data,
-                responseCode: response1?.data?.code,
-                responseMessage: response1?.data?.message
-            });
+            console.log('🔍 Strategy 1 - Response received successfully');
 
             let quotationsData = response1.data?.response?.data || response1.data?.data || response1.data;
 
@@ -506,13 +489,6 @@ export default function CustomerDetailsScreen() {
                 console.log('🔍 Found data in response.data directly');
                 quotationsData = response1.data?.data;
             }
-
-            console.log('🔍 Strategy 1 - Extracted quotationsData:', {
-                isArray: Array.isArray(quotationsData),
-                length: Array.isArray(quotationsData) ? quotationsData.length : 'N/A',
-                type: typeof quotationsData,
-                value: quotationsData
-            });
 
             if (Array.isArray(quotationsData) && quotationsData.length > 0) {
                 console.log('✅ Strategy 1 succeeded - Found', quotationsData.length, 'quotations');
@@ -1626,10 +1602,10 @@ export default function CustomerDetailsScreen() {
                                     <TextInput
                                         value={newPhone}
                                         onChangeText={setNewPhone}
-                                        placeholder="7019468613"
+                                        placeholder=""
                                         placeholderTextColor="#999"
                                         keyboardType="phone-pad"
-                                        className="flex-1 px-3 py-0 text-gray-900 text-sm"
+                                        className="ml-1 flex-1 px-3 py-0 text-gray-900 text-sm"
                                         style={{ height: '100%' }}
                                     />
                                 </View>
@@ -2554,7 +2530,6 @@ export default function CustomerDetailsScreen() {
 
     const renderQuotationsTab = () => {
         console.log('📊 Rendering Quotations tab - count:', quotations.length);
-        console.log('📋 Quotations data:', quotations);
 
         if (loadingQuotations) {
             return (
@@ -2665,17 +2640,8 @@ export default function CustomerDetailsScreen() {
                         <TouchableOpacity
                             className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
                             onPress={() => {
-                                console.log('🔍 Navigation context check:', {
-                                    hasNavigation: !!navigation,
-                                    navigationType: typeof navigation,
-                                    navigationMethods: navigation ? Object.keys(navigation) : [],
-                                    customerId,
-                                    customerName,
-                                    phoneNumbersCount: phoneNumbers?.length || 0
-                                });
                                 try {
                                     if (navigation && navigation.navigate) {
-                                        console.log('🧭 Navigating to ConfirmBooking with:', { customerId, customerName, phoneNumbers });
                                         navigation.navigate('ConfirmBooking' as any, { customerId, customerName, phoneNumbers });
                                     } else {
                                         console.error('❌ Navigation or navigate method not available');
@@ -2690,17 +2656,8 @@ export default function CustomerDetailsScreen() {
                         <TouchableOpacity
                             className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
                             onPress={() => {
-                                console.log('🔍 Navigation context check:', {
-                                    hasNavigation: !!navigation,
-                                    navigationType: typeof navigation,
-                                    navigationMethods: navigation ? Object.keys(navigation) : [],
-                                    customerId,
-                                    customerName,
-                                    phoneNumbersCount: phoneNumbers?.length || 0
-                                });
                                 try {
                                     if (navigation && navigation.navigate) {
-                                        console.log('🧭 Navigating to AdvancedBooking with:', { customerId, customerName, phoneNumbers });
                                         navigation.navigate('AdvancedBooking' as any, { customerId, customerName, phoneNumbers });
                                     } else {
                                         console.error('❌ Navigation or navigate method not available');
