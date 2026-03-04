@@ -92,6 +92,23 @@ interface OptionalCharge {
     price?: number;
 }
 
+const formatTime = (timeStr: string | undefined) => {
+    if (!timeStr || timeStr === 'N/A') return 'N/A';
+    try {
+        // If it's already in HH:MM format, return it
+        if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr;
+
+        const date = new Date(timeStr);
+        if (isNaN(date.getTime())) return timeStr;
+
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    } catch {
+        return timeStr;
+    }
+};
+
 export default function QuotationViewScreen({ navigation, route }: { navigation: QuotationViewNavigationProp; route: QuotationViewRouteProp }) {
     // Guard against missing navigation context
     if (!navigation || !route) {
@@ -181,7 +198,7 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         data.type ||
                         'N/A',
                     scheduleDate: data.scheduleDate ? new Date(data.scheduleDate).toLocaleDateString('en-GB') : 'N/A',
-                    scheduleTime: data.scheduleTime || 'N/A',
+                    scheduleTime: formatTime(data.scheduleTime || data.scheduleDateAndTime),
                     expectedDate: data.expectedDateOfPurchase ? new Date(data.expectedDateOfPurchase).toLocaleDateString('en-GB') : 'N/A',
                     // Use vehicleDetail (VehicleMaster) for model info, NOT the junction record
                     vehicleModel: vehicleDetail.modelName || vehicleDetail.name || 'N/A',

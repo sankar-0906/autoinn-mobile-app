@@ -178,6 +178,7 @@ const StepCustomerData = () => {
 };
 
 const StepVehicleData = () => {
+    const toast = useToast();
     const [manufacturer, setManufacturer] = useState('');
     const [modelName, setModelName] = useState('');
     const [vehicleColor, setVehicleColor] = useState('');
@@ -207,7 +208,7 @@ const StepVehicleData = () => {
                 </View>
                 <TouchableOpacity
                     className="h-11 px-3 border border-gray-300 rounded-lg justify-center items-center"
-                    onPress={() => Alert.alert('Color Picker', 'Vehicle color picker coming soon')}>
+                    onPress={() => toast.warn('Vehicle color picker coming soon')}>
                     <Text className="text-sm text-gray-700 font-medium">Select Color</Text>
                 </TouchableOpacity>
             </View>
@@ -258,7 +259,7 @@ const StepVehicleData = () => {
                 <Field label="Expected Delivery Date" value={deliveryDate} onChange={setDeliveryDate} placeholder="DD/MM/YYYY" />
                 <CurrencyField label="Final Amount" value={finalAmount} editable={false} />
             </View>
-        </View>
+        </View >
     );
 };
 

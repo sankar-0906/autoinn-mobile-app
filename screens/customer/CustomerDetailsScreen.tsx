@@ -10,16 +10,29 @@ import {
     FlatList,
     Platform,
     Dimensions,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Calendar, Clock, ChevronLeft, Edit2, Trash2 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { COLORS } from '../../constants/colors';
-import { getCustomerById, getCustomerDetails, getCountries, getStates, getCities, verifyGST } from '../../src/api';
+import {
+    getCustomerById,
+    getCustomerDetails,
+    getCountries,
+    getStates,
+    getCities,
+    verifyGST,
+    getCustomerQuotations,
+    getQuotationByCustomerId,
+    searchQuotations
+} from '../../src/api';
 import { Button } from '../../components/ui/Button';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useToast } from '../../src/ToastContext';
+import { RootStackParamList } from '../../navigation/types';
 
 // Validation regex patterns from autoinn-fe
 const alphaNumericNameRegex = /^[A-Za-z0-9 ]+$/;
@@ -118,13 +131,75 @@ const CUSTOMER_TABS = [
 ] as const;
 
 export default function CustomerDetailsScreen() {
-    const navigation = useNavigation();
+    const navigation = useNavigation<StackNavigationProp<RootStackParamList, 'CustomerDetails'>>();
     const route = useRoute<CustomerDetailsRouteProp>();
     const toast = useToast();
-    const { customerId } = route.params || {};
+
+    console.log('🔍 CustomerDetailsScreen - Navigation and Route check:', {
+        hasNavigation: !!navigation,
+        navigationType: typeof navigation,
+        hasRoute: !!route,
+        routeType: typeof route,
+        routeParams: route.params,
+        navigationMethods: navigation ? Object.keys(navigation) : []
+    });
+
+    const { customerId } = route.params ?? {};
+
+    // Guard for missing customerId
+    if (!customerId) {
+        console.log('❌ No customerId found in route params');
+        console.log('🔍 Route params:', route.params);
+        console.log('🔍 Available params:', Object.keys(route.params || {}));
+
+        // Try to get customerId from other sources
+        const customerIdFromParams = route.params?.customerId;
+        const customerIdFromState = route.params?.id;
+        const customerIdFromQuery = route.params?.customer_id;
+
+        console.log('🔍 Trying alternative sources:', {
+            customerIdFromParams,
+            customerIdFromState,
+            customerIdFromQuery
+        });
+
+        return (
+            <SafeAreaView className="flex-1 items-center justify-center bg-gray-100">
+                <Text className="text-lg text-red-600 text-center px-4">
+                    No customer selected. Please navigate to this screen from the customer list.
+                </Text>
+                <Text className="text-sm text-gray-600 text-center px-4 mt-2">
+                    Debug: Route params available: {Object.keys(route.params || {}).join(', ') || 'none'}
+                </Text>
+            </SafeAreaView>
+        );
+    }
+
+    // Safe navigation helper
+    const safeNavigate = useCallback((screen: keyof RootStackParamList, params?: any) => {
+        try {
+            if (!navigation) {
+                console.error('❌ Navigation context not available');
+                return;
+            }
+            console.log('🧭 Navigating to:', screen, params);
+            navigation.navigate(screen, params);
+        } catch (error) {
+            console.error('❌ Navigation error:', error);
+            // Try direct navigation as fallback
+            try {
+                if (navigation) {
+                    navigation.navigate(screen, params);
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback navigation also failed:', fallbackError);
+            }
+        }
+    }, [navigation]);
 
     const [activeTab, setActiveTab] = useState('customer-details');
     const [loading, setLoading] = useState(true);
+    const [loadingQuotations, setLoadingQuotations] = useState(false);
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [customerDetails, setCustomerDetails] = useState<any>(null);
     const [quotations, setQuotations] = useState<any[]>([]);
@@ -139,11 +214,40 @@ export default function CustomerDetailsScreen() {
     const [newPhone, setNewPhone] = useState('');
     const [sameAsBilling, setSameAsBilling] = useState(false);
 
+    // Call Activity states
+    const [showFollowUpDatePicker, setShowFollowUpDatePicker] = useState(false);
+    const [showDobDatePicker, setShowDobDatePicker] = useState(false);
+    const [followUpDate, setFollowUpDate] = useState('');
+    const [followUpTime, setFollowUpTime] = useState('');
+    const [followUpDateError, setFollowUpDateError] = useState('');
+    const [enquiryType, setEnquiryType] = useState('Hot');
+    const [remarks, setRemarks] = useState('');
+
+    const getVehicleNames = (obj: any): string[] => {
+        if (!obj) return [];
+        if (typeof obj === 'string') return [obj];
+        if (Array.isArray(obj)) {
+            return obj.flatMap(item => getVehicleNames(item));
+        }
+
+        const name = obj.modelName || obj.vehicleName || obj.vehicleLabel ||
+            obj.vehicleMaster?.modelName || obj.vehicleDetail?.modelName ||
+            obj.vehicle?.modelName || obj.vehicle?.name;
+
+        if (name) return [name];
+
+        if (obj.vehicle) return getVehicleNames(obj.vehicle);
+        if (obj.vehicleDetail) return getVehicleNames(obj.vehicleDetail);
+        if (obj.vehicleMaster) return getVehicleNames(obj.vehicleMaster);
+
+        return [];
+    };
+
     // Validation state from autoinn-fe
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [checkAll, setCheckAll] = useState(true);
     const [checkName, setCheckName] = useState(true);
-    const [gstType, setGstType] = useState(true);
+    const [isGstRequired, setIsGstRequired] = useState(true);
 
     // Dropdown data state
     const [countries, setCountries] = useState<Array<{ id: string; name: string }>>([]);
@@ -163,14 +267,34 @@ export default function CustomerDetailsScreen() {
     const [email, setEmail] = useState('');
     const [gstTypeValue, setGstTypeValue] = useState('Unregistered');
     const [gstin, setGstin] = useState('');
+    const [newPhoneType, setNewPhoneType] = useState<string>('Alternate');
+    const [newWhatsApp, setNewWhatsApp] = useState<string>('No');
+    const [newDND, setNewDND] = useState<string>('No');
     const [customerGrouping, setCustomerGrouping] = useState('');
+    const [displayCustomerId, setDisplayCustomerId] = useState('');
     const [gstName, setGstName] = useState('');
     const [gstStatus, setGstStatus] = useState('');
+
+    // Dropdown layout state for relative positioning
+    const [dropdownLayout, setDropdownLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
+    // Refs for dropdown anchors
+    const gstTypeRef = useRef<View>(null);
+    const countryRef = useRef<View>(null);
+    const stateRef = useRef<View>(null);
+    const cityRef = useRef<View>(null);
+    const shippingCountryRef = useRef<View>(null);
+    const shippingStateRef = useRef<View>(null);
+    const shippingCityRef = useRef<View>(null);
+    const customerGroupingRef = useRef<View>(null);
+    const salutationRef = useRef<View>(null);
+    const customerTypeRef = useRef<View>(null);
 
     // Address state
     const [billingAddress1, setBillingAddress1] = useState('');
     const [billingAddress2, setBillingAddress2] = useState('');
     const [billingAddress3, setBillingAddress3] = useState('');
+
     const [billingLocality, setBillingLocality] = useState('');
     const [billingCountryId, setBillingCountryId] = useState('');
     const [billingStateId, setBillingStateId] = useState('');
@@ -211,6 +335,14 @@ export default function CustomerDetailsScreen() {
     const phoneTypes = [
         { key: "Primary", title: "Primary" },
         { key: "Alternate", title: "Alternate" },
+        { key: "Office", title: "Office" },
+        { key: "Home", title: "Home" },
+        { key: "Mobile", title: "Mobile" },
+    ];
+
+    const yesNoOptions = [
+        { key: "Yes", title: "Yes" },
+        { key: "No", title: "No" },
     ];
 
     const customerGroupingOptions = [
@@ -219,20 +351,77 @@ export default function CustomerDetailsScreen() {
     ];
 
     // Date picker states
-    const [showDatePicker, setShowDatePicker] = useState(false);
-    const [showTimePicker, setShowTimePicker] = useState(false);
     const [showCustomerGroupingDropdown, setShowCustomerGroupingDropdown] = useState(false);
-    const [followUpDate, setFollowUpDate] = useState('');
-    const [followUpTime, setFollowUpTime] = useState('12:00');
-    const [followUpDateError, setFollowUpDateError] = useState('');
+    const [showSalutationDropdown, setShowSalutationDropdown] = useState(false);
+    const [showCustomerTypeDropdown, setShowCustomerTypeDropdown] = useState(false);
     const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
     const [selectedHour, setSelectedHour] = useState<number | null>(null);
     const [selectedMinute, setSelectedMinute] = useState<string | null>(null);
+
+    // Phone number editing states
+    const [editingPhoneIndex, setEditingPhoneIndex] = useState<number | null>(null);
+    const [showPhoneTypeDropdown, setShowPhoneTypeDropdown] = useState(false);
+    const [showWhatsAppDropdown, setShowWhatsAppDropdown] = useState(false);
+    const [showDNDDropdown, setShowDNDDropdown] = useState(false);
+
+    // GST dropdown state
+    const [showGSTTypeDropdown, setShowGSTTypeDropdown] = useState(false);
+
+    // Location dropdown states
+    const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+    const [showStateDropdown, setShowStateDropdown] = useState(false);
+    const [showCityDropdown, setShowCityDropdown] = useState(false);
+    const [showShippingCountryDropdown, setShowShippingCountryDropdown] = useState(false);
+    const [showShippingStateDropdown, setShowShippingStateDropdown] = useState(false);
+    const [showShippingCityDropdown, setShowShippingCityDropdown] = useState(false);
     const timeFieldRef = useRef<any>(null);
     const [timeDropdownLayout, setTimeDropdownLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
-    // Enquiry type
-    const [enquiryType, setEnquiryType] = useState('Hot');
+    // Phone number editing handlers
+    const handleEditPhone = (index: number) => {
+        setEditingPhoneIndex(index);
+        setShowPhoneTypeDropdown(false);
+        setShowWhatsAppDropdown(false);
+        setShowDNDDropdown(false);
+    };
+
+    const handlePhoneTypeChange = (index: number | null, type: any) => {
+        if (index !== null) {
+            const updatedPhones = [...phoneNumbers];
+            updatedPhones[index].type = type;
+            setPhoneNumbers(updatedPhones);
+        } else {
+            setNewPhoneType(type);
+        }
+        setShowPhoneTypeDropdown(false);
+    };
+
+    const handleWhatsAppChange = (index: number | null, whatsApp: any) => {
+        if (index !== null) {
+            const updatedPhones = [...phoneNumbers];
+            updatedPhones[index].whatsApp = whatsApp;
+            setPhoneNumbers(updatedPhones);
+        } else {
+            setNewWhatsApp(whatsApp);
+        }
+        setShowWhatsAppDropdown(false);
+    };
+
+    const handleDNDChange = (index: number | null, dnd: any) => {
+        if (index !== null) {
+            const updatedPhones = [...phoneNumbers];
+            updatedPhones[index].dnd = dnd;
+            setPhoneNumbers(updatedPhones);
+        } else {
+            setNewDND(dnd);
+        }
+        setShowDNDDropdown(false);
+    };
+
+    const handleDeletePhone = (index: number) => {
+        const updatedPhones = phoneNumbers.filter((_, i) => i !== index);
+        setPhoneNumbers(updatedPhones);
+    };
 
     // Time options
     const buildHourOptions = () => {
@@ -279,43 +468,188 @@ export default function CustomerDetailsScreen() {
         }
     };
 
+    // Separate function to fetch quotations with multiple strategies
+    const fetchQuotations = async (customerIdentifier: string) => {
+        console.log('🔍 fetchQuotations - Starting with identifier:', customerIdentifier);
+        setLoadingQuotations(true);
+
+        try {
+            // Strategy 1: Try getCustomerQuotations first
+            console.log('📋 Strategy 1: Calling getCustomerQuotations with:', customerIdentifier);
+            const response1 = await getCustomerQuotations(customerIdentifier);
+            console.log('📋 Strategy 1 - Response:', {
+                status: response1?.status,
+                hasData: !!response1?.data,
+                dataKeys: response1?.data ? Object.keys(response1.data) : []
+            });
+
+            // Debug the actual response structure
+            console.log('🔍 Strategy 1 - Full response structure:', {
+                response1: response1,
+                responseData: response1?.data,
+                responseResponse: response1?.data?.response,
+                responseResponseData: response1?.data?.response?.data,
+                responseCode: response1?.data?.code,
+                responseMessage: response1?.data?.message
+            });
+
+            let quotationsData = response1.data?.response?.data || response1.data?.data || response1.data;
+
+            // Check if data is in response.response instead of response.response.data
+            if (!Array.isArray(quotationsData) && response1.data?.response) {
+                console.log('🔍 Trying alternative data extraction - response.response');
+                quotationsData = response1.data?.response;
+            }
+
+            // Check if data is in response.data directly
+            if (!Array.isArray(quotationsData) && Array.isArray(response1.data?.data)) {
+                console.log('🔍 Found data in response.data directly');
+                quotationsData = response1.data?.data;
+            }
+
+            console.log('🔍 Strategy 1 - Extracted quotationsData:', {
+                isArray: Array.isArray(quotationsData),
+                length: Array.isArray(quotationsData) ? quotationsData.length : 'N/A',
+                type: typeof quotationsData,
+                value: quotationsData
+            });
+
+            if (Array.isArray(quotationsData) && quotationsData.length > 0) {
+                console.log('✅ Strategy 1 succeeded - Found', quotationsData.length, 'quotations');
+                setQuotations(quotationsData);
+                setLoadingQuotations(false);
+                return;
+            } else if (Array.isArray(quotationsData) && quotationsData.length === 0) {
+                console.log('⚠️ Strategy 1 returned empty array - Customer has no quotations');
+                // Set empty array but don't try other strategies
+                setQuotations([]);
+                setLoadingQuotations(false);
+                return;
+            }
+
+            // Strategy 2: Try getQuotationByCustomerId
+            console.log('📋 Strategy 2: Calling getQuotationByCustomerId with:', customerIdentifier);
+            const response2 = await getQuotationByCustomerId(customerIdentifier);
+            console.log('📋 Strategy 2 - Response:', {
+                status: response2?.status,
+                hasData: !!response2?.data
+            });
+
+            quotationsData = response2.data?.response?.data || response2.data?.data || response2.data;
+
+            if (Array.isArray(quotationsData) && quotationsData.length > 0) {
+                console.log('✅ Strategy 2 succeeded - Found', quotationsData.length, 'quotations');
+                setQuotations(quotationsData);
+                setLoadingQuotations(false);
+                return;
+            }
+
+            // Strategy 3: Try searchQuotations
+            console.log('📋 Strategy 3: Calling searchQuotations with customerId:', customerIdentifier);
+            const response3 = await searchQuotations({
+                module: 'customer',
+                column: 'customerId',
+                searchString: customerIdentifier,
+                size: 100,
+                page: 1
+            });
+            console.log('📋 Strategy 3 - Response:', {
+                status: response3?.status,
+                hasData: !!response3?.data
+            });
+
+            quotationsData = response3.data?.response?.data || response3.data?.data || response3.data;
+
+            if (Array.isArray(quotationsData) && quotationsData.length > 0) {
+                console.log('✅ Strategy 3 succeeded - Found', quotationsData.length, 'quotations');
+                setQuotations(quotationsData);
+                setLoadingQuotations(false);
+                return;
+            }
+
+            // Strategy 4: Check if quotations are in the master customer data
+            if (customer && customer.quotations) {
+                console.log('📋 Strategy 4: Checking master customer quotations');
+                const masterQuotations = Array.isArray(customer.quotations) ? customer.quotations : [customer.quotations];
+                if (masterQuotations.length > 0) {
+                    console.log('✅ Strategy 4 succeeded - Found', masterQuotations.length, 'quotations from master');
+                    setQuotations(masterQuotations);
+                    setLoadingQuotations(false);
+                    return;
+                }
+            }
+
+            console.log('⚠️ All strategies failed - No quotations found');
+            setQuotations([]);
+
+        } catch (error) {
+            console.error('❌ Error in fetchQuotations:', error);
+            if (error.response) {
+                console.error('❌ Error response:', {
+                    status: error.response.status,
+                    statusText: error.response.statusText,
+                    data: error.response.data
+                });
+            }
+            setQuotations([]);
+        } finally {
+            setLoadingQuotations(false);
+        }
+    };
+
     const fetchCustomerData = async () => {
+        console.log('🎯 fetchCustomerData entry - customerId:', customerId);
         if (!customerId) {
+            console.log('❌ No customerId found, returning');
             setLoading(false);
             return;
         }
 
         try {
             setLoading(true);
+            console.log('🌐 Fetching customer details for:', customerId);
 
-            // Fetch detailed customer information which contains almost everything
+            // Fetch detailed customer information
             const detailsResponse = await getCustomerDetails(customerId);
-            const detailsData = detailsResponse.data?.response?.data || detailsResponse.data?.data || detailsResponse.data;
-            setCustomerDetails(detailsData);
+            console.log('📄 Customer details response:', {
+                status: detailsResponse?.status,
+                hasData: !!detailsResponse?.data
+            });
 
-            const customerData = detailsData?.customer;
-            if (!customerData) {
+            const detailsData = detailsResponse.data?.response?.data || detailsResponse.data?.data || detailsResponse.data;
+            console.log('📊 detailsData structure:', detailsData ? Object.keys(detailsData) : null);
+
+            // Determine which object is the actual customer record
+            let masterCustomer = detailsData?.customer || detailsData;
+
+            if (!masterCustomer || (!masterCustomer.id && !masterCustomer.customerId)) {
                 // Fallback to getCustomerById if details doesn't have it
+                console.log('🔄 Falling back to getCustomerById');
                 const customerResponse = await getCustomerById(customerId);
-                const fetchedCustomer = customerResponse.data?.response?.data || customerResponse.data?.data || customerResponse.data;
-                setCustomer(fetchedCustomer);
-            } else {
-                setCustomer(customerData);
+                masterCustomer = customerResponse.data?.response?.data || customerResponse.data?.data || customerResponse.data;
             }
 
-            // Map associated data from detailsData
-            setAssociatedVehicles(customerData?.purchasedVehicle || []);
-            setBookings(customerData?.booking || []);
-            setQuotations(customerData?.quotation || []);
-            setJobOrders(detailsData?.jobOrders || []);
-            setSpareOrders(detailsData?.spareOrders || []);
-            setCallHistory(detailsData?.telecmiCallHistory || []);
-            setNumberPlates(detailsData?.numberPlates || []);
-            setPayments(customerData?.payments || []);
+            setCustomerDetails(detailsData);
+            setCustomer(masterCustomer);
+
+            // Set associated arrays from the correct source
+            setAssociatedVehicles(masterCustomer?.purchasedVehicle || []);
+            setBookings(masterCustomer?.booking || []);
+
+            // Fetch quotations separately
+            const uuid = masterCustomer?.id || customerId;
+            console.log('🆔 UUID for quotations fetch:', uuid);
+            await fetchQuotations(uuid);
+
+            setJobOrders(detailsData?.jobOrders || masterCustomer?.jobOrders || []);
+            setSpareOrders(detailsData?.spareOrders || masterCustomer?.spareOrders || []);
+            setCallHistory(detailsData?.telecmiCallHistory || detailsData?.callHistory || masterCustomer?.callHistory || []);
+            setNumberPlates(detailsData?.numberPlates || masterCustomer?.numberPlates || []);
+            setPayments(masterCustomer?.payments || []);
 
             // Set form data from fetched customer data
-            const masterCustomer = customerData || customer;
             if (masterCustomer) {
+                console.log('Setting form data for customer:', masterCustomer.name);
                 setCustomerType(masterCustomer.customerType || 'Non-Customer');
                 setSalutation(masterCustomer.salutation || '');
                 setCustomerName(masterCustomer.name || masterCustomer.customerName || '');
@@ -326,6 +660,7 @@ export default function CustomerDetailsScreen() {
                 setGstTypeValue(masterCustomer.gstType || masterCustomer.GSTType || 'Unregistered');
                 setGstin(masterCustomer.gstin || masterCustomer.GSTNo || '');
                 setCustomerGrouping(masterCustomer.customerGrouping || '');
+                setDisplayCustomerId(masterCustomer.customerId || masterCustomer.customer_id || masterCustomer.id || '');
 
                 // Set phone numbers
                 if (masterCustomer.contacts && Array.isArray(masterCustomer.contacts)) {
@@ -355,7 +690,7 @@ export default function CustomerDetailsScreen() {
                     setBillingAddress2(bAddr.line2 || bAddr.addressLine2 || '');
                     setBillingAddress3(bAddr.line3 || bAddr.addressLine3 || '');
                     setBillingLocality(bAddr.locality || '');
-                    setBillingCountryId(bAddr.country?.id || bAddr.country || 'India');
+                    setBillingCountryId(bAddr.country?.id || bAddr.country || '');
                     setBillingStateId(bAddr.state?.id || bAddr.state || '');
                     setBillingDistrictId(bAddr.district?.id || bAddr.city || '');
                     setBillingPincode(bAddr.pincode || '');
@@ -368,7 +703,7 @@ export default function CustomerDetailsScreen() {
                     setShippingAddress2(sAddr.line2 || sAddr.addressLine2 || sAddr.shippingline2 || '');
                     setShippingAddress3(sAddr.line3 || sAddr.addressLine3 || sAddr.shippingline3 || '');
                     setShippingLocality(sAddr.locality || sAddr.shippinglocality || '');
-                    setShippingCountryId(sAddr.country?.id || sAddr.country || sAddr.shippingcountry || 'India');
+                    setShippingCountryId(sAddr.country?.id || sAddr.country || sAddr.shippingcountry || '');
                     setShippingStateId(sAddr.state?.id || sAddr.state || sAddr.shippingstate || '');
                     setShippingDistrictId(sAddr.district?.id || sAddr.shippingdistrict || sAddr.city || '');
                     setShippingPincode(sAddr.pincode || sAddr.shippingpincode || '');
@@ -376,8 +711,254 @@ export default function CustomerDetailsScreen() {
             }
 
         } catch (error) {
-            console.error('Error fetching customer data:', error);
-            // Alert.alert('Error', 'Failed to load customer data');
+            console.error('❌ Error fetching customer data:', error);
+
+            // Handle specific server errors
+            if (error instanceof Error) {
+                if (error.message === 'TIMEOUT_FALLBACK') {
+                    console.log('⏱️ API timeout - Using mock data immediately');
+                    console.log('🔄 Using mock data for demonstration');
+                    // Only show toast if navigation context is available
+                    try {
+                        toast.error('Server response slow. Showing demo data.');
+                    } catch (toastError) {
+                        console.log('Toast not available, continuing with mock data');
+                    }
+
+                    // Set mock data for demonstration when server is down
+                    setCustomer({
+                        customerId: customerId,
+                        customerType: 'Customer',
+                        salutation: 'Mr.',
+                        name: 'Demo Customer',
+                        fatherName: 'Demo Father',
+                        gender: 'Male',
+                        dob: '01/01/1990',
+                        email: 'demo@example.com',
+                        gstType: 'Unregistered',
+                        gstin: '',
+                        customerGrouping: 'Regular',
+                        phoneNumbers: [
+                            { number: '6361945159', type: 'Primary', validity: 'Valid', whatsApp: 'Yes', dnd: 'No' }
+                        ],
+                        billingAddress: {
+                            line1: '123 Demo Street',
+                            line2: 'Demo Area',
+                            line3: 'Demo City',
+                            locality: 'Demo Locality',
+                            country: 'India',
+                            city: 'Demo City',
+                            state: 'Demo State',
+                            pincode: '123456'
+                        },
+                        shippingAddress: {
+                            line1: '123 Demo Street',
+                            line2: 'Demo Area',
+                            line3: 'Demo City',
+                            locality: 'Demo Locality',
+                            country: 'India',
+                            city: 'Demo City',
+                            state: 'Demo State',
+                            pincode: '123456'
+                        }
+                    });
+
+                    // Set mock quotations for demonstration
+                    const mockQuotations = [
+                        {
+                            id: 'Q001',
+                            quotationId: 'QTN-2024-001',
+                            date: '01/01/2024',
+                            modelCode: 'DEMO-001',
+                            modelName: 'Demo Vehicle Model 1',
+                            createdAt: '2024-01-01T10:00:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-001', modelName: 'Demo Vehicle Model 1' } }]
+                        },
+                        {
+                            id: 'Q002',
+                            quotationId: 'QTN-2024-002',
+                            date: '15/01/2024',
+                            modelCode: 'DEMO-002',
+                            modelName: 'Demo Vehicle Model 2',
+                            createdAt: '2024-01-15T14:30:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-002', modelName: 'Demo Vehicle Model 2' } }]
+                        },
+                        {
+                            id: 'Q003',
+                            quotationId: 'QTN-2024-003',
+                            date: '30/01/2024',
+                            modelCode: 'DEMO-003',
+                            modelName: 'Demo Vehicle Model 3',
+                            createdAt: '2024-01-30T09:15:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-003', modelName: 'Demo Vehicle Model 3' } }]
+                        }
+                    ];
+
+                    console.log('📋 Setting mock quotations:', mockQuotations.length);
+                    setQuotations(mockQuotations);
+                    setAssociatedVehicles([
+                        {
+                            id: 'V001',
+                            registerNo: 'DEMO-1234',
+                            chassisNo: 'DEMO-CHASSIS-001',
+                            color: { color: 'Red' },
+                            dateOfSale: '2024-01-01',
+                            vehicle: { modelCode: 'DEMO-001', modelName: 'Demo Vehicle Model 1' }
+                        }
+                    ]);
+                    setBookings([
+                        {
+                            id: 'B001',
+                            bookingId: 'BK-2024-001',
+                            createdAt: '2024-01-01T10:00:00Z',
+                            vehicle: { modelName: 'Demo Vehicle Model 1' },
+                            bookingStatus: 'CONFIRMED'
+                        }
+                    ]);
+
+                    // Force a re-render by updating loading state
+                    setLoading(false);
+                    return; // Skip the empty data setting
+
+                } else if (error.message.includes('504') || error.message.includes('502')) {
+                    console.log('🚨 Server error detected - Backend is down');
+                    console.log('🔄 Using mock data for demonstration');
+                    // Only show toast if navigation context is available
+                    try {
+                        toast.error('Server is temporarily unavailable. Showing demo data.');
+                    } catch (toastError) {
+                        console.log('Toast not available, continuing with mock data');
+                    }
+
+                    // Set mock data for demonstration when server is down
+                    setCustomer({
+                        customerId: customerId,
+                        customerType: 'Customer',
+                        salutation: 'Mr.',
+                        name: 'Demo Customer',
+                        fatherName: 'Demo Father',
+                        gender: 'Male',
+                        dob: '01/01/1990',
+                        email: 'demo@example.com',
+                        gstType: 'Unregistered',
+                        gstin: '',
+                        customerGrouping: 'Regular',
+                        phoneNumbers: [
+                            { number: '6361945159', type: 'Primary', validity: 'Valid', whatsApp: 'Yes', dnd: 'No' }
+                        ],
+                        billingAddress: {
+                            line1: '123 Demo Street',
+                            line2: 'Demo Area',
+                            line3: 'Demo City',
+                            locality: 'Demo Locality',
+                            country: 'India',
+                            city: 'Demo City',
+                            state: 'Demo State',
+                            pincode: '123456'
+                        },
+                        shippingAddress: {
+                            line1: '123 Demo Street',
+                            line2: 'Demo Area',
+                            line3: 'Demo City',
+                            locality: 'Demo Locality',
+                            country: 'India',
+                            city: 'Demo City',
+                            state: 'Demo State',
+                            pincode: '123456'
+                        }
+                    });
+
+                    // Set mock quotations for demonstration
+                    const mockQuotations = [
+                        {
+                            id: 'Q001',
+                            quotationId: 'QTN-2024-001',
+                            date: '01/01/2024',
+                            modelCode: 'DEMO-001',
+                            modelName: 'Demo Vehicle Model 1',
+                            createdAt: '2024-01-01T10:00:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-001', modelName: 'Demo Vehicle Model 1' } }]
+                        },
+                        {
+                            id: 'Q002',
+                            quotationId: 'QTN-2024-002',
+                            date: '15/01/2024',
+                            modelCode: 'DEMO-002',
+                            modelName: 'Demo Vehicle Model 2',
+                            createdAt: '2024-01-15T14:30:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-002', modelName: 'Demo Vehicle Model 2' } }]
+                        },
+                        {
+                            id: 'Q003',
+                            quotationId: 'QTN-2024-003',
+                            date: '30/01/2024',
+                            modelCode: 'DEMO-003',
+                            modelName: 'Demo Vehicle Model 3',
+                            createdAt: '2024-01-30T09:15:00Z',
+                            vehicle: [{ vehicleDetail: { modelCode: 'DEMO-003', modelName: 'Demo Vehicle Model 3' } }]
+                        }
+                    ];
+
+                    console.log('📋 Setting mock quotations:', mockQuotations.length);
+                    setQuotations(mockQuotations);
+                    setAssociatedVehicles([
+                        {
+                            id: 'V001',
+                            registerNo: 'DEMO-1234',
+                            chassisNo: 'DEMO-CHASSIS-001',
+                            color: { color: 'Red' },
+                            dateOfSale: '2024-01-01',
+                            vehicle: { modelCode: 'DEMO-001', modelName: 'Demo Vehicle Model 1' }
+                        }
+                    ]);
+                    setBookings([
+                        {
+                            id: 'B001',
+                            bookingId: 'BK-2024-001',
+                            createdAt: '2024-01-01T10:00:00Z',
+                            vehicle: { modelName: 'Demo Vehicle Model 1' },
+                            bookingStatus: 'CONFIRMED'
+                        }
+                    ]);
+
+                    // Force a re-render by updating loading state
+                    setLoading(false);
+                    return; // Skip the empty data setting
+
+                } else if (error.message.includes('404')) {
+                    console.log('🔍 Customer not found error');
+                    try {
+                        toast.error('Customer not found. Please check the customer ID.');
+                    } catch (toastError) {
+                        console.log('Toast not available');
+                    }
+                } else if (error.message.includes('401')) {
+                    console.log('🔐 Authentication error');
+                    try {
+                        toast.error('Session expired. Please login again.');
+                    } catch (toastError) {
+                        console.log('Toast not available');
+                    }
+                } else {
+                    console.log('❓ Unknown error:', error.message);
+                    try {
+                        toast.error('Failed to load customer data. Please try again.');
+                    } catch (toastError) {
+                        console.log('Toast not available');
+                    }
+                }
+            }
+
+            // Set default empty data to prevent crashes
+            setCustomerDetails(null);
+            setQuotations([]);
+            setAssociatedVehicles([]);
+            setBookings([]);
+            setJobOrders([]);
+            setSpareOrders([]);
+            setCallHistory([]);
+            setNumberPlates([]);
+            setPayments([]);
         } finally {
             setLoading(false);
         }
@@ -387,6 +968,30 @@ export default function CustomerDetailsScreen() {
         fetchCustomerData();
         fetchCountries();
     }, [customerId]);
+
+    useEffect(() => {
+        if (billingCountryId) {
+            fetchStates(billingCountryId);
+        }
+    }, [billingCountryId]);
+
+    useEffect(() => {
+        if (billingStateId) {
+            fetchDistricts(billingStateId);
+        }
+    }, [billingStateId]);
+
+    useEffect(() => {
+        if (!sameAsBilling && shippingCountryId) {
+            fetchStates(shippingCountryId);
+        }
+    }, [shippingCountryId, sameAsBilling]);
+
+    useEffect(() => {
+        if (!sameAsBilling && shippingStateId) {
+            fetchDistricts(shippingStateId);
+        }
+    }, [shippingStateId, sameAsBilling]);
 
     // Validation functions from autoinn-fe
     const validateField = (fieldName: string, value: string): string | null => {
@@ -407,7 +1012,7 @@ export default function CustomerDetailsScreen() {
                 return validateOptionalEmail(value);
 
             case 'gstin':
-                if (!gstType && (!value || !value.trim())) {
+                if (!isGstRequired && (!value || !value.trim())) {
                     return "Enter GST";
                 }
                 return null;
@@ -550,7 +1155,7 @@ export default function CustomerDetailsScreen() {
     };
 
     const handleClose = () => {
-        navigation.goBack();
+        safeNavigate('Main' as any);
     };
 
     const handleAddContact = () => {
@@ -559,13 +1164,16 @@ export default function CustomerDetailsScreen() {
                 ...phoneNumbers,
                 {
                     number: newPhone,
-                    type: 'Alternate',
-                    validity: 'Valid',
-                    whatsApp: 'No',
-                    dnd: 'No',
+                    type: newPhoneType as any,
+                    validity: 'Valid' as any,
+                    whatsApp: newWhatsApp as any,
+                    dnd: newDND as any,
                 },
             ]);
             setNewPhone('');
+            setNewPhoneType('Alternate');
+            setNewWhatsApp('No');
+            setNewDND('No');
         }
     };
 
@@ -576,11 +1184,14 @@ export default function CustomerDetailsScreen() {
             const response = await getCountries();
             const data = response?.data;
             if (data?.code === 200) {
-                setCountries(data.data || []);
-                if (data.data && data.data.length > 0) {
-                    setBillingCountryId(data.data[0].id);
-                    setShippingCountryId(data.data[0].id);
-                    await fetchStates(data.data[0].id);
+                const indiaOnly = (data.data || []).filter((c: any) =>
+                    c.name.toLowerCase() === 'india' || c.id === 'India'
+                );
+                setCountries(indiaOnly);
+                if (indiaOnly.length > 0 && !billingCountryId) {
+                    setBillingCountryId(indiaOnly[0].id);
+                    setShippingCountryId(indiaOnly[0].id);
+                    await fetchStates(indiaOnly[0].id);
                 }
             }
         } catch (error) {
@@ -623,9 +1234,11 @@ export default function CustomerDetailsScreen() {
 
     const handleCountryChange = async (countryId: string, addressType: 'billing' | 'shipping' = 'billing') => {
         if (addressType === 'billing') {
+            setBillingCountryId(countryId);
             setBillingStateId('');
             setBillingDistrictId('');
         } else {
+            setShippingCountryId(countryId);
             setShippingStateId('');
             setShippingDistrictId('');
         }
@@ -634,8 +1247,10 @@ export default function CustomerDetailsScreen() {
 
     const handleStateChange = async (stateId: string, addressType: 'billing' | 'shipping' = 'billing') => {
         if (addressType === 'billing') {
+            setBillingStateId(stateId);
             setBillingDistrictId('');
         } else {
+            setShippingStateId(stateId);
             setShippingDistrictId('');
         }
         await fetchDistricts(stateId);
@@ -644,14 +1259,14 @@ export default function CustomerDetailsScreen() {
     const handleGSTTypeChange = (value: string) => {
         setGstTypeValue(value);
         if (value === 'Unregistered') {
-            setGstType(true);
+            setIsGstRequired(true);
             setGstin('');
             setGstName('');
             setGstStatus('');
             // Clear GST error
             setErrors(prev => ({ ...prev, gstin: '' }));
         } else {
-            setGstType(false);
+            setIsGstRequired(false);
         }
     };
 
@@ -731,7 +1346,7 @@ export default function CustomerDetailsScreen() {
         }
 
         // Validate GSTIN if GST type is not "Unregistered"
-        if (!gstType && (!gstin || !gstin.trim())) {
+        if (!isGstRequired && (!gstin || !gstin.trim())) {
             validationErrors.gstin = "Enter GST";
         }
 
@@ -766,30 +1381,29 @@ export default function CustomerDetailsScreen() {
 
         // If validation passes, save the data
         toast.success('Customer details saved successfully!');
-        navigation.goBack();
+        safeNavigate('Main' as any);
     };
 
-    const handleDateChange = (event: any, selectedDate?: Date) => {
-        setShowDatePicker(false);
+    const handleFollowUpDateChange = (event: any, selectedDate?: Date) => {
+        setShowFollowUpDatePicker(false);
         if (selectedDate) {
             const day = selectedDate.getDate().toString().padStart(2, '0');
             const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
             const year = selectedDate.getFullYear();
             const formattedDate = `${day}/${month}/${year}`;
-
-            // Check if it's the DOB field or Follow-Up Date
-            setDob(formattedDate);
             setFollowUpDate(formattedDate);
             setFollowUpDateError('');
         }
     };
 
-    const handleTimeChange = (event: any, selectedTime?: Date) => {
-        setShowTimePicker(false);
-        if (selectedTime) {
-            const hours = selectedTime.getHours().toString().padStart(2, '0');
-            const minutes = selectedTime.getMinutes().toString().padStart(2, '0');
-            setFollowUpTime(`${hours}:${minutes}`);
+    const handleDobDateChange = (event: any, selectedDate?: Date) => {
+        setShowDobDatePicker(false);
+        if (selectedDate) {
+            const day = selectedDate.getDate().toString().padStart(2, '0');
+            const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+            const year = selectedDate.getFullYear();
+            const formattedDate = `${day}/${month}/${year}`;
+            setDob(formattedDate);
         }
     };
 
@@ -797,7 +1411,7 @@ export default function CustomerDetailsScreen() {
         if (loading) {
             return (
                 <View className="flex-1 bg-[#f5f5f5] items-center justify-center">
-                    <Text className="text-gray-500">Loading customer details...</Text>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
                 </View>
             );
         }
@@ -806,10 +1420,9 @@ export default function CustomerDetailsScreen() {
             <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
                 {/* Customer ID */}
                 <View className="mb-4 mt-2">
-                    <View className="bg-[#e8f5e9] rounded-lg p-3">
-                        <Text className="text-sm font-medium text-gray-700">
-                            Customer ID : {customer?.customerId || customerId || 'N/A'}
-                        </Text>
+                    <FormLabel label="Customer ID" />
+                    <View className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-2.5">
+                        <Text className="text-gray-600 font-medium">{displayCustomerId || 'Loading...'}</Text>
                     </View>
                 </View>
 
@@ -820,17 +1433,37 @@ export default function CustomerDetailsScreen() {
                     {/* Customer Type */}
                     <View className="mb-3">
                         <FormLabel label="Customer Type" required />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
-                            <Text className="text-gray-900">{customerType}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={customerTypeRef}
+                            onPress={() => {
+                                customerTypeRef.current?.measureInWindow((x, y, width, height) => {
+                                    setDropdownLayout({ x, y, width, height });
+                                    setShowCustomerTypeDropdown(true);
+                                });
+                            }}
+                            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row justify-between items-center"
+                        >
+                            <Text className="text-gray-900">{customerType || 'Select Type'}</Text>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     {/* Salutation */}
                     <View className="mb-3">
                         <FormLabel label="Salutation" />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
+                        <TouchableOpacity
+                            ref={salutationRef}
+                            onPress={() => {
+                                salutationRef.current?.measureInWindow((x, y, width, height) => {
+                                    setDropdownLayout({ x, y, width, height });
+                                    setShowSalutationDropdown(true);
+                                });
+                            }}
+                            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row justify-between items-center"
+                        >
                             <Text className="text-gray-900">{salutation || 'Select'}</Text>
-                        </View>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     {/* Customer Name */}
@@ -892,7 +1525,7 @@ export default function CustomerDetailsScreen() {
                     <View className="mb-3">
                         <FormLabel label="Date of Birth" />
                         <TouchableOpacity
-                            onPress={() => setShowDatePicker(true)}
+                            onPress={() => setShowDobDatePicker(true)}
                             className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row items-center justify-between"
                         >
                             <Text className="text-gray-900">{dob}</Text>
@@ -902,29 +1535,32 @@ export default function CustomerDetailsScreen() {
 
                     {/* Phone Numbers Table */}
                     <View className="mt-2 mb-4">
-                        <FormLabel label="Contacts" required />
+                        <View className="flex-row items-center mb-1">
+                            <Text className="text-red-500 text-sm">* </Text>
+                            <FormLabel label="Contacts" />
+                        </View>
                         <View className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                                 <View className="min-w-[650px]">
                                     {/* Table Header */}
-                                    <View className="bg-gray-100 flex-row border-b border-gray-200">
+                                    <View className="bg-gray-200 flex-row border-b border-gray-300">
                                         <View className="w-[150px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold">Phone Number</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold">Phone Number</Text>
                                         </View>
                                         <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold">Type</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold">Type</Text>
                                         </View>
                                         <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold">Validity</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold">Validity</Text>
                                         </View>
                                         <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold">WhatsApp</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold">WhatsApp</Text>
                                         </View>
                                         <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold">DND</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold">DND</Text>
                                         </View>
                                         <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-xs font-bold text-center">Action</Text>
+                                            <Text className="text-gray-700 text-[11px] font-bold text-center">Action</Text>
                                         </View>
                                     </View>
 
@@ -941,25 +1577,33 @@ export default function CustomerDetailsScreen() {
                                             <View className="w-[150px] px-4 py-3 flex-row items-center">
                                                 <Text className="text-gray-600 text-xs font-medium">{phone?.number || 'N/A'}</Text>
                                             </View>
+
+                                            {/* Phone Type - Plain Text */}
                                             <View className="w-[100px] px-4 py-3 flex-row items-center">
-                                                <Text className="text-gray-600 text-xs">{phone?.type || 'N/A'}</Text>
+                                                <Text className="text-gray-600 text-xs">{phone?.type || 'Alternate'}</Text>
                                             </View>
+
                                             <View className="w-[100px] px-4 py-3 flex-row items-center">
-                                                <Text className="text-gray-600 text-xs">{phone?.validity || 'N/A'}</Text>
+                                                <Text className="text-gray-600 text-xs">{phone?.validity || 'Valid'}</Text>
                                             </View>
+
+                                            {/* WhatsApp - Plain Text */}
                                             <View className="w-[100px] px-4 py-3 flex-row items-center">
-                                                <Text className="text-gray-600 text-xs">{phone?.whatsApp || 'N/A'}</Text>
+                                                <Text className="text-gray-600 text-xs">{phone?.whatsApp || 'No'}</Text>
                                             </View>
+
+                                            {/* DND - Plain Text */}
                                             <View className="w-[100px] px-4 py-3 flex-row items-center">
-                                                <Text className="text-gray-600 text-xs">{phone?.dnd || 'N/A'}</Text>
+                                                <Text className="text-gray-600 text-xs">{phone?.dnd || 'No'}</Text>
                                             </View>
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center justify-center gap-4">
-                                                <TouchableOpacity onPress={() => console.log('Edit', phone)}>
-                                                    <Edit2 size={14} color="#666" />
+
+                                            <View className="w-[100px] px-4 py-3 flex-row items-center justify-center gap-2">
+                                                <TouchableOpacity onPress={() => handleEditPhone(index)}>
+                                                    <Edit2 size={16} color="#666" />
                                                 </TouchableOpacity>
-                                                <View className="w-[1px] h-3 bg-gray-300" />
-                                                <TouchableOpacity onPress={() => console.log('Delete', phone)}>
-                                                    <Trash2 size={14} color="#666" />
+                                                <View className="w-[1px] h-3 bg-gray-200 mx-1" />
+                                                <TouchableOpacity onPress={() => handleDeletePhone(index)}>
+                                                    <Trash2 size={16} color="#ef4444" />
                                                 </TouchableOpacity>
                                             </View>
                                         </View>
@@ -970,49 +1614,229 @@ export default function CustomerDetailsScreen() {
                     </View>
 
                     {/* Add Contact Section */}
-                    <View className="mb-3">
-                        <View className="flex-row gap-2 mb-3">
-                            <View className="flex-1">
+                    <View className="mt-4 mb-2">
+                        <View className="flex-row gap-x-3 mb-4">
+                            {/* Phone */}
+                            <View className="flex-[1.5]">
                                 <FormLabel label="Phone" />
-                                <TextInput
-                                    value={newPhone}
-                                    onChangeText={setNewPhone}
-                                    placeholder="+91"
-                                    placeholderTextColor="#999"
-                                    keyboardType="phone-pad"
-                                    className="mt-2 bg-white border border-gray-300 rounded-lg px-3 py-3 text-gray-900"
-                                />
+                                <View className="flex-row mt-1.5 border border-gray-300 rounded-lg overflow-hidden bg-white h-[45px]">
+                                    <View className="bg-gray-50 px-3 justify-center border-r border-gray-300">
+                                        <Text className="text-gray-700 text-sm font-medium">+91</Text>
+                                    </View>
+                                    <TextInput
+                                        value={newPhone}
+                                        onChangeText={setNewPhone}
+                                        placeholder="7019468613"
+                                        placeholderTextColor="#999"
+                                        keyboardType="phone-pad"
+                                        className="flex-1 px-3 py-0 text-gray-900 text-sm"
+                                        style={{ height: '100%' }}
+                                    />
+                                </View>
                             </View>
+
+                            {/* Type Dropdown */}
                             <View className="flex-1">
                                 <FormLabel label="Type" />
-                                <View className="mt-2 bg-gray-50 border border-gray-300 rounded-lg px-3 py-3">
-                                    <Text className="text-gray-900">Alternate</Text>
-                                </View>
+                                <TouchableOpacity
+                                    onPress={(event) => {
+                                        const target = event.currentTarget as any;
+                                        target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                            setDropdownLayout({ x, y, width, height });
+                                            setEditingPhoneIndex(null);
+                                            setShowPhoneTypeDropdown(true);
+                                        });
+                                    }}
+                                    className="mt-1.5 bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-[45px]"
+                                >
+                                    <Text className="text-gray-600 text-xs">{newPhoneType}</Text>
+                                    <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* WhatsApp Dropdown */}
+                            <View className="flex-1">
+                                <FormLabel label="WhatsApp" />
+                                <TouchableOpacity
+                                    onPress={(event) => {
+                                        const target = event.currentTarget as any;
+                                        target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                            setDropdownLayout({ x, y, width, height });
+                                            setEditingPhoneIndex(null);
+                                            setShowWhatsAppDropdown(true);
+                                        });
+                                    }}
+                                    className="mt-1.5 bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-[45px]"
+                                >
+                                    <Text className="text-gray-600 text-xs">{newWhatsApp}</Text>
+                                    <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                </TouchableOpacity>
                             </View>
                         </View>
 
-                        <View className="flex-row gap-2 mt-2 mb-5">
-                            <View className="flex-1">
-                                <FormLabel label="WhatsApp" />
-                                <View className="mt-2 bg-gray-50 border border-gray-300 rounded-lg px-3 py-3">
-                                    <Text className="text-gray-900">No</Text>
-                                </View>
-                            </View>
-                            <View className="flex-1">
+                        <View className="flex-row gap-3 mb-5">
+                            {/* DND Dropdown */}
+                            <View className="w-[50%]">
                                 <FormLabel label="DND" />
-                                <View className="mt-2 bg-gray-50 border border-gray-300 rounded-lg px-3 py-3">
-                                    <Text className="text-gray-900">Not DND</Text>
-                                </View>
+                                <TouchableOpacity
+                                    onPress={(event) => {
+                                        const target = event.currentTarget as any;
+                                        target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                            setDropdownLayout({ x, y, width, height });
+                                            setEditingPhoneIndex(null);
+                                            setShowDNDDropdown(true);
+                                        });
+                                    }}
+                                    className="mt-1.5 bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-[45px]"
+                                >
+                                    <Text className="text-gray-600 text-xs">{newDND}</Text>
+                                    <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                </TouchableOpacity>
                             </View>
                         </View>
 
                         <TouchableOpacity
                             onPress={handleAddContact}
-                            className="bg-teal-600 rounded-lg py-3 items-center"
+                            className="bg-teal-600 rounded-lg py-3 items-center shadow-sm"
                         >
                             <Text className="text-white font-medium text-sm">Add Contact</Text>
                         </TouchableOpacity>
                     </View>
+
+                    {/* Phone Type Dropdown Modal */}
+                    <Modal
+                        visible={showPhoneTypeDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowPhoneTypeDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowPhoneTypeDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 0,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                    marginLeft: dropdownLayout ? 0 : 20,
+                                }}
+                            >
+                                <ScrollView>
+                                    {phoneTypes.map((type) => (
+                                        <TouchableOpacity
+                                            key={type.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => handlePhoneTypeChange(editingPhoneIndex, type.key)}
+                                        >
+                                            <Text className="text-gray-900 text-xs">{type.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* WhatsApp Dropdown Modal */}
+                    <Modal
+                        visible={showWhatsAppDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowWhatsAppDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowWhatsAppDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 0,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                    marginLeft: dropdownLayout ? 0 : 20,
+                                }}
+                            >
+                                <ScrollView>
+                                    {yesNoOptions.map((option) => (
+                                        <TouchableOpacity
+                                            key={option.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => handleWhatsAppChange(editingPhoneIndex, option.key)}
+                                        >
+                                            <Text className="text-gray-900 text-xs">{option.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* DND Dropdown Modal */}
+                    <Modal
+                        visible={showDNDDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowDNDDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowDNDDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 0,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                    marginLeft: dropdownLayout ? 0 : 20,
+                                }}
+                            >
+                                <ScrollView>
+                                    {yesNoOptions.map((option) => (
+                                        <TouchableOpacity
+                                            key={option.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => handleDNDChange(editingPhoneIndex, option.key)}
+                                        >
+                                            <Text className="text-gray-900 text-xs">{option.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
 
                     {/* Email */}
                     <View className="mb-3">
@@ -1034,26 +1858,87 @@ export default function CustomerDetailsScreen() {
                     {/* GST Type */}
                     <View className="mb-3">
                         <FormLabel label="GST Type" />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
-                            <Text className="text-gray-900">{gstType}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={gstTypeRef}
+                            onPress={() => {
+                                gstTypeRef.current?.measureInWindow((x, y, width, height) => {
+                                    setDropdownLayout({ x, y, width, height });
+                                    setShowGSTTypeDropdown(true);
+                                });
+                            }}
+                            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row justify-between items-center"
+                        >
+                            <Text className="text-gray-900">
+                                {gstTypeValue || 'Select GST Type'}
+                            </Text>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     {/* GSTIN */}
                     <View className="mb-3">
-                        <FormLabel label="GSTIN" required={!gstType} />
-                        <TextInput
-                            value={gstin}
-                            onChangeText={(value) => handleFieldChange('gstin', value)}
-                            placeholder="Enter GSTIN"
-                            placeholderTextColor="#999"
-                            className={`bg-white border rounded-lg px-3 py-2.5 text-gray-900 ${errors.gstin ? 'border-red-500' : 'border-gray-300'
-                                }`}
-                        />
+                        <FormLabel label="GSTIN" required={!isGstRequired} />
+                        {gstTypeValue === 'Unregistered' ? (
+                            <View className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-2.5">
+                                <Text className="text-gray-500">N/A</Text>
+                            </View>
+                        ) : (
+                            <TextInput
+                                value={gstin}
+                                onChangeText={(value) => handleFieldChange('gstin', value)}
+                                placeholder="Enter GSTIN"
+                                placeholderTextColor="#999"
+                                className={`bg-white border rounded-lg px-3 py-2.5 text-gray-900 ${errors.gstin ? 'border-red-500' : 'border-gray-300'}`}
+                            />
+                        )}
                         {errors.gstin && (
                             <Text className="text-red-500 text-xs mt-1">{errors.gstin}</Text>
                         )}
                     </View>
+
+                    {/* GST Type Dropdown Modal */}
+                    <Modal
+                        visible={showGSTTypeDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowGSTTypeDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowGSTTypeDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {gstTypes.map((type) => (
+                                        <TouchableOpacity
+                                            key={type.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => handleGSTTypeChange(type.key)}
+                                        >
+                                            <Text className="text-gray-900 text-sm">{type.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
 
                     {/* Customer Grouping */}
                     <View className="mb-3">
@@ -1073,25 +1958,129 @@ export default function CustomerDetailsScreen() {
                         )}
                     </View>
 
+                    {/* Customer Type Dropdown Modal */}
+                    <Modal
+                        visible={showCustomerTypeDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowCustomerTypeDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowCustomerTypeDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {customerTypes.map((type) => (
+                                        <TouchableOpacity
+                                            key={type.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => {
+                                                setCustomerType(type.key);
+                                                setShowCustomerTypeDropdown(false);
+                                            }}
+                                        >
+                                            <Text className="text-gray-900 text-sm">{type.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* Salutation Dropdown Modal */}
+                    <Modal
+                        visible={showSalutationDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => setShowSalutationDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => setShowSalutationDropdown(false)}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {salutations.map((sal) => (
+                                        <TouchableOpacity
+                                            key={sal.key}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => {
+                                                setSalutation(sal.key);
+                                                setShowSalutationDropdown(false);
+                                            }}
+                                        >
+                                            <Text className="text-gray-900 text-sm">{sal.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
                     {/* Customer Grouping Dropdown Modal */}
                     <Modal
                         visible={showCustomerGroupingDropdown}
                         transparent={true}
-                        animationType="fade"
+                        animationType="none"
                         onRequestClose={() => setShowCustomerGroupingDropdown(false)}
                     >
                         <TouchableOpacity
-                            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
+                            style={{ flex: 1 }}
                             activeOpacity={1}
                             onPress={() => setShowCustomerGroupingDropdown(false)}
                         >
-                            <View className="bg-white rounded-lg m-4 p-4 max-h-80">
-                                <View className="flex-row justify-between items-center mb-4">
-                                    <Text className="text-lg font-semibold">Customer Grouping</Text>
-                                    <TouchableOpacity onPress={() => setShowCustomerGroupingDropdown(false)}>
-                                        <X size={20} color="#666" />
-                                    </TouchableOpacity>
-                                </View>
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
                                 <ScrollView>
                                     {customerGroupingOptions.map((option) => (
                                         <TouchableOpacity
@@ -1103,7 +2092,183 @@ export default function CustomerDetailsScreen() {
                                                 setErrors(prev => ({ ...prev, customerGrouping: '' }));
                                             }}
                                         >
-                                            <Text className="text-gray-900">{option.title}</Text>
+                                            <Text className="text-gray-900 text-sm">{option.title}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* Country Dropdown Modal */}
+                    <Modal
+                        visible={showCountryDropdown || showShippingCountryDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => {
+                            setShowCountryDropdown(false);
+                            setShowShippingCountryDropdown(false);
+                        }}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => {
+                                setShowCountryDropdown(false);
+                                setShowShippingCountryDropdown(false);
+                            }}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {countries
+                                        .filter(c => c.name.toLowerCase() === 'india' || c.id === 'India')
+                                        .map((country) => (
+                                            <TouchableOpacity
+                                                key={country.id}
+                                                className="p-3 border-b border-gray-100"
+                                                onPress={() => {
+                                                    if (showCountryDropdown) {
+                                                        handleCountryChange(country.id, 'billing');
+                                                        setShowCountryDropdown(false);
+                                                    } else {
+                                                        handleCountryChange(country.id, 'shipping');
+                                                        setShowShippingCountryDropdown(false);
+                                                    }
+                                                }}
+                                            >
+                                                <Text className="text-gray-900 text-sm">{country.name}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* State Dropdown Modal */}
+                    <Modal
+                        visible={showStateDropdown || showShippingStateDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => {
+                            setShowStateDropdown(false);
+                            setShowShippingStateDropdown(false);
+                        }}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => {
+                                setShowStateDropdown(false);
+                                setShowShippingStateDropdown(false);
+                            }}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {states.map((state) => (
+                                        <TouchableOpacity
+                                            key={state.id}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => {
+                                                if (showStateDropdown) {
+                                                    handleStateChange(state.id, 'billing');
+                                                    setShowStateDropdown(false);
+                                                } else {
+                                                    handleStateChange(state.id, 'shipping');
+                                                    setShowShippingStateDropdown(false);
+                                                }
+                                            }}
+                                        >
+                                            <Text className="text-gray-900 text-sm">{state.name}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+
+                    {/* City Dropdown Modal */}
+                    <Modal
+                        visible={showCityDropdown || showShippingCityDropdown}
+                        transparent={true}
+                        animationType="none"
+                        onRequestClose={() => {
+                            setShowCityDropdown(false);
+                            setShowShippingCityDropdown(false);
+                        }}
+                    >
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            activeOpacity={1}
+                            onPress={() => {
+                                setShowCityDropdown(false);
+                                setShowShippingCityDropdown(false);
+                            }}
+                        >
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
+                                    left: dropdownLayout ? dropdownLayout.x : 20,
+                                    width: dropdownLayout ? dropdownLayout.width : '90%',
+                                    backgroundColor: 'white',
+                                    borderRadius: 8,
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.25,
+                                    shadowRadius: 3.84,
+                                    elevation: 5,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                }}
+                            >
+                                <ScrollView>
+                                    {districts.map((city) => (
+                                        <TouchableOpacity
+                                            key={city.id}
+                                            className="p-3 border-b border-gray-100"
+                                            onPress={() => {
+                                                if (showCityDropdown) {
+                                                    setBillingDistrictId(city.id);
+                                                    setShowCityDropdown(false);
+                                                } else {
+                                                    setShippingDistrictId(city.id);
+                                                    setShowShippingCityDropdown(false);
+                                                }
+                                            }}
+                                        >
+                                            <Text className="text-gray-900 text-sm">{city.name}</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
@@ -1154,25 +2319,65 @@ export default function CustomerDetailsScreen() {
 
                     <View className="mb-3">
                         <FormLabel label="Country" />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
-                            <Text className="text-gray-900">{billingCountryId || 'India'}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={countryRef}
+                            onPress={() => {
+                                countryRef.current?.measureInWindow((x, y, width, height) => {
+                                    setDropdownLayout({ x, y, width, height });
+                                    setShowCountryDropdown(true);
+                                });
+                            }}
+                            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row justify-between items-center"
+                        >
+                            <Text className="text-gray-900">
+                                {countries.find(c => c.id === billingCountryId)?.name || billingCountryId || 'Select Country'}
+                            </Text>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     <View className="mb-3">
                         <FormLabel label="State" />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
-                            <Text className="text-gray-900">{billingStateId || 'Tamil Nadu'}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={stateRef}
+                            onPress={() => {
+                                if (billingCountryId) {
+                                    stateRef.current?.measureInWindow((x, y, width, height) => {
+                                        setDropdownLayout({ x, y, width, height });
+                                        setShowStateDropdown(true);
+                                    });
+                                }
+                            }}
+                            className={`bg-white border rounded-lg px-3 py-2.5 flex-row justify-between items-center ${!billingCountryId ? 'bg-gray-100 border-gray-200' : 'border-gray-300'}`}
+                            disabled={!billingCountryId}
+                        >
+                            <Text className={`text-gray-900 ${!billingCountryId ? 'text-gray-400' : ''}`}>
+                                {states.find(s => s.id === billingStateId)?.name || billingStateId || (billingCountryId ? 'Select State' : 'Select country first')}
+                            </Text>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     <View className="mb-3">
                         <FormLabel label="City" />
-                        <View className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5">
-                            <Text className="text-gray-900">
-                                {districts.find(d => d.id === billingDistrictId)?.name || 'Select City'}
+                        <TouchableOpacity
+                            ref={cityRef}
+                            onPress={() => {
+                                if (billingStateId) {
+                                    cityRef.current?.measureInWindow((x, y, width, height) => {
+                                        setDropdownLayout({ x, y, width, height });
+                                        setShowCityDropdown(true);
+                                    });
+                                }
+                            }}
+                            className={`bg-white border rounded-lg px-3 py-2.5 flex-row justify-between items-center ${!billingStateId ? 'bg-gray-100 border-gray-200' : 'border-gray-300'}`}
+                            disabled={!billingStateId}
+                        >
+                            <Text className={`text-gray-900 ${!billingStateId ? 'text-gray-400' : ''}`}>
+                                {districts.find(d => d.id === billingDistrictId)?.name || billingDistrictId || (billingStateId ? 'Select City' : 'Select state first')}
                             </Text>
-                        </View>
+                            <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </TouchableOpacity>
                     </View>
 
                     <View className="mb-3">
@@ -1246,23 +2451,82 @@ export default function CustomerDetailsScreen() {
 
                     <View className="mb-3">
                         <FormLabel label="Country" />
-                        <View className={`border rounded-lg px-3 py-2.5 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-300'}`}>
-                            <Text className="text-gray-900">{sameAsBilling ? billingCountryId : shippingCountryId || 'India'}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={shippingCountryRef}
+                            onPress={() => {
+                                if (!sameAsBilling) {
+                                    shippingCountryRef.current?.measureInWindow((x, y, width, height) => {
+                                        setDropdownLayout({ x, y, width, height });
+                                        setShowShippingCountryDropdown(true);
+                                    });
+                                }
+                            }}
+                            className={`border rounded-lg px-3 py-2.5 flex-row justify-between items-center ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'}`}
+                            disabled={sameAsBilling}
+                        >
+                            <Text className={`text-gray-900 ${sameAsBilling ? 'text-gray-600' : ''}`}>
+                                {sameAsBilling
+                                    ? (countries.find(c => c.id === billingCountryId)?.name || billingCountryId || 'India')
+                                    : (countries.find(c => c.id === shippingCountryId)?.name || shippingCountryId || 'India')
+                                }
+                            </Text>
+                            {!sameAsBilling && <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />}
+                        </TouchableOpacity>
                     </View>
 
                     <View className="mb-3">
                         <FormLabel label="State" />
-                        <View className={`border rounded-lg px-3 py-2.5 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-300'}`}>
-                            <Text className="text-gray-900">{sameAsBilling ? billingStateId : shippingStateId || 'Tamil Nadu'}</Text>
-                        </View>
+                        <TouchableOpacity
+                            ref={shippingStateRef}
+                            onPress={() => {
+                                if (!sameAsBilling && shippingCountryId) {
+                                    shippingStateRef.current?.measureInWindow((x, y, width, height) => {
+                                        setDropdownLayout({ x, y, width, height });
+                                        setShowShippingStateDropdown(true);
+                                    });
+                                }
+                            }}
+                            className={`border rounded-lg px-3 py-2.5 flex-row justify-between items-center ${sameAsBilling || !shippingCountryId ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'}`}
+                            disabled={sameAsBilling || !shippingCountryId}
+                        >
+                            <Text className={`text-gray-900 ${sameAsBilling || !shippingCountryId ? 'text-gray-600' : ''}`}>
+                                {sameAsBilling
+                                    ? (states.find(s => s.id === billingStateId)?.name || billingStateId || 'Tamil Nadu')
+                                    : (states.find(s => s.id === shippingStateId)?.name || shippingStateId || 'Tamil Nadu')
+                                }
+                            </Text>
+                            {!sameAsBilling && shippingCountryId && <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />}
+                        </TouchableOpacity>
                     </View>
 
                     <View className="mb-3">
                         <FormLabel label="City" />
-                        <View className={`border rounded-lg px-3 py-2.5 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-300'}`}>
-                            <Text className="text-gray-900">{sameAsBilling ? billingDistrictId : shippingDistrictId || 'Ariyapakkam'}</Text>
-                        </View>
+                        {!sameAsBilling && shippingStateId ? (
+                            <TouchableOpacity
+                                ref={shippingCityRef}
+                                onPress={() => {
+                                    shippingCityRef.current?.measureInWindow((x, y, width, height) => {
+                                        setDropdownLayout({ x, y, width, height });
+                                        setShowShippingCityDropdown(true);
+                                    });
+                                }}
+                                className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row justify-between items-center"
+                            >
+                                <Text className="text-gray-900">
+                                    {districts.find(d => d.id === shippingDistrictId)?.name || shippingDistrictId || 'Select City'}
+                                </Text>
+                                <ChevronLeft size={20} color="#666" style={{ transform: [{ rotate: '-90deg' }] }} />
+                            </TouchableOpacity>
+                        ) : (
+                            <View className={`border rounded-lg px-3 py-2.5 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-300'}`}>
+                                <Text className={`${sameAsBilling ? 'text-gray-600' : 'text-gray-400'}`}>
+                                    {sameAsBilling
+                                        ? (districts.find(d => d.id === billingDistrictId)?.name || billingDistrictId || 'Select City')
+                                        : (shippingStateId ? 'Select City' : 'Select state first')
+                                    }
+                                </Text>
+                            </View>
+                        )}
                     </View>
 
                     <View className="mb-3">
@@ -1289,6 +2553,18 @@ export default function CustomerDetailsScreen() {
     };
 
     const renderQuotationsTab = () => {
+        console.log('📊 Rendering Quotations tab - count:', quotations.length);
+        console.log('📋 Quotations data:', quotations);
+
+        if (loadingQuotations) {
+            return (
+                <View className="flex-1 bg-[#f5f5f5] items-center justify-center">
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text className="text-gray-500 mt-2">Loading quotations...</Text>
+                </View>
+            );
+        }
+
         return (
             <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
                 <View className="bg-white rounded-lg border border-gray-200 overflow-hidden mt-2 shadow-sm">
@@ -1303,7 +2579,8 @@ export default function CustomerDetailsScreen() {
                     </View>
                     {quotations.length === 0 ? (
                         <View className="p-8 items-center bg-white">
-                            <Text className="text-gray-400">No quotations found</Text>
+                            <Text className="text-gray-400 text-center">No quotations found for this customer</Text>
+                            <Text className="text-gray-300 text-xs text-center mt-2">Create a new quotation to get started</Text>
                         </View>
                     ) : quotations.map((quotation, index) => (
                         <View
@@ -1311,11 +2588,22 @@ export default function CustomerDetailsScreen() {
                             className={`px-3 py-3 border-b border-gray-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
                         >
                             <View className="flex-row items-center">
-                                <Text className="text-[10px] text-gray-600 flex-1">{quotation.createdAt ? new Date(quotation.createdAt).toLocaleDateString('en-GB') : (quotation.date || 'N/A')}</Text>
-                                <Text className="text-[10px] text-teal-600 font-bold flex-1">{quotation.quotationId || quotation.id || 'N/A'}</Text>
-                                <Text className="text-[10px] text-gray-800 flex-1">{quotation.vehicle?.[0]?.vehicleDetail?.modelCode || quotation.modelCode || 'N/A'}</Text>
-                                <Text className="text-[10px] text-gray-800 flex-1" numberOfLines={1}>{quotation.vehicle?.[0]?.vehicleDetail?.modelName || quotation.modelName || quotation.vehicleName || 'N/A'}</Text>
-                                <TouchableOpacity className="w-12 items-center">
+                                <Text className="text-[10px] text-gray-600 flex-1">
+                                    {quotation.createdAt ? new Date(quotation.createdAt).toLocaleDateString('en-GB') : (quotation.date || 'N/A')}
+                                </Text>
+                                <Text className="text-[10px] text-teal-600 font-bold flex-1">
+                                    {quotation.quotationId || quotation.id || 'N/A'}
+                                </Text>
+                                <Text className="text-[10px] text-gray-800 flex-1">
+                                    {quotation.vehicle?.[0]?.vehicleDetail?.modelCode || quotation.modelCode || 'N/A'}
+                                </Text>
+                                <Text className="text-[10px] text-gray-800 flex-1" numberOfLines={1}>
+                                    {getVehicleNames(quotation).join(', ') || quotation.modelName || 'N/A'}
+                                </Text>
+                                <TouchableOpacity
+                                    className="w-12 items-center"
+                                    onPress={() => safeNavigate('QuotationView', { id: quotation.id })}
+                                >
                                     <Text className="text-teal-600 text-[10px] font-medium">View</Text>
                                 </TouchableOpacity>
                             </View>
@@ -1371,6 +2659,63 @@ export default function CustomerDetailsScreen() {
     const renderBookingsTab = () => {
         return (
             <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
+                {/* Action Buttons */}
+                <View className="bg-white rounded-lg border border-gray-200 overflow-hidden mt-2 shadow-sm p-4">
+                    <View className="flex-row gap-3">
+                        <TouchableOpacity
+                            className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
+                            onPress={() => {
+                                console.log('🔍 Navigation context check:', {
+                                    hasNavigation: !!navigation,
+                                    navigationType: typeof navigation,
+                                    navigationMethods: navigation ? Object.keys(navigation) : [],
+                                    customerId,
+                                    customerName,
+                                    phoneNumbersCount: phoneNumbers?.length || 0
+                                });
+                                try {
+                                    if (navigation && navigation.navigate) {
+                                        console.log('🧭 Navigating to ConfirmBooking with:', { customerId, customerName, phoneNumbers });
+                                        navigation.navigate('ConfirmBooking' as any, { customerId, customerName, phoneNumbers });
+                                    } else {
+                                        console.error('❌ Navigation or navigate method not available');
+                                    }
+                                } catch (error) {
+                                    console.error('❌ ConfirmBooking navigation error:', error);
+                                }
+                            }}
+                        >
+                            <Text className="text-white font-medium text-sm">Add Confirm Booking</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
+                            onPress={() => {
+                                console.log('🔍 Navigation context check:', {
+                                    hasNavigation: !!navigation,
+                                    navigationType: typeof navigation,
+                                    navigationMethods: navigation ? Object.keys(navigation) : [],
+                                    customerId,
+                                    customerName,
+                                    phoneNumbersCount: phoneNumbers?.length || 0
+                                });
+                                try {
+                                    if (navigation && navigation.navigate) {
+                                        console.log('🧭 Navigating to AdvancedBooking with:', { customerId, customerName, phoneNumbers });
+                                        navigation.navigate('AdvancedBooking' as any, { customerId, customerName, phoneNumbers });
+                                    } else {
+                                        console.error('❌ Navigation or navigate method not available');
+                                    }
+                                } catch (error) {
+                                    console.error('❌ AdvancedBooking navigation error:', error);
+                                }
+                            }}
+                        >
+                            <Text className="text-white font-medium text-sm">Add Advanced Booking</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Bookings List */}
                 <View className="bg-white rounded-lg border border-gray-200 overflow-hidden mt-2 shadow-sm">
                     <View className="bg-gray-700 px-3 py-3">
                         <View className="flex-row">
@@ -1382,7 +2727,8 @@ export default function CustomerDetailsScreen() {
                     </View>
                     {bookings.length === 0 ? (
                         <View className="p-8 items-center bg-white">
-                            <Text className="text-gray-400">No bookings found</Text>
+                            <Text className="text-gray-400 text-center">No bookings found for this customer</Text>
+                            <Text className="text-gray-300 text-xs text-center mt-2">Create a new booking to get started</Text>
                         </View>
                     ) : bookings.map((booking, index) => (
                         <View key={booking.id || index} className={`px-3 py-3 border-b border-gray-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
@@ -1657,13 +3003,23 @@ export default function CustomerDetailsScreen() {
             {/* Tab Content */}
             {renderTabContent()}
 
-            {/* Date Picker Modal */}
-            {showDatePicker && (
+            {/* Follow-up Date Picker */}
+            {showFollowUpDatePicker && (
                 <DateTimePicker
                     value={new Date()}
                     mode="date"
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={handleDateChange}
+                    onChange={handleFollowUpDateChange}
+                />
+            )}
+
+            {/* DOB Date Picker */}
+            {showDobDatePicker && (
+                <DateTimePicker
+                    value={new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleDobDateChange}
                 />
             )}
 
@@ -1698,11 +3054,11 @@ export default function CustomerDetailsScreen() {
                                         {buildHourOptions().map((hour) => (
                                             <TouchableOpacity
                                                 key={hour}
-                                                onPress={() => setSelectedHour(hour)}
-                                                className={`px-4 py-3 ${selectedHour === hour ? 'bg-teal-50' : ''}`}
+                                                onPress={() => setSelectedHour(parseInt(hour))}
+                                                className={`px-4 py-3 ${selectedHour === parseInt(hour) ? 'bg-teal-50' : ''}`}
                                             >
-                                                <Text className={`text-sm ${selectedHour === hour ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                                    {String(hour).padStart(2, '0')}:00
+                                                <Text className={`text-sm ${selectedHour === parseInt(hour) ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
+                                                    {hour}:00
                                                 </Text>
                                             </TouchableOpacity>
                                         ))}
@@ -1717,7 +3073,7 @@ export default function CustomerDetailsScreen() {
                                                 className={`px-4 py-3 ${selectedMinute === minute ? 'bg-teal-50' : ''}`}
                                             >
                                                 <Text className={`text-sm ${selectedMinute === minute ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                                    :{String(minute).padStart(2, '0')}
+                                                    :{minute}
                                                 </Text>
                                             </TouchableOpacity>
                                         ))}
@@ -1728,7 +3084,7 @@ export default function CustomerDetailsScreen() {
                                 <TouchableOpacity
                                     onPress={() => {
                                         if (selectedHour === null || selectedMinute === null) return;
-                                        const label = `${String(selectedHour).padStart(2, '0')}:${String(selectedMinute).padStart(2, '0')}`;
+                                        const label = `${String(selectedHour).padStart(2, '0')}:${selectedMinute}`;
                                         setFollowUpTime(label);
                                         setTimeDropdownOpen(false);
                                         setSelectedHour(null);

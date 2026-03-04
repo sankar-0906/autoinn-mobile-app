@@ -125,10 +125,10 @@ export const getCustomerById = (id: string) => {
 };
 
 export const getCustomerDetails = (id: string) => {
-  return platformApi.get(`/api/customer/${id}`);
+  return platformApi.get(`/api/customer/details/${id}`);
 };
 
-export const getQuotationsByCustomerId = (customerId: string) => {
+export const getQuotationByCustomerId = (customerId: string) => {
   return platformApi.get(`/api/quotation/customer/${customerId}`);
 };
 

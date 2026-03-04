@@ -8,13 +8,14 @@ export type RootStackParamList = {
     SelectModel: { returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; viewVehicleData?: any; paymentDetails?: any } | undefined;
     SelectPrice: { vehicleId: string; vehicleData?: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
-    AddQuotation: { selectedVehicle?: any };
+    AddQuotation: { selectedVehicle?: any; customerId?: string; customerName?: string; phoneNumbers?: any[] };
     AdvancedFilters: undefined;
     FollowUpFilters: undefined;
     FollowUpDetail: { id: string };
     CustomerDetails: { customerId?: string };
     CustomerEdit: { customerId?: string; customerName?: string };
-    ConfirmBooking: { customerId: string; customerName: string; bookingType: 'standard' | 'advanced' };
+    ConfirmBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
+    AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     JobCardsList: undefined;
     BookingRegister: undefined;
     BookingActivity: { customerName?: string; customerId?: string; customerPhone?: string };

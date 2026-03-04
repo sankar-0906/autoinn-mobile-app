@@ -306,7 +306,7 @@ export default function FollowUpDetailScreen() {
 
                 // Set basic customer info for display in the swipe card and modals
                 const customerInfo = {
-                    id: customerData.customerId || customerData.id || custId,
+                    id: customerData.customerId || customerData.id || custId, // Fallback to the passed ID
                     name: customerData.name || 'Unknown',
                     customerId: customerData.customerId || customerData.id || custId,
                     customerType: customerData.customerType || 'Non Customer',
@@ -330,6 +330,7 @@ export default function FollowUpDetailScreen() {
             console.error('Error fetching customer info:', error);
         }
     };
+
     const getActivityByCustomer = async (ids: string[], limit = 15, offset = 0) => {
         try {
             const activityRes = await getActivitiesByCustomer({ ids, limit, offset });

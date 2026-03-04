@@ -14,6 +14,8 @@ import FollowUpQuotationForm from '../screens/quotation/FollowUpQuotationForm';
 import FollowUpDetailScreen from '../screens/follow-ups/FollowUpDetailScreen';
 import FollowUpFiltersScreen from '../screens/follow-ups/FollowUpFiltersScreen';
 import BookingRegisterScreen from '../screens/booking/BookingRegisterScreen';
+import ConfirmBookingScreen from '../screens/booking/ConfirmBookingScreen';
+import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
 import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
 import BookingActivityScreen from '../screens/follow-ups/BookingActivityScreen';
 import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
@@ -46,6 +48,8 @@ export default function AppNavigator() {
             <Stack.Screen name="FollowUpFilters" component={FollowUpFiltersScreen} />
             <Stack.Screen name="FollowUpDetail" component={FollowUpDetailScreen} />
             <Stack.Screen name="BookingRegister" component={BookingRegisterScreen} />
+            <Stack.Screen name="ConfirmBooking" component={ConfirmBookingScreen} />
+            <Stack.Screen name="AdvancedBooking" component={AdvancedBookingScreen} />
             <Stack.Screen name="CustomerDetails" component={CustomerDetailsScreen} />
             <Stack.Screen name="BookingActivity" component={BookingActivityScreen} />
             <Stack.Screen name="WalkInActivity" component={WalkInActivityScreen} />
