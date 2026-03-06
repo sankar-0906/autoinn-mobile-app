@@ -14,11 +14,13 @@ import { ChevronLeft, User, Car, CreditCard, X, ChevronDown } from 'lucide-react
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 
 const TABS = ['customer', 'vehicle', 'payment'] as const;
 
 type BookingRegisterNavigationProp = StackNavigationProp<RootStackParamList, 'BookingRegister'>;
+type BookingRegisterRouteProp = RouteProp<RootStackParamList, 'BookingRegister'>;
 
 // Form Label Component
 const FormLabel = ({ label, required = false }: { label: string; required?: boolean }) => (
@@ -79,14 +81,15 @@ const CurrencyField = ({ label, value, onChangeText, placeholder }: any) => (
     </View>
 );
 
-export default function BookingRegisterScreen({ navigation }: { navigation: BookingRegisterNavigationProp }) {
+export default function BookingRegisterScreen({ navigation, route }: { navigation: BookingRegisterNavigationProp; route: BookingRegisterRouteProp }) {
+    const { isAdvancedBooking, customerId, customerName, phoneNumbers } = route.params || {};
     const [activeTab, setActiveTab] = useState<'customer' | 'vehicle' | 'payment'>('customer');
 
     // Customer Data State
     const [customerData, setCustomerData] = useState({
         branch: 'Devanahalli',
-        phone: '',
-        customerName: '',
+        phone: phoneNumbers?.[0] || '',
+        customerName: customerName || '',
         fatherName: '',
         addressLine1: '',
         addressLine2: '',
@@ -167,7 +170,12 @@ export default function BookingRegisterScreen({ navigation }: { navigation: Book
                     <TouchableOpacity onPress={() => navigation.goBack()}>
                         <ChevronLeft size={24} color="white" />
                     </TouchableOpacity>
-                    <Text className="text-lg font-bold text-white">Booking Register</Text>
+                    <View className="items-center">
+                        <Text className="text-lg font-bold text-white">Booking Register</Text>
+                        {isAdvancedBooking && (
+                            <Text className="text-sm text-teal-200">Advanced Booking</Text>
+                        )}
+                    </View>
                     <View className="w-6" />
                 </View>
                 <View className="px-1">
@@ -182,13 +190,11 @@ export default function BookingRegisterScreen({ navigation }: { navigation: Book
                     <TouchableOpacity
                         key={tab}
                         onPress={() => setActiveTab(tab)}
-                        className={`flex-1 items-center py-3 border-b-2 ${
-                            activeTab === tab ? 'border-teal-600' : 'border-transparent'
-                        }`}
+                        className={`flex-1 items-center py-3 border-b-2 ${activeTab === tab ? 'border-teal-600' : 'border-transparent'
+                            }`}
                     >
-                        <Text className={`text-sm font-medium capitalize ${
-                            activeTab === tab ? 'text-teal-600' : 'text-gray-600'
-                        }`}>{tab} Data</Text>
+                        <Text className={`text-sm font-medium capitalize ${activeTab === tab ? 'text-teal-600' : 'text-gray-600'
+                            }`}>{tab} Data</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -279,17 +285,17 @@ function CustomerTab({ data, setData }: any) {
             <SelectField
                 label="Country"
                 value={data.country}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <SelectField
                 label="State"
                 value={data.state}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <SelectField
                 label="City"
                 value={data.city}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <TextInputField
                 label="Pincode"
@@ -314,7 +320,7 @@ function CustomerTab({ data, setData }: any) {
             <SelectField
                 label="Referred By"
                 value={data.referredBy}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <TextInputField
                 label="Nominee Details"
@@ -332,7 +338,7 @@ function CustomerTab({ data, setData }: any) {
             <SelectField
                 label="Relationship"
                 value={data.relationship}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <TextInputField
                 label="Quotations Associated"
@@ -344,7 +350,7 @@ function CustomerTab({ data, setData }: any) {
             <SelectField
                 label="Sales Officer"
                 value={data.salesOfficer}
-                onPress={() => {}}
+                onPress={() => { }}
                 required
             />
         </View>
@@ -357,19 +363,19 @@ function VehicleTab({ data, setData }: any) {
             <SelectField
                 label="Manufacturer"
                 value={data.manufacturer}
-                onPress={() => {}}
+                onPress={() => { }}
                 required
             />
             <SelectField
                 label="Model Name"
                 value={data.modelName}
-                onPress={() => {}}
+                onPress={() => { }}
                 required
             />
             <SelectField
                 label="RTO"
                 value={data.rto}
-                onPress={() => {}}
+                onPress={() => { }}
             />
             <View className="mb-4">
                 <FormLabel label="Vehicle Color" />
@@ -485,7 +491,7 @@ function PaymentTab({ data, setData }: any) {
             <CurrencyField
                 label="Booking Amount"
                 value="0"
-                onChangeText={() => {}}
+                onChangeText={() => { }}
                 placeholder="0.00"
             />
 
@@ -513,7 +519,7 @@ function PaymentTab({ data, setData }: any) {
                         {/* Modal Header */}
                         <View className="px-4 py-5 border-b border-gray-200 flex-row items-center justify-between">
                             <Text className="text-xl font-bold text-gray-900">Payment Mode</Text>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => setShowPaymentModal(false)}
                                 className="p-1"
                             >
@@ -529,24 +535,21 @@ function PaymentTab({ data, setData }: any) {
                                     setData({ ...data, paymentMode: 'Cash' });
                                     setShowPaymentModal(false);
                                 }}
-                                className={`p-4 rounded-lg border-2 flex-row items-center ${
-                                    data.paymentMode === 'Cash'
-                                        ? 'bg-teal-50 border-teal-600'
-                                        : 'bg-white border-gray-200'
-                                }`}
+                                className={`p-4 rounded-lg border-2 flex-row items-center ${data.paymentMode === 'Cash'
+                                    ? 'bg-teal-50 border-teal-600'
+                                    : 'bg-white border-gray-200'
+                                    }`}
                             >
-                                <View className={`w-6 h-6 rounded-full border-2 mr-4 items-center justify-center ${
-                                    data.paymentMode === 'Cash'
-                                        ? 'bg-teal-600 border-teal-600'
-                                        : 'border-gray-400'
-                                }`}>
+                                <View className={`w-6 h-6 rounded-full border-2 mr-4 items-center justify-center ${data.paymentMode === 'Cash'
+                                    ? 'bg-teal-600 border-teal-600'
+                                    : 'border-gray-400'
+                                    }`}>
                                     {data.paymentMode === 'Cash' && (
                                         <View className="w-3 h-3 bg-white rounded-full" />
                                     )}
                                 </View>
-                                <Text className={`text-lg font-semibold ${
-                                    data.paymentMode === 'Cash' ? 'text-teal-600' : 'text-gray-900'
-                                }`}>
+                                <Text className={`text-lg font-semibold ${data.paymentMode === 'Cash' ? 'text-teal-600' : 'text-gray-900'
+                                    }`}>
                                     Cash
                                 </Text>
                             </TouchableOpacity>
@@ -557,24 +560,21 @@ function PaymentTab({ data, setData }: any) {
                                     setData({ ...data, paymentMode: 'Finance' });
                                     setShowPaymentModal(false);
                                 }}
-                                className={`p-4 rounded-lg border-2 flex-row items-center ${
-                                    data.paymentMode === 'Finance'
-                                        ? 'bg-teal-50 border-teal-600'
-                                        : 'bg-white border-gray-200'
-                                }`}
+                                className={`p-4 rounded-lg border-2 flex-row items-center ${data.paymentMode === 'Finance'
+                                    ? 'bg-teal-50 border-teal-600'
+                                    : 'bg-white border-gray-200'
+                                    }`}
                             >
-                                <View className={`w-6 h-6 rounded-full border-2 mr-4 items-center justify-center ${
-                                    data.paymentMode === 'Finance'
-                                        ? 'bg-teal-600 border-teal-600'
-                                        : 'border-gray-400'
-                                }`}>
+                                <View className={`w-6 h-6 rounded-full border-2 mr-4 items-center justify-center ${data.paymentMode === 'Finance'
+                                    ? 'bg-teal-600 border-teal-600'
+                                    : 'border-gray-400'
+                                    }`}>
                                     {data.paymentMode === 'Finance' && (
                                         <View className="w-3 h-3 bg-white rounded-full" />
                                     )}
                                 </View>
-                                <Text className={`text-lg font-semibold ${
-                                    data.paymentMode === 'Finance' ? 'text-teal-600' : 'text-gray-900'
-                                }`}>
+                                <Text className={`text-lg font-semibold ${data.paymentMode === 'Finance' ? 'text-teal-600' : 'text-gray-900'
+                                    }`}>
                                     Finance
                                 </Text>
                             </TouchableOpacity>

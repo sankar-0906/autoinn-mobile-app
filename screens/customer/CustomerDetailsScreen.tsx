@@ -1131,7 +1131,7 @@ export default function CustomerDetailsScreen() {
     };
 
     const handleClose = () => {
-        safeNavigate('Main' as any);
+        navigation.goBack();
     };
 
     const handleAddContact = () => {
@@ -2608,11 +2608,11 @@ export default function CustomerDetailsScreen() {
                         </View>
                         <View className="space-y-1">
                             <View className="flex-row">
-                                <Text className="text-xs text-gray-500 w-24">Chassis No:</Text>
+                                <Text className="text-xs text-gray-500 w-24 mb-1">Chassis No:</Text>
                                 <Text className="text-xs text-gray-800 font-medium">{vehicle.chassisNo || 'N/A'}</Text>
                             </View>
                             <View className="flex-row">
-                                <Text className="text-xs text-gray-500 w-24">Color:</Text>
+                                <Text className="text-xs text-gray-500 w-24 mb-1">Color:</Text>
                                 <Text className="text-xs text-gray-800 font-medium">{vehicle.color?.color || 'N/A'}</Text>
                             </View>
                             <View className="flex-row">
@@ -2658,12 +2658,17 @@ export default function CustomerDetailsScreen() {
                             onPress={() => {
                                 try {
                                     if (navigation && navigation.navigate) {
-                                        navigation.navigate('AdvancedBooking' as any, { customerId, customerName, phoneNumbers });
+                                        navigation.navigate('BookingActivity' as any, { 
+                                            customerId, 
+                                            customerName, 
+                                            customerPhone: phoneNumbers?.[0],
+                                            isAdvancedBooking: true 
+                                        });
                                     } else {
                                         console.error('❌ Navigation or navigate method not available');
                                     }
                                 } catch (error) {
-                                    console.error('❌ AdvancedBooking navigation error:', error);
+                                    console.error('❌ BookingActivity navigation error:', error);
                                 }
                             }}
                         >

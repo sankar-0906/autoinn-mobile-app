@@ -5,7 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
 
-const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
+const DEFAULT_ENDPOINT = 'http://172.22.110.77:4000/';
+// const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
 // const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';
 
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
@@ -63,6 +64,21 @@ export const getUsers = (body: any) => {
 
 export const getManufacturers = () => {
   return platformApi.get('/api/manufacturer');
+};
+
+export const getManufacturersByBranch = (branchId: string) => {
+  return platformApi.get(`/api/manufacturer/branch/${branchId}`);
+};
+
+export const getRtoOptions = () => {
+  return platformApi.post('/api/options/get/', {
+    module: "rtoes",
+    searchString: "",
+    column: "code",
+    fields: ["area"],
+    page: 1,
+    size: 20,
+  });
 };
 
 export const getVehicleModelsByManufacturer = (id: string, searchString?: string) => {
@@ -140,6 +156,21 @@ export const getCustomerQuotations = (customerId: string) => {
   return platformApi.get(`/api/quotation/getCus/${customerId}`);
 };
 
+export const getAccessories = (searchString?: string) => {
+  const url = searchString
+    ? `/api/partsMaster/accessories?searchString=${searchString}`
+    : '/api/partsMaster/accessories';
+  return platformApi.get(url);
+};
+
+export const getVehicleAccessories = (modelId: string) => {
+  return platformApi.get(`/api/partsMaster/Cloudsuit/${modelId}`);
+};
+
+export const deleteBookingAccessory = (accessoryId: string) => {
+  return platformApi.delete(`/api/booking/accessory/${accessoryId}`);
+};
+
 export const getMergedCustomerData = (body: { ids: string[] }) => {
   return platformApi.post('/api/customer/merge', body);
 };
@@ -209,6 +240,37 @@ export const generateQuotationId = (branchId: string) => {
 
 export const placeCloudCall = (data: { phone1: string; phone2: string; customerId: string; type?: string }) => {
   return platformApi.post('/api/cloudCall', data);
+};
+
+// Booking APIs
+export const generateBookingId = (branchId: string) => {
+  // Add cache-busting query so backend is always hit freshly
+  return platformApi.post(`/api/idGenerate/booking?_=${Date.now()}`, { branch: branchId });
+};
+
+export const generateEReceiptId = (branchId: string) => {
+  // Add cache-busting query so backend is always hit freshly
+  return platformApi.post(`/api/idGenerate/e-receipt?_=${Date.now()}`, { branch: branchId });
+};
+
+export const createBooking = (bookingData: any) => {
+  return platformApi.post('/api/booking/create', bookingData);
+};
+
+export const updateBooking = (bookingId: string, bookingData: any) => {
+  return platformApi.put(`/api/booking/${bookingId}`, bookingData);
+};
+
+export const getBookingById = (bookingId: string) => {
+  return platformApi.get(`/api/booking/${bookingId}`);
+};
+
+export const getBookings = (body: any) => {
+  return platformApi.post('/api/booking/get', body);
+};
+
+export const updateBookingStatus = (bookingId: string, statusData: any) => {
+  return platformApi.put(`/api/booking/updateStatus/${bookingId}`, statusData);
 };
 
 export default platformApi;

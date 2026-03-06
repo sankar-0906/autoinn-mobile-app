@@ -135,6 +135,7 @@ const RadioOption = ({
 
 export default function AddQuotationScreen({ navigation, route }: any) {
     const selectedVehicle = route.params?.selectedVehicle;
+    const returnToPrevious = route.params?.returnToPrevious;
 
     // Form state
     const [branch, setBranch] = useState('');
@@ -1101,7 +1102,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
                             if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
                                 toast.success('Quotation saved successfully');
-                                navigation.goBack();
+                                if (returnToPrevious) {
+                                    navigation.goBack(); // Go back to QuotationsListScreen
+                                    setTimeout(() => {
+                                        navigation.goBack(); // Go back to the original screen (FollowUpsScreen or CallActivityScreen)
+                                    }, 100);
+                                } else {
+                                    navigation.goBack();
+                                }
                             } else {
                                 const errMsg = createRes.data.response?.message || createRes.data.message || 'Unable to save quotation';
                                 toast.error(errMsg);
