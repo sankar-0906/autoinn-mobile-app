@@ -10,6 +10,7 @@ import {
     Alert,
     Platform,
     Dimensions,
+    DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -60,6 +61,7 @@ type Activity = {
     employee?: string;
     employeeName?: string;
     phone?: string;
+    quotationId?: string;
     createdBy?: {
         profile?: {
             employeeName?: string;
@@ -109,6 +111,13 @@ const CUSTOMER_TABS = [
 const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '-';
     try {
+        // Handle DD/MM/YYYY HH:mm format
+        if (dateString.includes('/') && dateString.length === 16) {
+            const [datePart] = dateString.split(' ');
+            const [day, month, year] = datePart.split('/');
+            return `${day}-${month}-${year}`;
+        }
+        
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
@@ -141,6 +150,12 @@ const formatDateTime = (dateString: string | undefined) => {
 const formatTime = (dateString: string | undefined) => {
     if (!dateString) return '-';
     try {
+        // Handle DD/MM/YYYY HH:mm format
+        if (dateString.includes('/') && dateString.length === 16) {
+            const [, timePart] = dateString.split(' ');
+            return timePart;
+        }
+        
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
@@ -204,6 +219,26 @@ export default function FollowUpDetailScreen() {
     const [followupDate, setFollowupDate] = useState('');
     const [followupTime, setFollowupTime] = useState('');
     const [remarks, setRemarks] = useState('');
+
+    // Listen for activity creation events for instant updates
+    useEffect(() => {
+        const subscription = DeviceEventEmitter.addListener('activityCreated', (event) => {
+            console.log('🔍 Received activity creation event:', event);
+            
+            if (event.activity) {
+                // Add the new activity to the existing activities list
+                setActivities(prevActivities => {
+                    const newActivities = [event.activity, ...prevActivities];
+                    console.log('🔍 Activities updated instantly:', newActivities.length);
+                    return newActivities;
+                });
+            }
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, []);
 
     // Handler functions
     const openAttachQuotationModal = () => {
@@ -877,9 +912,9 @@ export default function FollowUpDetailScreen() {
 
                 <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden shadow">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
-                        <Text className="text-xs font-semibold text-gray-700 flex-1 mr-2">Quotation No</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-20 mr-2">Created On</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Quotation No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1 mr-3">Vehicle</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Created On</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
                     </View>
                     <View className={mergedQuotations.length >= 4 ? "max-h-[180px]" : ""}>
@@ -890,8 +925,8 @@ export default function FollowUpDetailScreen() {
                                 return (
                                     <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                         <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
-                                        <Text className="text-xs text-gray-800 flex-1">{vehicleDisplay}</Text>
-                                        <Text className="text-xs text-gray-800 w-20 mr-2">{formatDate(q.createdAt)}</Text>
+                                        <Text className="text-xs text-gray-800 flex-1 mr-3">{vehicleDisplay}</Text>
+                                        <Text className="text-xs text-gray-800 w-20">{formatDate(q.createdAt)}</Text>
                                         <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                             <Eye size={14} color={COLORS.gray[600]} />
                                         </TouchableOpacity>
@@ -1076,7 +1111,7 @@ export default function FollowUpDetailScreen() {
                                                         {activity.booking ? 'Booking ID' : 'Quotation ID'}
                                                     </Text>
                                                     <Text className="text-teal-700 text-sm font-semibold" numberOfLines={1}>
-                                                        {activity.quotation?.quotationId || activity.booking?.bookingId || '-'}
+                                                        {activity.quotationId || activity.quotation?.quotationId || activity.booking?.bookingId || '-'}
                                                     </Text>
                                                 </View>
                                             </View>

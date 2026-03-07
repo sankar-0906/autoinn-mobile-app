@@ -30,6 +30,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQuotationId } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { useToast } from '../../src/ToastContext';
+import { TimePickerModal } from '../../components/TimePickerModal';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -45,6 +46,34 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
 const ErrorText = ({ message }: { message?: string }) =>
     message ? <Text className="text-xs text-red-600 mt-1">⚠ {message}</Text> : null;
 
+// Custom Modal component (same as CallActivityScreen)
+const CustomModal = ({
+    visible,
+    children,
+    onClose,
+}: {
+    visible: boolean;
+    children: React.ReactNode;
+    onClose: () => void;
+}) => {
+    if (!visible) return null;
+
+    return (
+        <Modal
+            visible={visible}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={onClose}
+        >
+            <View className="flex-1 bg-black/40 justify-center items-center px-4">
+                <View className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+                    {children}
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
 // Reusable picker/select field
 const SelectField = ({
     placeholder,
@@ -53,6 +82,8 @@ const SelectField = ({
     onSelect,
     disabled = false,
     error,
+    modalVisible,
+    setModalVisible,
 }: {
     placeholder: string;
     value: string;
@@ -60,16 +91,16 @@ const SelectField = ({
     onSelect: (val: string) => void;
     disabled?: boolean;
     error?: string;
+    modalVisible: boolean;
+    setModalVisible: (visible: boolean) => void;
 }) => {
-    const [open, setOpen] = useState(false);
     const selectedLabel = options.find((o) => o.value === value)?.label || '';
-    const listHeight = Math.min(options.length, 5) * 44 + 8;
 
     return (
-        <View style={{ position: 'relative', zIndex: open ? 50 : 1 }}>
+        <>
             <TouchableOpacity
                 onPress={() => {
-                    if (!disabled) setOpen(!open);
+                    if (!disabled) setModalVisible(true);
                 }}
                 className={`rounded-xl px-4 h-12 flex-row items-center justify-between border ${disabled ? 'bg-gray-100 border-gray-200' : error ? 'bg-white border-red-500' : 'bg-white border-gray-200'}`}
             >
@@ -78,36 +109,32 @@ const SelectField = ({
                 </Text>
                 <ChevronDown size={18} color={COLORS.gray[400]} />
             </TouchableOpacity>
-            {open && (
-                <View
-                    style={{
-                        position: 'absolute',
-                        top: 52,
-                        left: 0,
-                        right: 0,
-                        zIndex: 100,
-                        elevation: 10,
-                    }}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-                >
-                    {options.map((opt) => (
-                        <TouchableOpacity
-                            key={opt.value}
-                            onPress={() => {
-                                onSelect(opt.value);
-                                setOpen(false);
-                            }}
-                            className={`px-4 py-3 border-b border-gray-50 ${value === opt.value ? 'bg-teal-50' : ''}`}
-                        >
-                            <Text className={`text-sm ${value === opt.value ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                {opt.label}
-                            </Text>
+
+            <CustomModal visible={modalVisible} onClose={() => setModalVisible(false)}>
+                <View className="p-4">
+                    <View className="flex-row items-center justify-between mb-4">
+                        <Text className="text-gray-900 font-bold text-base">{placeholder}</Text>
+                        <TouchableOpacity onPress={() => setModalVisible(false)} className="p-1">
+                            <ChevronDown size={20} color="#6b7280" style={{ transform: [{ rotate: '180deg' }] }} />
                         </TouchableOpacity>
-                    ))}
+                    </View>
+                    <ScrollView className="max-h-64">
+                        {options.map((opt) => (
+                            <TouchableOpacity
+                                key={opt.value}
+                                onPress={() => {
+                                    onSelect(opt.value);
+                                    setModalVisible(false);
+                                }}
+                                className="py-3 border-b border-gray-50 last:border-b-0"
+                            >
+                                <Text className="text-gray-900">{opt.label}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
                 </View>
-            )}
-            {open && <View style={{ height: listHeight }} />}
-        </View>
+            </CustomModal>
+        </>
     );
 };
 
@@ -243,13 +270,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     );
 
     const followUpEnabled = !!followUpDate?.trim();
-    const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
-    const [selectedHour, setSelectedHour] = useState<number | null>(null);
-    const [selectedMinute, setSelectedMinute] = useState<number | null>(null);
-    const timeFieldRef = useRef<View | null>(null);
-    const [timeDropdownLayout, setTimeDropdownLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [showFollowUpPicker, setShowFollowUpPicker] = useState(false);
     const [showExpectedPicker, setShowExpectedPicker] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    const [showExecutiveModal, setShowExecutiveModal] = useState(false);
+    const [showCustomerTypeModal, setShowCustomerTypeModal] = useState(false);
+    const [showLeadSourceModal, setShowLeadSourceModal] = useState(false);
+    const [showEnquiryTypeModal, setShowEnquiryTypeModal] = useState(false);
 
     const parseDateInput = (value: string) => {
         const parts = value.split(/[\/\-]/).map((p) => p.trim());
@@ -277,19 +305,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         return Array.from({ length: 14 }, (_, idx) => idx + 1);
     };
 
-    const minuteOptions = [15, 30, 45];
 
-    const openTimeDropdown = () => {
-        if (!followUpEnabled) return;
-        if (timeFieldRef.current && typeof (timeFieldRef.current as any).measureInWindow === 'function') {
-            (timeFieldRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
-                setTimeDropdownLayout({ x, y, width, height });
-                setTimeDropdownOpen(true);
-            });
-        } else {
-            setTimeDropdownOpen(true);
-        }
-    };
 
     const autoSelectExecutive = (execId?: string, execName?: string) => {
         if (execId && executiveOptions.some((e) => e.value === execId)) {
@@ -587,11 +603,12 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={branchOptions}
                                 onSelect={(v) => { setBranch(v); clearFieldError('branch'); }}
                                 error={fieldErrors.branch}
+                                modalVisible={showBranchModal}
+                                setModalVisible={setShowBranchModal}
                             />
                             {loadingBranches && (
                                 <Text className="text-xs text-gray-400 mt-1">Loading branches...</Text>
                             )}
-                            <ErrorText message={fieldErrors.branch} />
                         </View>
 
                         <View>
@@ -602,6 +619,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={executiveOptions}
                                 onSelect={(v) => { setSalesExecutive(v); clearFieldError('salesExecutive'); }}
                                 error={fieldErrors.salesExecutive}
+                                modalVisible={showExecutiveModal}
+                                setModalVisible={setShowExecutiveModal}
                             />
                             {loadingExecutives && (
                                 <Text className="text-xs text-gray-400 mt-1">Loading executives...</Text>
@@ -694,6 +713,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 value={customerType}
                                 options={customerTypes}
                                 onSelect={setCustomerType}
+                                modalVisible={showCustomerTypeModal}
+                                setModalVisible={setShowCustomerTypeModal}
                             />
                         </View>
 
@@ -753,20 +774,20 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         {/* Follow-Up Time */}
                         <View className="mb-4">
                             <FormLabel label="Schedule Follow-Up Time" required />
-                            <View ref={timeFieldRef} className="relative" style={{ zIndex: timeDropdownOpen ? 60 : 1 }}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        openTimeDropdown();
-                                    }}
-                                    activeOpacity={0.7}
-                                    className={`border rounded-xl px-3 h-11 flex-row items-center justify-between ${followUpEnabled ? (fieldErrors.followUpTime ? 'bg-white border-red-500' : 'bg-white border-gray-200') : 'bg-gray-100 border-gray-200'}`}
-                                >
-                                    <Text className={followUpTime ? 'text-gray-900' : 'text-gray-400'}>
-                                        {followUpTime || 'Select hour'}
-                                    </Text>
-                                    <Clock size={18} color={COLORS.gray[400]} />
-                                </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (followUpEnabled) {
+                                        setShowTimePicker(true);
+                                    }
+                                }}
+                                activeOpacity={0.7}
+                                className={`border rounded-xl px-3 h-11 flex-row items-center justify-between ${followUpEnabled ? (fieldErrors.followUpTime ? 'bg-white border-red-500' : 'bg-white border-gray-200') : 'bg-gray-100 border-gray-200'}`}
+                            >
+                                <Text className={followUpTime ? 'text-gray-900' : 'text-gray-400'}>
+                                    {followUpTime || 'Select time'}
+                                </Text>
+                                <Clock size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
                             <ErrorText message={fieldErrors.followUpTime} />
                         </View>
 
@@ -779,6 +800,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={leadSources}
                                 onSelect={(v) => { setLeadSource(v); clearFieldError('leadSource'); }}
                                 error={fieldErrors.leadSource}
+                                modalVisible={showLeadSourceModal}
+                                setModalVisible={setShowLeadSourceModal}
                             />
                             <ErrorText message={fieldErrors.leadSource} />
                         </View>
@@ -851,6 +874,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 placeholder="Enquiry Type"
                                 value={enquiryType}
                                 options={enquiryTypes}
+                                modalVisible={showEnquiryTypeModal}
+                                setModalVisible={setShowEnquiryTypeModal}
                                 onSelect={(v) => { setEnquiryType(v); clearFieldError('enquiryType'); }}
                                 error={fieldErrors.enquiryType}
                             />
@@ -1203,94 +1228,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                 </View>
             </Modal>
 
-            <Modal visible={timeDropdownOpen} transparent animationType="fade" onRequestClose={() => setTimeDropdownOpen(false)}>
-                <TouchableOpacity
-                    activeOpacity={1}
-                    onPress={() => setTimeDropdownOpen(false)}
-                    style={{ flex: 1, backgroundColor: 'transparent' }}
-                >
-                    {timeDropdownLayout && (
-                        <View
-                            style={{
-                                position: 'absolute',
-                                left: Math.max(16, Math.min(timeDropdownLayout.x, Dimensions.get('window').width - timeDropdownLayout.width - 16)),
-                                top: timeDropdownLayout.y + timeDropdownLayout.height + 8,
-                                width: Math.min(timeDropdownLayout.width, Dimensions.get('window').width - 32),
-                                backgroundColor: 'white',
-                                borderWidth: 1,
-                                borderColor: '#e5e7eb',
-                                borderRadius: 12,
-                                overflow: 'hidden',
-                                elevation: 10,
-                            }}
-                        >
-                            <View style={{ flexDirection: 'row' }}>
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {buildHourOptions()
-                                        .map((hour) => (
-                                            <TouchableOpacity
-                                                key={`h-${hour}`}
-                                                onPress={() => setSelectedHour(hour)}
-                                                style={{
-                                                    paddingHorizontal: 16,
-                                                    paddingVertical: 12,
-                                                    borderBottomWidth: 1,
-                                                    borderBottomColor: '#f3f4f6',
-                                                    backgroundColor: selectedHour === hour ? '#f0fdfa' : 'white',
-                                                }}
-                                            >
-                                                <Text style={{ fontSize: 12, color: selectedHour === hour ? '#0f766e' : '#374151', fontWeight: selectedHour === hour ? '600' : '400' }}>
-                                                    {String(hour).padStart(2, '0')}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                </ScrollView>
-                                <View style={{ width: 1, backgroundColor: '#e5e7eb' }} />
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {minuteOptions.map((minute) => (
-                                        <TouchableOpacity
-                                            key={`m-${minute}`}
-                                            onPress={() => setSelectedMinute(minute)}
-                                            style={{
-                                                paddingHorizontal: 16,
-                                                paddingVertical: 12,
-                                                borderBottomWidth: 1,
-                                                borderBottomColor: '#f3f4f6',
-                                                backgroundColor: selectedMinute === minute ? '#f0fdfa' : 'white',
-                                            }}
-                                        >
-                                            <Text style={{ fontSize: 12, color: selectedMinute === minute ? '#0f766e' : '#374151', fontWeight: selectedMinute === minute ? '600' : '400' }}>
-                                                {String(minute).padStart(2, '0')}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f3f4f6' }}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        if (selectedHour === null || selectedMinute === null) return;
-                                        const label = `${String(selectedHour).padStart(2, '0')}:${String(selectedMinute).padStart(2, '0')}`;
-                                        setFollowUpTime(label);
-                                        setTimeDropdownOpen(false);
-                                    }}
-                                    style={{
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        borderRadius: 8,
-                                        backgroundColor: selectedHour !== null && selectedMinute !== null ? '#0d9488' : '#e5e7eb',
-                                    }}
-                                    disabled={selectedHour === null || selectedMinute === null}
-                                >
-                                    <Text style={{ fontSize: 12, fontWeight: '600', color: selectedHour !== null && selectedMinute !== null ? 'white' : '#6b7280' }}>
-                                        Select
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </Modal>
+            <TimePickerModal
+                visible={showTimePicker}
+                onClose={() => setShowTimePicker(false)}
+                onSelect={(time: string) => {
+                    setFollowUpTime(time);
+                    setShowTimePicker(false);
+                }}
+            />
         </SafeAreaView>
     );
 }

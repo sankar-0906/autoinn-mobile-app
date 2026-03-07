@@ -9,7 +9,7 @@ interface TimePickerModalProps {
   anchorRef?: React.RefObject<View>;
 }
 
-const minuteOptions = [0, 15, 30, 45];
+const minuteOptions = Array.from({ length: 60 }, (_, idx) => idx);
 const buildHourOptions = () => Array.from({ length: 24 }, (_, idx) => idx);
 
 export const TimePickerModal: React.FC<TimePickerModalProps> = ({

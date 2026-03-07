@@ -47,8 +47,8 @@ export type RootStackParamList = {
     JobCardsList: undefined;
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
     BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean };
-    WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string };
-    CallActivity: { customerName?: string; customerId?: string; customerPhone?: string };
+    WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
+    CallActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
 };
 

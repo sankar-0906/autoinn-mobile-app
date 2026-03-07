@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
     Text,
@@ -9,6 +10,7 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
+    DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -18,74 +20,29 @@ import { ChevronLeft, ChevronRight, Calendar, Clock, X, ChevronDown } from 'luci
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { Dimensions } from 'react-native';
-import { getCustomerByPhoneNo } from '../../src/api';
+import { getCustomerByPhoneNo, getCustomerById, createActivity, getCurrentUser } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { useToast } from '../../src/ToastContext';
+import { TimePickerModal } from '../../components/TimePickerModal';
 
-export const SelectField = ({
-    placeholder,
-    value,
-    options,
-    onSelect,
-    disabled = false,
-    error,
+const ENQUIRY_TYPES = ['Hot', 'Warm', 'Cold'] as const;
+
+// Custom Modal component (same as CallActivityScreen)
+const CustomModal = ({
+    visible,
+    children,
+    onClose,
 }: {
-    placeholder: string;
-    value: string;
-    options: { label: string; value: string }[];
-    onSelect: (val: string) => void;
-    disabled?: boolean;
-    error?: string;
+    visible: boolean;
+    children: React.ReactNode;
+    onClose: () => void;
 }) => {
-    const [open, setOpen] = useState(false);
-    const selectedLabel = options.find((o) => o.value === value)?.label || '';
-    const listHeight = Math.min(options.length, 5) * 44 + 8;
-
+    if (!visible) return null;
     return (
-        <View style={{ position: 'relative', zIndex: open ? 50 : 1 }}>
-            <TouchableOpacity
-                onPress={() => {
-                    if (!disabled) setOpen(!open);
-                }}
-                className={`rounded-xl px-4 h-12 flex-row items-center justify-between border ${disabled ? 'bg-gray-100 border-gray-200' : error ? 'bg-white border-red-500' : 'bg-white border-gray-200'}`}
-            >
-                <Text className={selectedLabel ? 'text-gray-900' : 'text-gray-400'}>
-                    {selectedLabel || placeholder}
-                </Text>
-                <ChevronDown size={18} color={COLORS.gray[400]} />
-            </TouchableOpacity>
-            {open && (
-                <View
-                    style={{
-                        position: 'absolute',
-                        top: 52,
-                        left: 0,
-                        right: 0,
-                        zIndex: 100,
-                        elevation: 10,
-                    }}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-                >
-                    {options.map((opt) => (
-                        <TouchableOpacity
-                            key={opt.value}
-                            onPress={() => {
-                                onSelect(opt.value);
-                                setOpen(false);
-                            }}
-                            className={`px-4 py-3 border-b border-gray-50 flex-row items-center justify-between ${value === opt.value ? 'bg-teal-50' : ''}`}
-                        >
-                            <Text className={`text-sm ${value === opt.value ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                {opt.label}
-                            </Text>
-                            {value === opt.value && (
-                                <View className="w-2 h-2 rounded-full bg-teal-600" />
-                            )}
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
-            {open && <View style={{ height: listHeight }} />}
+        <View className="absolute inset-0 z-50 flex-1">
+            <View className="flex-1 bg-black/50 justify-center">
+                <View className="bg-white rounded-xl m-4 max-h-96">{children}</View>
+            </View>
         </View>
     );
 };
@@ -93,8 +50,8 @@ export const SelectField = ({
 type WalkInActivityRouteProp = RouteProp<RootStackParamList, 'WalkInActivity'>;
 type WalkInActivityNavigationProp = StackNavigationProp<RootStackParamList, 'WalkInActivity'>;
 
-const FormLabel = ({ label, required = false }: { label: string; required?: boolean }) => (
-    <Text className="text-sm text-gray-600 mb-1 font-medium">
+const FormLabel = ({ label, required = false, className = '' }: { label: string; required?: boolean; className?: string }) => (
+    <Text className={`text-sm text-gray-600 mb-1 font-medium ${className}`}>
         {label}
         {required && <Text className="text-red-500"> *</Text>}
     </Text>
@@ -107,24 +64,18 @@ export default function WalkInActivityScreen({
     navigation: WalkInActivityNavigationProp;
     route: WalkInActivityRouteProp;
 }) {
-    const { customerId: initialCustomerId = '', customerPhone = '' } = (route.params || {}) as any;
+    const { customerId: initialCustomerId = '', customerPhone = '', quotationId = '', selectedVehicle = null } = (route.params || {}) as any;
     const [customerName, setCustomerName] = useState((route.params as any)?.customerName || 'Customer');
+    const [customerData, setCustomerData] = useState<any>(null);
 
-    const [phone, setPhone] = useState(customerPhone || '');
-    const [phoneOptions, setPhoneOptions] = useState<{ label: string, value: string }[]>(
-        customerPhone ? [{ label: customerPhone, value: customerPhone }] : []
-    );
-    const [loadingPhones, setLoadingPhones] = useState(false);
+    const [showInteractionModal, setShowInteractionModal] = useState(false);
 
     const [scheduleDateValue, setScheduleDateValue] = useState<Date | null>(null);
     const [scheduleTimeValue, setScheduleTimeValue] = useState<string>('');
     const [showSchedulePicker, setShowSchedulePicker] = useState(false);
 
     const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
-    const [selectedHour, setSelectedHour] = useState<number | null>(null);
-    const [selectedMinute, setSelectedMinute] = useState<number | null>(null);
     const timeFieldRef = React.useRef<View | null>(null);
-    const [timeDropdownLayout, setTimeDropdownLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
     const [enquiryType, setEnquiryType] = useState('Hot');
     const [interactionType, setInteractionType] = useState('Walk- In');
@@ -135,71 +86,57 @@ export default function WalkInActivityScreen({
     // Validation errors
     const [dateError, setDateError] = useState('');
     const [timeError, setTimeError] = useState('');
-    const [phoneError, setPhoneError] = useState('');
     const [discardReasonError, setDiscardReasonError] = useState('');
     const toast = useToast();
 
-    const buildHourOptions = () => {
-        const now = new Date();
-        const currentHour = now.getHours();
-        const start = currentHour === 0 ? 1 : currentHour;
-        return Array.from({ length: 23 - start }, (_, idx) => start + idx);
-    };
-
-    const minuteOptions = [15, 30, 45];
-
     const openTimeDropdown = () => {
         if (!scheduleDateValue) return;
-        if (timeFieldRef.current && typeof (timeFieldRef.current as any).measureInWindow === 'function') {
-            (timeFieldRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
-                setTimeDropdownLayout({ x, y, width, height });
-                setTimeDropdownOpen(true);
-            });
-        } else {
-            setTimeDropdownOpen(true);
-        }
+        setTimeDropdownOpen(true);
     };
 
     React.useEffect(() => {
-        const fetchPhones = async () => {
-            if (!customerPhone) return;
-            setLoadingPhones(true);
+        const fetchCustomerData = async () => {
+            // Try to fetch by customerId first, then by customerPhone as fallback
+            let customerData = null;
+            
             try {
-                const res = await getCustomerByPhoneNo(customerPhone);
-                const data = res?.data?.response?.data || res?.data?.data;
-                const customers = Array.isArray(data?.customers) ? data.customers :
-                    Array.isArray(data?.customer) ? data.customer :
-                        data ? [data] : [];
-
-                if (customers.length > 0) {
-                    const cust = customers[0];
-                    setCustomerName(cust.name || 'Customer');
-
-                    const numbers = new Set<string>();
-                    if (cust.phone) numbers.add(cust.phone);
-                    if (cust.alternatePhone) numbers.add(cust.alternatePhone);
-                    if (cust.whatsappNumber) numbers.add(cust.whatsappNumber);
-
-                    const opts = Array.from(numbers).map(num => ({
-                        label: num,
-                        value: num
-                    }));
-
-                    if (opts.length > 0) {
-                        setPhoneOptions(opts);
-                        if (!opts.find(o => o.value === phone)) {
-                            setPhone(opts[0].value);
-                        }
+                if (initialCustomerId) {
+                    console.log('🔍 Fetching customer data by ID:', initialCustomerId);
+                    const res = await getCustomerById(initialCustomerId);
+                    customerData = res?.data?.response?.data || res?.data?.data;
+                    console.log('🔍 Customer data by ID:', customerData);
+                } else if (customerPhone) {
+                    console.log('🔍 Fetching customer data by phone:', customerPhone);
+                    const res = await getCustomerByPhoneNo(customerPhone);
+                    const data = res?.data?.response?.data || res?.data?.data;
+                    console.log('🔍 API Response:', data);
+                    
+                    const customers = Array.isArray(data?.customers) ? data.customers :
+                        Array.isArray(data?.customer) ? data.customer :
+                            data ? [data] : [];
+                    
+                    if (customers.length > 0) {
+                        customerData = customers[0];
+                        console.log('🔍 Customer data by phone:', customerData);
                     }
                 }
+
+                if (customerData) {
+                    setCustomerData(customerData);
+                    setCustomerName(customerData.name || 'Customer');
+                } else {
+                    console.log('🔍 No customer data found');
+                    // Use the customerName from route params as fallback
+                    setCustomerName((route.params as any)?.customerName || 'Customer');
+                }
             } catch (e) {
-                console.log('Error fetching customer phone numbers:', e);
-            } finally {
-                setLoadingPhones(false);
+                console.log('Error fetching customer data:', e);
+                // Use the customerName from route params as fallback
+                setCustomerName((route.params as any)?.customerName || 'Customer');
             }
         };
-        fetchPhones();
-    }, [customerPhone]);
+        fetchCustomerData();
+    }, [initialCustomerId, customerPhone]);
 
     const formatDate = (value?: Date | string): string => {
         if (!value) return '';
@@ -215,20 +152,147 @@ export default function WalkInActivityScreen({
         navigation.goBack();
     };
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
         setDateError('');
         setTimeError('');
-        setPhoneError('');
 
         let ok = true;
-        if (!phone) { setPhoneError('Required'); ok = false; }
         if (!scheduleDateValue) { setDateError('Required'); ok = false; }
         if (!scheduleTimeValue) { setTimeError('Required'); ok = false; }
 
         if (!ok) return;
 
-        toast.success('Walk-In activity created successfully');
-        navigation.goBack();
+        try {
+            // Get customer ID from route params or customer data
+            const customerId = initialCustomerId || customerData?.id;
+            if (!customerId) {
+                toast.error('Customer ID not found');
+                return;
+            }
+
+            // Format date and time for API
+            const formattedDate = scheduleDateValue!.toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: '2-digit', 
+                year: 'numeric'
+            });
+
+            // Get current user info for employee field (like web project)
+            let employeeName = await AsyncStorage.getItem('employeeName');
+            
+            // Try to get real employee data from API (web project approach)
+            if (!employeeName) {
+                try {
+                    const userResponse = await getCurrentUser();
+                    if (userResponse.data?.code === 200 && userResponse.data?.response?.data) {
+                        const userData = userResponse.data.response.data;
+                        employeeName = userData.profile?.employeeName || 
+                                     userData.employeeName || 
+                                     userData.name ||
+                                     'Sales Executive';
+                        
+                        // Cache the employee name for future use
+                        if (employeeName) {
+                            await AsyncStorage.setItem('employeeName', employeeName);
+                        }
+                        console.log('🔍 Fetched real employee name from API:', employeeName);
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Failed to fetch current user:', error);
+                }
+            }
+            
+            // Extract quotation and vehicle data from customerData
+            let quotationIdToUse = quotationId;
+            let vehicleToUse = selectedVehicle;
+            let executiveQuotation = null;
+            
+            // If no quotationId in params, try to get from customer data
+            if (!quotationIdToUse && customerData?.quotation?.length > 0) {
+                const latestQuotation = customerData.quotation[customerData.quotation.length - 1];
+                quotationIdToUse = latestQuotation.quotationId;
+                executiveQuotation = latestQuotation;
+                
+                // Extract vehicle from quotation
+                if (latestQuotation.vehicle?.length > 0) {
+                    vehicleToUse = latestQuotation.vehicle[0];
+                }
+            }
+            
+            // Try to get employee name from quotation executive data
+            if (!employeeName && executiveQuotation?.executive) {
+                employeeName = executiveQuotation.executive.profile?.employeeName || 
+                             executiveQuotation.executive.employeeName ||
+                             executiveQuotation.executive.name;
+            }
+            
+            // Try to get employee name from any quotation
+            if (!employeeName && customerData?.quotation?.length > 0) {
+                for (const quotation of customerData.quotation) {
+                    if (quotation.executive?.profile?.employeeName) {
+                        employeeName = quotation.executive.profile.employeeName;
+                        break;
+                    }
+                }
+            }
+            
+            // Fallback to default if still not found
+            if (!employeeName) {
+                employeeName = 'Sales Executive';
+            }
+            
+            // Create activity payload
+            const activityData = {
+                customerId: customerId,
+                interactionType: 'WALK IN',
+                enquiryType: enquiryType,
+                remarks: remarks,
+                followUpDate: formattedDate,
+                followUpTime: scheduleTimeValue,
+                scheduleDateAndTime: `${formattedDate} ${scheduleTimeValue}`,
+                type: 'WalkInActivity',
+                // Add missing fields from web project
+                employee: employeeName,
+                employeeName: employeeName,
+                uniqueId: `WALKIN_${Date.now()}`,
+                activityType: 'WalkInActivity',
+                // Add quotation and vehicle data
+                ...(quotationIdToUse && { quotationId: quotationIdToUse }),
+                ...(vehicleToUse && { vehicle: vehicleToUse })
+            };
+
+            console.log('🔍 Creating walk-in activity:', activityData);
+
+            const response = await createActivity(activityData);
+            
+            if (response.data?.code === 200) {
+                toast.success('Walk-In activity created successfully');
+                
+                // Pass activity data back for instant update
+                const newActivity = {
+                    ...activityData,
+                    id: response.data?.response?.data?.id || Date.now().toString(),
+                    createdAt: new Date().toISOString(),
+                    activityType: 'WalkIn Activity',
+                    // Add any additional fields needed for UI display
+                    customerName: customerData?.name || customerName,
+                };
+                
+                // Emit event for instant activity update
+                DeviceEventEmitter.emit('activityCreated', {
+                    type: 'walkin',
+                    activity: newActivity
+                });
+                
+                // Navigate back
+                navigation.goBack();
+            } else {
+                toast.error(response.data?.message || 'Failed to create walk-in activity');
+            }
+        } catch (error) {
+            console.error('Error creating walk-in activity:', error);
+            toast.error('Something went wrong while creating the activity');
+        }
     };
 
     const handleDiscard = () => {
@@ -261,27 +325,10 @@ export default function WalkInActivityScreen({
                         <View className="mb-4">
                             <FormLabel label="Customer Name" required />
                             <TextInput
-                                value={customerName}
+                                value={customerData?.name || customerName || 'Loading...'}
                                 editable={false}
                                 className="h-12 bg-gray-100 border border-gray-200 rounded-lg px-3 text-gray-800"
                             />
-                        </View>
-
-                        {/* Phone Number dropdown */}
-                        <View className="mb-4">
-                            <FormLabel label="Number" required />
-                            <SelectField
-                                placeholder="Select number"
-                                value={phone}
-                                options={phoneOptions}
-                                onSelect={(val) => {
-                                    setPhone(val);
-                                    setPhoneError('');
-                                }}
-                                disabled={phoneOptions.length <= 1}
-                                error={phoneError}
-                            />
-                            {loadingPhones && <Text className="text-xs text-gray-400 mt-1">Loading numbers...</Text>}
                         </View>
 
                         {/* Next Followup Date */}
@@ -331,21 +378,18 @@ export default function WalkInActivityScreen({
 
                         {/* Enquiry Type */}
                         <View className="mb-4">
-                            <FormLabel label="Enquiry Type" required />
+                            <FormLabel label="Enquiry Type" required className="mb-2" />
                             <View className="flex-row gap-2">
-                                {['Hot', 'Warm', 'Cold'].map((type) => (
+                                {ENQUIRY_TYPES.map((type: string) => (
                                     <TouchableOpacity
                                         key={type}
                                         onPress={() => setEnquiryType(type)}
-                                        className={`flex-1 py-2 rounded-lg border ${enquiryType === type
+                                        className={`flex-1 h-11 rounded-lg items-center justify-center border ${enquiryType === type
                                             ? 'bg-teal-600 border-teal-600'
                                             : 'bg-white border-gray-300'
                                             }`}
                                     >
-                                        <Text
-                                            className={`text-center text-sm font-medium ${enquiryType === type ? 'text-white' : 'text-gray-700'
-                                                }`}
-                                        >
+                                        <Text className={`text-sm font-semibold ${enquiryType === type ? 'text-white' : 'text-gray-700'}`}>
                                             {type}
                                         </Text>
                                     </TouchableOpacity>
@@ -354,19 +398,12 @@ export default function WalkInActivityScreen({
                         </View>
 
                         {/* Interaction Type */}
-                        <View className="mb-4" style={{ zIndex: 50 }}>
+                        <View className="mb-4">
                             <FormLabel label="Interaction Type" required />
-                            <SelectField
-                                placeholder="Select type"
-                                value={interactionType}
-                                options={[
-                                    { label: 'Walk- In', value: 'Walk- In' },
-                                    { label: 'Call', value: 'Call' },
-                                    { label: 'Message', value: 'Message' },
-                                ]}
-                                onSelect={(val) => {
-                                    setInteractionType(val);
-                                }}
+                            <TextInput
+                                value="Walk-In"
+                                editable={false}
+                                className="h-12 bg-gray-100 border border-gray-200 rounded-lg px-3 text-gray-800"
                             />
                         </View>
 
@@ -457,8 +494,8 @@ export default function WalkInActivityScreen({
                             current={scheduleDateValue ? scheduleDateValue.toISOString().split('T')[0] : undefined}
                             minDate={new Date().toISOString().split('T')[0]}
                             onDayPress={(day) => {
-                                const localDate = new Date(day.timestamp + new Date().getTimezoneOffset() * 60000);
-                                setScheduleDateValue(localDate);
+                                const selectedDate = new Date(day.dateString);
+                                setScheduleDateValue(selectedDate);
                                 setDateError('');
                             }}
                             theme={{
@@ -492,102 +529,45 @@ export default function WalkInActivityScreen({
             </Modal>
 
             {/* Time Picker Modal */}
-            <Modal visible={timeDropdownOpen} transparent animationType="fade" onRequestClose={() => setTimeDropdownOpen(false)}>
-                <TouchableOpacity
-                    activeOpacity={1}
-                    onPress={() => setTimeDropdownOpen(false)}
-                    style={{ flex: 1, backgroundColor: 'transparent' }}
-                >
-                    {timeDropdownLayout && (
-                        <View
-                            style={{
-                                position: 'absolute',
-                                left: Math.max(16, Math.min(timeDropdownLayout.x, Dimensions.get('window').width - timeDropdownLayout.width - 16)),
-                                top: timeDropdownLayout.y + timeDropdownLayout.height + 8,
-                                width: Math.min(timeDropdownLayout.width, Dimensions.get('window').width - 32),
-                                backgroundColor: 'white',
-                                borderWidth: 1,
-                                borderColor: '#e5e7eb',
-                                borderRadius: 12,
-                                overflow: 'hidden',
-                                elevation: 10,
+            <TimePickerModal
+                visible={timeDropdownOpen}
+                onClose={() => setTimeDropdownOpen(false)}
+                onSelect={(time) => {
+                    setScheduleTimeValue(time);
+                    setTimeError('');
+                }}
+            />
+
+
+            {/* Interaction Type Modal */}
+            <CustomModal visible={showInteractionModal} onClose={() => setShowInteractionModal(false)}>
+                <View className="p-4 border-b border-gray-200">
+                    <Text className="text-lg font-semibold">Select Interaction Type</Text>
+                </View>
+                <ScrollView>
+                    {[
+                        { label: 'Walk- In', value: 'Walk- In' },
+                        { label: 'Call', value: 'Call' },
+                        { label: 'Message', value: 'Message' },
+                    ].map((option) => (
+                        <TouchableOpacity
+                            key={option.value}
+                            onPress={() => {
+                                setInteractionType(option.value);
+                                setShowInteractionModal(false);
                             }}
+                            className="p-4 border-b border-gray-100"
                         >
-                            <View style={{ flexDirection: 'row' }}>
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {buildHourOptions()
-                                        .filter((hour) => hour <= 22)
-                                        .map((hour) => (
-                                            <TouchableOpacity
-                                                key={`h-${hour}`}
-                                                onPress={() => setSelectedHour(hour)}
-                                                style={{
-                                                    paddingHorizontal: 16,
-                                                    paddingVertical: 12,
-                                                    borderBottomWidth: 1,
-                                                    borderBottomColor: '#f3f4f6',
-                                                    backgroundColor: selectedHour === hour ? '#f0fdfa' : 'white',
-                                                }}
-                                            >
-                                                <Text style={{ fontSize: 12, color: selectedHour === hour ? '#0f766e' : '#374151', fontWeight: selectedHour === hour ? '600' : '400' }}>
-                                                    {String(hour).padStart(2, '0')}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                </ScrollView>
-                                <View style={{ width: 1, backgroundColor: '#e5e7eb' }} />
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {minuteOptions.map((minute) => (
-                                        <TouchableOpacity
-                                            key={`m-${minute}`}
-                                            onPress={() => setSelectedMinute(minute)}
-                                            style={{
-                                                paddingHorizontal: 16,
-                                                paddingVertical: 12,
-                                                borderBottomWidth: 1,
-                                                borderBottomColor: '#f3f4f6',
-                                                backgroundColor: selectedMinute === minute ? '#f0fdfa' : 'white',
-                                            }}
-                                        >
-                                            <Text style={{ fontSize: 12, color: selectedMinute === minute ? '#0f766e' : '#374151', fontWeight: selectedMinute === minute ? '600' : '400' }}>
-                                                {String(minute).padStart(2, '0')}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f3f4f6' }}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        if (selectedHour === null || selectedMinute === null) return;
-
-                                        // Format hour based on AM/PM logic matching formatTime
-                                        const period = selectedHour < 12 ? 'AM' : 'PM';
-                                        const displayH = selectedHour === 0 ? 12 : selectedHour > 12 ? selectedHour - 12 : selectedHour;
-                                        const displayM = String(selectedMinute).padStart(2, '0');
-                                        const label = `${String(displayH).padStart(2, '0')}:${displayM} ${period}`;
-
-                                        setScheduleTimeValue(label);
-                                        setTimeError('');
-                                        setTimeDropdownOpen(false);
-                                    }}
-                                    style={{
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        borderRadius: 8,
-                                        backgroundColor: selectedHour !== null && selectedMinute !== null ? '#0d9488' : '#e5e7eb',
-                                    }}
-                                    disabled={selectedHour === null || selectedMinute === null}
-                                >
-                                    <Text style={{ fontSize: 12, fontWeight: '600', color: selectedHour !== null && selectedMinute !== null ? 'white' : '#6b7280' }}>
-                                        Select
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
+                            <Text className={`text-gray-800 ${interactionType === option.value ? 'font-bold text-teal-600' : ''}`}>
+                                {option.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+                <TouchableOpacity onPress={() => setShowInteractionModal(false)} className="p-4 border-t border-gray-200">
+                    <Text className="text-center text-gray-600">Cancel</Text>
                 </TouchableOpacity>
-            </Modal>
+            </CustomModal>
         </SafeAreaView>
     );
 }

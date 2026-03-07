@@ -182,21 +182,21 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         'N/A',
                     customerName: data.customerName || data.proCustomer?.name || data.customer?.name || 'N/A',
                     gender: data.customer?.gender || data.proCustomer?.gender || data.gender || 'N/A',
-                    locality: data.customer?.locality || data.customer?.location || data.location || data.locality || 'N/A',
-                    leadSource: data.leadSource || 'N/A',
+                    locality: data.locality || data.customer?.locality || data.customer?.location || data.location || '',
+                    leadSource: data.leadSource || data.lead_source || '',
                     testDriveTaken: data.testDriveTaken || false,
-                    enquiryType: data.enquiryType || 'N/A',
+                    enquiryType: data.enquiryType || data.enquiry_type || '',
                     remarks: data.remarks || '',
                     createdOn: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-GB') : 'N/A',
                     salesExecutive: data.salesExecutive?.name || data.executive?.profile?.employeeName || data.salesExecutiveName || 'N/A',
                     customerType:
+                        data.customerType ||
+                        data.type ||
                         data.customer?.type ||
                         data.proCustomer?.type ||
-                        data.customerType ||
                         data.customer?.customerType ||
                         data.proCustomer?.customerType ||
-                        data.type ||
-                        'N/A',
+                        '',
                     scheduleDate: data.scheduleDate ? new Date(data.scheduleDate).toLocaleDateString('en-GB') : 'N/A',
                     scheduleTime: formatTime(data.scheduleTime || data.scheduleDateAndTime),
                     expectedDate: data.expectedDateOfPurchase ? new Date(data.expectedDateOfPurchase).toLocaleDateString('en-GB') : 'N/A',

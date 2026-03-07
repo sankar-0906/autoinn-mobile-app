@@ -753,6 +753,11 @@ export default function BookingActivityScreen({
         }
     }, [rtos]);
 
+    // Reset active tab to customer on mount to prevent payment tab issue
+    useEffect(() => {
+        setActiveTab('customer');
+    }, []);
+
     // ─────────────────────────────────────────────────────────────────────
     // Vehicle selection from SelectVehicleForBooking screen
     // ─────────────────────────────────────────────────────────────────────
@@ -1213,12 +1218,44 @@ export default function BookingActivityScreen({
             
             if (response.data.code === 200) {
                 toast.success('Booking saved successfully!');
-                // Navigate to FollowUpDetail with customer phone number
-                const customerPhoneNumber = phoneRef.current || route.params?.customerPhone;
-                if (customerPhoneNumber) {
-                    setTimeout(() => navigation.navigate('FollowUpDetail', { id: customerPhoneNumber }), 1500);
+                // Reset navigation stack and navigate to FollowUpDetail to prevent going back to booking payment page
+                const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
+                if (customerPhone) {
+                    console.log('🔍 Resetting navigation and going to FollowUpDetail with customerPhone:', customerPhone);
+                    // Get quotation ID from response to include in navigation stack
+                    const quotationData = response.data?.response?.data?.quotation?.[0];
+                    const quotationId = quotationData?.id || quotationData?.quotationId;
+                    
+                    setTimeout(() => {
+                        if (quotationId) {
+                            console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
+                            navigation.reset({
+                                index: 2,
+                                routes: [
+                                    { name: 'FollowUps' },
+                                    { name: 'QuotationView', params: { id: quotationId } },
+                                    { name: 'FollowUpDetail', params: { id: customerPhone } }
+                                ]
+                            });
+                        } else {
+                            console.log('🔍 No quotation found, using standard navigation');
+                            navigation.reset({
+                                index: 1,
+                                routes: [
+                                    { name: 'FollowUps' },
+                                    { name: 'FollowUpDetail', params: { id: customerPhone } }
+                                ]
+                            });
+                        }
+                    }, 1500);
                 } else {
-                    setTimeout(() => navigation.navigate('FollowUps'), 1500);
+                    console.log('🔍 No customerPhone found, resetting navigation to FollowUps');
+                    setTimeout(() => {
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: 'FollowUps' }]
+                        });
+                    }, 1500);
                 }
             } else {
                 console.error('❌ Booking creation failed:', response);
@@ -1247,7 +1284,10 @@ export default function BookingActivityScreen({
     // ─────────────────────────────────────────────────────────────────────
     // Misc handlers
     // ─────────────────────────────────────────────────────────────────────
-    const handleClose = () => navigation.goBack();
+    const handleClose = () => {
+    console.log('🔍 Closing BookingActivity, navigating to FollowUps');
+    navigation.navigate('FollowUps');
+};
 
     const handleDateSelect = (dateString: string) => {
         const [yyyy, mm, dd] = dateString.split('-');

@@ -352,6 +352,14 @@ export const updateActivity = (id: string, body: any) => {
   return platformApi.put(`/api/activity/${id}`, body);
 };
 
+export const createActivity = (data: any) => {
+  return platformApi.post('/api/activity/create', data);
+};
+
+export const createCallActivity = (data: any) => {
+  return platformApi.post('/api/activity/call', data);
+};
+
 export const getCustomerById = (id: string) => {
   return platformApi.get(`/api/customer/${id}`);
 };
