@@ -78,19 +78,18 @@ export default function ActivityViewEditScreen() {
 
     // Add debug state
     const [debugInfo, setDebugInfo] = useState<string>('');
+    const [fetchError, setFetchError] = useState(false);
+    const fetchedRef = useRef(false);
 
     const fetchData = useCallback(async () => {
+        if (fetchedRef.current && activityDetail) return;
         try {
             setLoading(true);
-            console.log('🔍 Fetching activity data for ID:', activityId);
+            setFetchError(false);
             const res = await getActivityById(activityId);
             const data = res.data?.response?.data;
             if (data) {
-                console.log('🔍 Activity data received:', {
-                    hasQuotation: !!data.quotation,
-                    hasBooking: !!data.booking,
-                    quotationType: data.quotation ? typeof data.quotation : 'none'
-                });
+                fetchedRef.current = true;
                 setActivityDetail(data);
                 setEnquiryType(data.enquiryType || 'Hot');
                 setRemarks(data.remarks || '');
@@ -106,7 +105,10 @@ export default function ActivityViewEditScreen() {
             }
         } catch (err) {
             console.error('❌ Error fetching activity:', err);
-            toast.error('Failed to load activity details');
+            if (!activityDetail) {
+                setFetchError(true);
+                toast.error('Failed to load activity details');
+            }
         } finally {
             setLoading(false);
         }
@@ -214,7 +216,7 @@ export default function ActivityViewEditScreen() {
 
                 console.log('🔍 Quotations array length:', quotations.length);
 
-                quotations.filter(Boolean).forEach((q, index) => {
+                quotations.filter(Boolean).forEach((q: any, index: number) => {
                     console.log(`🔍 Processing quotation ${index}:`, {
                         hasPdfWithBrochure: !!q?.pdfWithBrochure,
                         hasPdfWithOutBrochure: !!q?.pdfWithOutBrochure,
@@ -275,8 +277,8 @@ export default function ActivityViewEditScreen() {
             }
         } catch (error) {
             console.error('❌ Error in getAssociatedDocuments:', error);
-            console.error('❌ Error details:', error.message);
-            console.error('❌ Error stack:', error.stack);
+            console.error('❌ Error details:', (error as any).message);
+            console.error('❌ Error stack:', (error as any).stack);
             return [];
         }
 
@@ -380,12 +382,12 @@ export default function ActivityViewEditScreen() {
             );
         } catch (error) {
             console.error('❌ Error in DocumentsTabContent:', error);
-            console.error('❌ Error stack:', error.stack);
+            console.error('❌ Error stack:', (error as any).stack);
             return (
                 <View className="p-4">
                     <View className="bg-red-100 p-4 rounded-xl">
                         <Text className="text-red-600 font-bold mb-2">Error Loading Documents</Text>
-                        <Text className="text-red-500 text-sm">{error.message}</Text>
+                        <Text className="text-red-500 text-sm">{(error as any).message}</Text>
                     </View>
                 </View>
             );
@@ -396,6 +398,24 @@ export default function ActivityViewEditScreen() {
         return (
             <SafeAreaView className="flex-1 bg-white items-center justify-center">
                 <ActivityIndicator size="large" color={COLORS.primary} />
+            </SafeAreaView>
+        );
+    }
+
+    if (fetchError && !activityDetail) {
+        return (
+            <SafeAreaView className="flex-1 bg-white items-center justify-center px-6">
+                <Text className="text-gray-800 font-bold text-lg mb-2">Failed to load activity</Text>
+                <Text className="text-gray-500 text-sm text-center mb-6">Network error occurred. Please check your connection and try again.</Text>
+                <TouchableOpacity
+                    onPress={() => { fetchedRef.current = false; fetchData(); }}
+                    className="bg-teal-600 px-6 py-3 rounded-lg"
+                >
+                    <Text className="text-white font-semibold">Retry</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleGoBack} className="mt-3 px-6 py-3">
+                    <Text className="text-gray-600 font-medium">Go Back</Text>
+                </TouchableOpacity>
             </SafeAreaView>
         );
     }

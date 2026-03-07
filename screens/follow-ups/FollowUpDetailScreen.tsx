@@ -46,15 +46,9 @@ type Activity = {
     sessionId?: string;
     type: string;
     date: string;
-    bookingId: string;
-    customerAuth: string;
-    vehicle: string;
+    vehicle: any;
     vehicleMaster?: { modelName?: string };
     vehicleInfo?: { modelName?: string };
-    colorCode: string;
-    supervisor: string;
-    employee: string;
-    employeeName?: string;
     enquiryType: string;
     remarks: string;
     interactionType: string;
@@ -63,19 +57,40 @@ type Activity = {
     followUpTime?: string;
     createdAt?: string;
     activityType?: string;
+    employee?: string;
+    employeeName?: string;
+    phone?: string;
     createdBy?: {
         profile?: {
             employeeName?: string;
-        }
+        };
     };
     quotation?: {
+        quotationId?: string;
+        leadSource?: string;
         vehicleLabel?: string;
         vehicleMaster?: { modelName?: string };
+        vehicle?: Array<{ vehicleDetail?: { modelName?: string; modelCode?: string } }>;
+        sms?: Array<{ phone?: string; smsStatus?: string }>;
+        sentStatus?: boolean;
     };
     booking?: {
+        bookingId?: string;
+        bookingStatus?: string;
         vehicleLabel?: string;
         vehicleMaster?: { modelName?: string };
+        vehicle?: { modelName?: string; modelCode?: string };
+        color?: { code?: string; url?: string };
+        authentication?: { verifiedAt?: string };
+        sms?: { phone?: string; smsStatus?: string };
     };
+    callId?: string;
+    callHistory?: {
+        phone2?: string;
+        duration?: string;
+    };
+    sms?: any;
+    discardMsg?: string;
 };
 
 const CUSTOMER_TABS = [
@@ -97,9 +112,9 @@ const formatDate = (dateString: string | undefined) => {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const year = date.getUTCFullYear();
         return `${day}-${month}-${year}`;
     } catch {
         return '-';
@@ -112,11 +127,11 @@ const formatDateTime = (dateString: string | undefined) => {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const year = date.getUTCFullYear();
+        const hours = String(date.getUTCHours()).padStart(2, '0');
+        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
         return `${day}-${month}-${year} ${hours}:${minutes}`;
     } catch {
         return '-';
@@ -129,8 +144,8 @@ const formatTime = (dateString: string | undefined) => {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const hours = String(date.getUTCHours()).padStart(2, '0');
+        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
         return `${hours}:${minutes}`;
     } catch {
         return '-';
@@ -862,7 +877,7 @@ export default function FollowUpDetailScreen() {
 
                 <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden shadow">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Quotation No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1 mr-2">Quotation No</Text>
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-20 ">Created On</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
@@ -876,7 +891,7 @@ export default function FollowUpDetailScreen() {
                                     <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                         <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
                                         <Text className="text-xs text-gray-800 flex-1">{vehicleDisplay}</Text>
-                                        <Text className="text-xs text-gray-800 w-20">{formatDate(q.createdAt)}</Text>
+                                        <Text className="text-xs text-gray-800 w-20 mr-2">{formatDate(q.createdAt)}</Text>
                                         <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                             <Eye size={14} color={COLORS.gray[600]} />
                                         </TouchableOpacity>
@@ -970,26 +985,63 @@ export default function FollowUpDetailScreen() {
                         {activities && activities.length > 0 ? activities.map((activity: Activity) => {
                             if (!activity || typeof activity !== 'object') return null;
 
-                            const allVehicleSources = [
-                                activity.vehicle,
-                                activity.vehicleMaster,
-                                activity.vehicleInfo,
-                                activity.quotation,
-                                activity.booking,
-                                (activity as any).modelName,
-                                (activity as any).enquiryVehicle
-                            ];
+                            // Determine activity type label — matching web project's renderTitle logic
+                            const activityTypeLabel = activity.booking
+                                ? 'Booking Activity'
+                                : activity.quotation
+                                    ? 'Quotation Activity'
+                                    : activity.discardMsg || activity.interactionType === 'Discard'
+                                        ? 'Discard Activity'
+                                        : activity.interactionType === 'Service Followup WhatsApp Message'
+                                            ? 'Service WhatsApp Activity'
+                                            : activity.interactionType === 'Service Followup Call' || activity.interactionType === 'Service Followup Message'
+                                                ? 'Service Follow-Up Activity'
+                                                : activity.interactionType === 'WhatsApp Message'
+                                                    ? 'WhatsApp Activity'
+                                                    : activity.sms
+                                                        ? 'Message Activity'
+                                                        : activity.callId || activity.interactionType === 'Call Follow' || activity.interactionType === 'Outgoing Call' || activity.interactionType === 'Incoming Call'
+                                                            ? 'Call Activity'
+                                                            : activity.interactionType === 'WALK IN'
+                                                                ? 'WalkIn Activity'
+                                                                : activity.interactionType || activity.type || activity.activityType || 'Activity';
 
-                            const uniqueVehicles = [...new Set(
-                                allVehicleSources.flatMap(src => getVehicleNames(src))
-                                    .filter(name => name && name !== '-')
-                            )];
+                            // Extract vehicle names based on activity type
+                            let activityVehicle = '-';
+                            if (activity.booking?.vehicle) {
+                                const v = activity.booking.vehicle;
+                                activityVehicle = v.modelName ? `${v.modelName}${v.modelCode ? ' - ' + v.modelCode : ''}` : '-';
+                            } else if (activity.quotation?.vehicle?.length) {
+                                activityVehicle = activity.quotation.vehicle
+                                    .map(v => v?.vehicleDetail?.modelName || '')
+                                    .filter(Boolean)
+                                    .join(', ') || '-';
+                            } else {
+                                const allVehicleSources = [
+                                    activity.vehicle, activity.vehicleMaster, activity.vehicleInfo,
+                                    (activity as any).modelName, (activity as any).enquiryVehicle
+                                ];
+                                const uniqueVehicles = [...new Set(
+                                    allVehicleSources.flatMap(src => getVehicleNames(src))
+                                        .filter(name => name && name !== '-')
+                                )];
+                                activityVehicle = uniqueVehicles.length > 0 ? uniqueVehicles.join(', ') : '-';
+                            }
 
-                            const activityVehicle = uniqueVehicles.length > 0
-                                ? uniqueVehicles.join(',\n')
-                                : '-';
+                            // Extract phone number based on activity type
+                            const activityPhone = activity.booking?.sms?.phone
+                                || activity.quotation?.sms?.[0]?.phone
+                                || activity.callHistory?.phone2
+                                || activity.phone
+                                || null;
 
+                            // Extract document IDs
+                            const docId = activity.booking?.bookingId
+                                || activity.quotation?.quotationId
+                                || null;
 
+                            // Extract employee
+                            const employeeName = activity.employee || activity.createdBy?.profile?.employeeName || activity.employeeName || '-';
 
                             return (
                                 <View key={activity.id} className="bg-white rounded-2xl shadow-md overflow-hidden border-0 mb-4">
@@ -997,32 +1049,34 @@ export default function FollowUpDetailScreen() {
                                     <View className="bg-white px-4 py-4 flex-row items-center justify-between border-b border-gray-100">
                                         <View className="ml-1 flex-1">
                                             <Text className="text-gray-800 font-semibold text-base mb-0.5">
-                                                {activity.type || activity.activityType || 'Activity'}
+                                                {activityTypeLabel}
                                             </Text>
-                                            <Text className="text-gray-500 text-xs">{formatDate(activity.date || activity.createdAt) || '-'}</Text>
+                                            <Text className="text-gray-500 text-xs">{formatDateTime(activity.createdAt || activity.date) || '-'}</Text>
                                         </View>
-                                        <View className={`mr-4 px-3 py-1.5 rounded ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
-                                            activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
-                                                'bg-blue-400'
-                                            }`}>
-                                            <Text className="text-white text-xs font-bold">
-                                                {activity.enquiryType || 'Cold'}
-                                            </Text>
-                                        </View>
+                                        {activity.enquiryType ? (
+                                            <View className={`mr-4 px-3 py-1.5 rounded ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
+                                                activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
+                                                    'bg-blue-400'
+                                                }`}>
+                                                <Text className="text-white text-xs font-bold">
+                                                    {activity.enquiryType}
+                                                </Text>
+                                            </View>
+                                        ) : null}
                                     </View>
 
                                     {/* Content */}
                                     <View className="px-4 py-4 space-y-4 bg-white">
-                                        {/* Row 1 - Activity ID and Interaction Type */}
+                                        {/* Row 1 - Quotation/Booking ID and Interaction Type */}
                                         <View className="flex-row gap-4 mb-2">
                                             <View className="flex-1 flex-row items-start gap-2">
                                                 <Hash size={14} color="#6b7280" style={{ marginTop: 2 }} />
                                                 <View className="flex-1">
                                                     <Text className="text-gray-600 text-xs font-medium mb-1.5">
-                                                        Activity ID
+                                                        {activity.booking ? 'Booking ID' : 'Quotation ID'}
                                                     </Text>
-                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                        {activity.activityId || activity.sessionId || activity.id || '-'}
+                                                    <Text className="text-teal-700 text-sm font-semibold" numberOfLines={1}>
+                                                        {activity.quotation?.quotationId || activity.booking?.bookingId || '-'}
                                                     </Text>
                                                 </View>
                                             </View>
@@ -1030,42 +1084,93 @@ export default function FollowUpDetailScreen() {
                                                 <MessageSquare size={14} color="#6b7280" style={{ marginTop: 2 }} />
                                                 <View className="flex-1">
                                                     <Text className="text-gray-600 text-xs font-medium mb-1.5">
-                                                        Interaction Type
+                                                        {activity.quotation ? 'Lead Source' : 'Interaction Type'}
                                                     </Text>
                                                     <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                        {activity.interactionType || activity.type || activity.activityType || '-'}
+                                                        {activity.quotation
+                                                            ? (activity.quotation.leadSource || activity.interactionType || '-')
+                                                            : (activity.interactionType || '-')}
                                                     </Text>
                                                 </View>
                                             </View>
                                         </View>
 
-                                        {/* Row 2 - Follow-up Date and Time */}
-                                        <View className="flex-row gap-4 mb-2 mt-4">
-                                            <View className="flex-1 flex-row items-center gap-2">
-                                                <CalendarDays size={14} color="#6b7280" />
-                                                <View className="flex-1">
-                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
-                                                        Followup Date
-                                                    </Text>
-                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                        {formatDate(activity.scheduleDateAndTime || activity.followUpDate) || '-'}
-                                                    </Text>
+                                        {/* Row 2 - Phone (type-specific) */}
+                                        {activityPhone ? (
+                                            <View className="flex-row gap-4 mb-2 mt-2">
+                                                <View className="flex-1 flex-row items-start gap-2">
+                                                    <Phone size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                    <View className="flex-1">
+                                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                            Phone No
+                                                        </Text>
+                                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                            {activityPhone}
+                                                        </Text>
+                                                    </View>
                                                 </View>
+                                                <View className="flex-1" />
                                             </View>
-                                            <View className="flex-1 flex-row items-center gap-2">
-                                                <Clock size={14} color="#6b7280" />
-                                                <View className="flex-1">
-                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
-                                                        Followup Time
-                                                    </Text>
-                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                        {formatTime(activity.scheduleDateAndTime || activity.followUpTime) || '-'}
-                                                    </Text>
-                                                </View>
-                                            </View>
-                                        </View>
+                                        ) : null}
 
-                                        {/* Row 3 - Vehicle and Employee */}
+                                        {/* Booking-specific: Auth & Status */}
+                                        {activity.booking ? (
+                                            <View className="flex-row gap-4 mb-2 mt-2">
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">Customer Auth</Text>
+                                                    <Text className={`text-sm font-semibold ${activity.booking.authentication?.verifiedAt ? 'text-green-600' : 'text-red-500'}`}>
+                                                        {activity.booking.authentication?.verifiedAt ? 'Verified' : 'Not Verified'}
+                                                    </Text>
+                                                </View>
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">Booking Status</Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold">
+                                                        {activity.booking.bookingStatus || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        ) : null}
+
+                                        {/* Call-specific: Duration */}
+                                        {activity.callHistory?.duration ? (
+                                            <View className="flex-row gap-4 mb-2 mt-2">
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">Call Duration</Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold">{activity.callHistory.duration}</Text>
+                                                </View>
+                                                <View className="flex-1" />
+                                            </View>
+                                        ) : null}
+
+                                        {/* Row - Follow-up Date and Time */}
+                                        {activity.scheduleDateAndTime ? (
+                                            <View className="flex-row gap-4 mb-2 mt-4">
+                                                <View className="flex-1 flex-row items-center gap-2">
+                                                    <CalendarDays size={14} color="#6b7280" />
+                                                    <View className="flex-1">
+                                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                            Followup Date
+                                                        </Text>
+                                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                            {formatDate(activity.scheduleDateAndTime) || '-'}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                                <View className="flex-1 flex-row items-center gap-2">
+                                                    <Clock size={14} color="#6b7280" />
+                                                    <View className="flex-1">
+                                                        <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                            Followup Time
+                                                        </Text>
+                                                        <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                            {formatTime(activity.scheduleDateAndTime) || '-'}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                            </View>
+                                        ) : null}
+
+                                        {/* Row - Vehicle and Employee */}
                                         <View className="flex-row gap-4 mb-2 mt-4">
                                             <View className="flex-1 flex-row items-start gap-2">
                                                 <Car size={14} color="#6b7280" style={{ marginTop: 2 }} />
@@ -1081,7 +1186,7 @@ export default function FollowUpDetailScreen() {
                                             <View className="flex-1 flex-row items-center gap-2">
                                                 <View className="w-5 h-5 bg-gray-200 rounded-full items-center justify-center">
                                                     <Text className="text-gray-600 text-xs font-bold">
-                                                        {(activity.employee || activity.createdBy?.profile?.employeeName)?.charAt(0)?.toUpperCase() || '-'}
+                                                        {employeeName?.charAt(0)?.toUpperCase() || '-'}
                                                     </Text>
                                                 </View>
                                                 <View className="flex-1">
@@ -1089,11 +1194,19 @@ export default function FollowUpDetailScreen() {
                                                         Employee
                                                     </Text>
                                                     <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                        {activity.employee || activity.createdBy?.profile?.employeeName || activity.employeeName || '-'}
+                                                        {employeeName}
                                                     </Text>
                                                 </View>
                                             </View>
                                         </View>
+
+                                        {/* Remarks */}
+                                        {activity.remarks && activity.remarks.length > 0 ? (
+                                            <View className="mt-3 bg-gray-50 rounded-lg p-3">
+                                                <Text className="text-gray-600 text-xs font-medium mb-1">Remarks</Text>
+                                                <Text className="text-gray-800 text-sm" numberOfLines={3}>{activity.remarks}</Text>
+                                            </View>
+                                        ) : null}
 
                                     </View>
 
