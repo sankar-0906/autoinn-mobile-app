@@ -924,12 +924,13 @@ export default function SelectVehicleForBookingScreen({ navigation, route }: { n
 
                                 console.log('🚗 Returning vehicle data:', vehicleData);
 
-                                // Navigate back and pass the vehicle data
+                                // Navigate back and pass the vehicle data + saved form data
                                 navigation.navigate('BookingActivity', {
                                     selectedVehicle: vehicleData,
                                     customerName: route.params?.customerName,
                                     customerId: route.params?.customerId,
                                     customerPhone: route.params?.customerPhone,
+                                    savedFormData: route.params?.savedFormData,
                                     scrollToSection: 'vehicle' // Ensure return to Vehicle section
                                 } as any);
                             }}

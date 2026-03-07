@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -249,6 +249,9 @@ export default function BookingActivityScreen({
     const [showTenureModal, setShowTenureModal]                   = useState(false);
     const [showEmiDayModal, setShowEmiDayModal]                   = useState(false);
     const [selectedDate, setSelectedDate]                         = useState(new Date());
+    const [dobCalendarStep, setDobCalendarStep]                   = useState<'year' | 'month' | 'day'>('year');
+    const [dobPickYear, setDobPickYear]                           = useState(new Date().getFullYear());
+    const [dobPickMonth, setDobPickMonth]                         = useState(new Date().getMonth());
 
     // ── Validation errors ──────────────────────────────────────────────────
     const [nameError, setNameError]               = useState('');
@@ -435,21 +438,26 @@ export default function BookingActivityScreen({
         }
     };
 
-    const fetchReferredByOptions = async () => {
+    const fetchReferredByOptions = async (searchString: string = '') => {
         try {
+            const column = searchString && !isNaN(Number(searchString)) ? 'phone' : 'name';
             const response = await platformApi.post('/api/options/get/', {
                 module: 'customers',
-                searchString: '',
-                column: 'name',
-                fields: ['contacts.phone'],
-                page: 1,
+                column,
+                searchString,
+                fields: ['contacts{phone}'],
+                searchColumns: ['contacts'],
                 size: 20,
+                page: 1,
             });
-            if (response.data.code === 200 && response.data.data) {
+            if (response.data.code === 200 && response.data.response) {
+                const list = Array.isArray(response.data.response) ? response.data.response : response.data.data || [];
                 setReferredByOptions(
-                    response.data.data.map((emp: any) => ({
+                    list.map((emp: any) => ({
                         id: emp.id,
-                        name: emp.contacts?.length > 0
+                        name: emp.name,
+                        phone: emp.contacts?.[0]?.phone || '',
+                        display: emp.contacts?.[0]?.phone
                             ? `${emp.contacts[0].phone} - ${emp.name}`
                             : emp.name,
                     }))
@@ -517,13 +525,14 @@ export default function BookingActivityScreen({
     // Phone, Customer Name, Locality, Quotations, Gender
     // ─────────────────────────────────────────────────────────────────────
     const autoFillCustomerFields = (customer: any) => {
-        console.log('🔍 autoFillCustomerFields — filling 5 fields');
+        console.log('🔍 autoFillCustomerFields — filling fields');
         console.log('👤 Customer data structure:', JSON.stringify(customer, null, 2));
-        console.log('📊 Current form state:', {
-            customerFullName,
-            locality,
-            quotationsAssociated,
-            customerGender
+        // Use REFS for checks (always fresh, even after restore from route params)
+        console.log('📊 Current ref state:', {
+            customerFullName: customerFullNameRef.current,
+            locality: localityRef.current,
+            quotations: quotationsRef.current,
+            customerGender: customerGenderRef.current
         });
 
         // Store customer for payload (DB id, etc.)
@@ -532,53 +541,43 @@ export default function BookingActivityScreen({
 
         // 1. Phone — only set if current phone is empty or same as customer phone
         const contactPhone = customer.contacts?.[0]?.phone;
-        console.log('📞 Phone check:', { contactPhone, currentPhone: phone });
-        if (contactPhone && (!phone || phone === String(contactPhone))) {
+        console.log('📞 Phone check:', { contactPhone, currentPhone: phoneRef.current });
+        if (contactPhone && (!phoneRef.current || phoneRef.current === String(contactPhone))) {
             setPhoneSync(String(contactPhone));
             console.log('✅ Phone set to:', contactPhone);
         }
 
         // 2. Customer Name — only set if current name is empty or "Unknown"
-        console.log('👤 Name check:', { customerName: customer.name, currentName: customerFullName, isEmpty: !customerFullName });
-        if (customer.name && (!customerFullName || customerFullName === 'Unknown')) {
+        console.log('👤 Name check:', { customerName: customer.name, currentName: customerFullNameRef.current });
+        if (customer.name && (!customerFullNameRef.current || customerFullNameRef.current === 'Unknown')) {
             setCustomerFullNameSync(String(customer.name));
             console.log('✅ Customer name set to:', customer.name);
-        } else {
-            console.log('❌ Customer name not set - reason:', customer.name ? 'Field not empty and not Unknown' : 'No customer name');
         }
 
         // 3. Locality — only set if current locality is empty
-        console.log('📍 Locality check:', { customerLocality: customer.address?.locality, currentLocality: locality, isEmpty: !locality });
-        if (customer.address?.locality && !locality) {
+        console.log('📍 Locality check:', { customerLocality: customer.address?.locality, currentLocality: localityRef.current });
+        if (customer.address?.locality && !localityRef.current) {
             setLocalitySync(String(customer.address.locality));
             console.log('✅ Locality set to:', customer.address.locality);
-        } else {
-            console.log('❌ Locality not set - reason:', customer.address?.localality ? 'Field not empty' : 'No customer locality');
         }
 
         // 4. Associated Quotations — only set if current quotations is empty
         console.log('📄 Quotations check:', { 
-            customerQuotations: customer.quotation, 
-            currentQuotations: quotationsAssociated, 
-            isEmpty: !quotationsAssociated,
-            quotationIds: customer.quotation?.map((q: any) => q.quotationId || q.id)
+            quotationIds: customer.quotation?.map((q: any) => q.quotationId || q.id),
+            currentQuotations: quotationsRef.current
         });
-        if (customer.quotation?.length > 0 && !quotationsAssociated) {
+        if (customer.quotation?.length > 0 && !quotationsRef.current) {
             // Prefer quotationId (like QDE/24-25/889) over internal ID
             const quotationIds = customer.quotation.map((q: any) => q.quotationId || q.id).join(', ');
             setQuotationsSync(quotationIds);
             console.log('✅ Quotations set to:', quotationIds);
-        } else {
-            console.log('❌ Quotations not set - reason:', customer.quotation?.length > 0 ? 'Field not empty' : 'No customer quotations');
         }
 
         // 5. Gender — only set if current gender is empty or default
-        console.log('⚧ Gender check:', { customerGender: customer.gender, currentGender: customerGender, isEmpty: !customerGender || customerGender === 'Male' });
-        if (customer.gender && (!customerGender || customerGender === 'Male')) {
+        console.log('⚧ Gender check:', { customerGender: customer.gender, currentGender: customerGenderRef.current });
+        if (customer.gender && (!customerGenderRef.current || customerGenderRef.current === 'Male')) {
             setCustomerGenderSync(String(customer.gender));
             console.log('✅ Gender set to:', customer.gender);
-        } else {
-            console.log('❌ Gender not set - reason:', customer.gender ? 'Field not empty or not default' : 'No customer gender');
         }
     };
 
@@ -683,9 +682,41 @@ export default function BookingActivityScreen({
         }
     }, []);
 
-    // Default sales officer
+    // Restore saved form data from route params (when returning from vehicle selection)
     useEffect(() => {
-        if (salesOfficers.length > 0 && !salesOfficer) {
+        const saved = route.params?.savedFormData;
+        if (saved) {
+            console.log('🔄 Restoring saved form data from route params');
+            if (saved.fatherName)       setFatherNameSync(saved.fatherName);
+            if (saved.address)          setAddressSync(saved.address);
+            if (saved.address2)         setAddress2Sync(saved.address2);
+            if (saved.address3)         setAddress3Sync(saved.address3);
+            if (saved.locality)         setLocalitySync(saved.locality);
+            if (saved.pincode)          setPincodeSync(saved.pincode);
+            if (saved.country)          setCountrySync(saved.country);
+            if (saved.stateVal)         setStateValSync(saved.stateVal);
+            if (saved.city)             setCitySync(saved.city);
+            if (saved.email)            setEmailSync(saved.email);
+            if (saved.dob)              setDobSync(saved.dob);
+            if (saved.age)              setAgeSync(saved.age);
+            if (saved.salesOfficer)     setSalesOfficerSync(saved.salesOfficer);
+            if (saved.quotations)       setQuotationsSync(saved.quotations);
+            if (saved.remarks)          setRemarksSync(saved.remarks);
+            if (saved.customerGender)   setCustomerGenderSync(saved.customerGender);
+            if (saved.nominee)          setNomineeSync(saved.nominee);
+            if (saved.nomineeAge)       setNomineeAgeSync(saved.nomineeAge);
+            if (saved.relationship)     setRelationshipSync(saved.relationship);
+            if (saved.referredBy)       setReferredBySync(saved.referredBy);
+            if (saved.expectedDelivery) setExpectedDeliverySync(saved.expectedDelivery);
+            if (saved.customerFullName) setCustomerFullNameSync(saved.customerFullName);
+            // Clear savedFormData from params to prevent re-restoring
+            navigation.setParams({ savedFormData: undefined } as any);
+        }
+    }, []);
+
+    // Default sales officer — use ref to avoid overwriting restored value
+    useEffect(() => {
+        if (salesOfficers.length > 0 && !salesOfficerRef.current) {
             const def = salesOfficers[0];
             setSalesOfficerSync(def.name || def.profile?.employeeName || '');
         }
@@ -826,6 +857,11 @@ export default function BookingActivityScreen({
             return 'vehicle';
         }
 
+        if (!expectedDelivery || expectedDelivery.trim() === '' || expectedDelivery === 'DD/MM/YYYY') {
+            toast.error('Expected Delivery Date is required');
+            return 'vehicle';
+        }
+
         const pm = paymentMode;
         if (!pm) { toast.error('Payment mode is required'); return 'payment'; }
         if (pm === 'finance') {
@@ -916,7 +952,13 @@ export default function BookingActivityScreen({
             },
         } : null;
 
-        const normalizedDob = currentDob?.trim() ? currentDob : null;
+        const normalizedDob = currentDob?.trim() ? (() => {
+            if (currentDob.includes('/')) {
+                const [dd, mm, yyyy] = currentDob.split('/');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            return currentDob;
+        })() : null;
 
         const isFinance = currentPayMode === 'finance';
         const normalizedLoanType = isFinance && loanType
@@ -1178,10 +1220,10 @@ export default function BookingActivityScreen({
     // ─────────────────────────────────────────────────────────────────────
     const handleClose = () => navigation.goBack();
 
-    const handleDateSelect = (date: Date) => {
-        setSelectedDate(date);
-        const formatted = date.toISOString().split('T')[0];
-        setDobSync(formatted);
+    const handleDateSelect = (dateString: string) => {
+        const [yyyy, mm, dd] = dateString.split('-');
+        setDobSync(`${dd}/${mm}/${yyyy}`);
+        const date = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
         const today = new Date();
         let a = today.getFullYear() - date.getFullYear();
         const m = today.getMonth() - date.getMonth();
@@ -1268,6 +1310,7 @@ export default function BookingActivityScreen({
             if (!err) setActiveTab('vehicle');
         } else if (activeTab === 'vehicle') {
             if (!model) { toast.error('Please select a vehicle model'); return; }
+            if (!expectedDelivery || expectedDelivery.trim() === '' || expectedDelivery === 'DD/MM/YYYY') { toast.error('Expected Delivery Date is required'); return; }
             setActiveTab('payment');
         }
     };
@@ -1510,11 +1553,22 @@ export default function BookingActivityScreen({
                                         <TextInput
                                             value={dob}
                                             onChangeText={setDobSync}
-                                            placeholder="YYYY-MM-DD"
+                                            placeholder="DD/MM/YYYY"
                                             className="flex-1 h-12 bg-white border border-gray-300 rounded-l-lg px-3 text-gray-800"
                                         />
                                         <TouchableOpacity
-                                            onPress={() => setShowCalendarModal(true)}
+                                            onPress={() => {
+                                                if (dob && dob.includes('/')) {
+                                                    const [dd, mm, yyyy] = dob.split('/');
+                                                    setDobPickYear(parseInt(yyyy) || new Date().getFullYear());
+                                                    setDobPickMonth((parseInt(mm) || 1) - 1);
+                                                } else {
+                                                    setDobPickYear(new Date().getFullYear());
+                                                    setDobPickMonth(new Date().getMonth());
+                                                }
+                                                setDobCalendarStep('year');
+                                                setShowCalendarModal(true);
+                                            }}
                                             className="h-12 bg-teal-600 rounded-r-lg px-4 justify-center"
                                         >
                                             <Calendar size={20} color="white" />
@@ -1697,6 +1751,30 @@ export default function BookingActivityScreen({
                                             customerName: route.params?.customerName,
                                             customerId: route.params?.customerId,
                                             customerPhone: route.params?.customerPhone,
+                                            savedFormData: {
+                                                fatherName: fatherNameRef.current,
+                                                address: addressRef.current,
+                                                address2: address2Ref.current,
+                                                address3: address3Ref.current,
+                                                locality: localityRef.current,
+                                                pincode: pincodeRef.current,
+                                                country: countryRef.current,
+                                                stateVal: stateValRef.current,
+                                                city: cityRef.current,
+                                                email: emailRef.current,
+                                                dob: dobRef.current,
+                                                age: ageRef.current,
+                                                salesOfficer: salesOfficerRef.current,
+                                                quotations: quotationsRef.current,
+                                                remarks: remarksRef.current,
+                                                customerGender: customerGenderRef.current,
+                                                nominee: nomineeRef.current,
+                                                nomineeAge: nomineeAgeRef.current,
+                                                relationship: relationshipRef.current,
+                                                referredBy: referredByRef.current,
+                                                expectedDelivery: expectedDeliveryRef.current,
+                                                customerFullName: customerFullNameRef.current,
+                                            },
                                         }) : undefined}
                                         disabled={!isModelSelected}
                                         className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${isModelSelected ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
@@ -1823,7 +1901,7 @@ export default function BookingActivityScreen({
 
                                     {/* Expected Delivery Date */}
                                     <View className="mb-4">
-                                        <FormLabel label="Expected Delivery Date" />
+                                        <FormLabel label="Expected Delivery Date" required />
                                         <View className="flex-row gap-2">
                                             <TextInput
                                                 value={expectedDelivery}
@@ -1833,15 +1911,6 @@ export default function BookingActivityScreen({
                                             />
                                             <TouchableOpacity onPress={() => setShowExpectedDeliveryModal(true)} className="h-12 w-12 bg-white border border-gray-300 rounded-lg items-center justify-center">
                                                 <Calendar size={20} color="#6b7280" />
-                                            </TouchableOpacity>
-                                        </View>
-                                        {expectedDelivery ? <Text className="text-xs text-green-600 mt-1">✅ Date set: {expectedDelivery}</Text> : null}
-                                        <View className="flex-row gap-2 mt-2">
-                                            <TouchableOpacity onPress={() => { const d = new Date(Date.now() + 7*86400000); setExpectedDeliverySync(`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`); }} className="px-2 py-1 bg-blue-500 rounded">
-                                                <Text className="text-white text-xs">+1 Week</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity onPress={() => { const d = new Date(Date.now() + 30*86400000); setExpectedDeliverySync(`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`); }} className="px-2 py-1 bg-green-500 rounded">
-                                                <Text className="text-white text-xs">+1 Month</Text>
                                             </TouchableOpacity>
                                         </View>
                                     </View>
@@ -2057,11 +2126,40 @@ export default function BookingActivityScreen({
             </CustomModal>
 
             {/* Referred By */}
-            <CustomModal visible={showReferredByModal} onClose={() => setShowReferredByModal(false)}>
-                <View className="p-4 border-b border-gray-200"><Text className="text-lg font-semibold">Select Referred By</Text></View>
-                <ScrollView>{referredByOptions.map(o => (<TouchableOpacity key={o.id} onPress={() => { setReferredBySync(o.name); setShowReferredByModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{o.name}</Text></TouchableOpacity>))}</ScrollView>
-                <TouchableOpacity onPress={() => setShowReferredByModal(false)} className="p-4 border-t border-gray-200"><Text className="text-center text-gray-600">Cancel</Text></TouchableOpacity>
-            </CustomModal>
+            <Modal visible={showReferredByModal} transparent animationType="fade" onRequestClose={() => setShowReferredByModal(false)}>
+                <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                    <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '70%' }}>
+                        <View className="p-4 border-b border-gray-200">
+                            <View className="flex-row justify-between items-center mb-3">
+                                <Text className="text-lg font-semibold text-gray-800">Select Referred By</Text>
+                                <TouchableOpacity onPress={() => setShowReferredByModal(false)}>
+                                    <X size={20} color={COLORS.gray[600]} />
+                                </TouchableOpacity>
+                            </View>
+                            <TextInput
+                                placeholder="Search by name or phone..."
+                                className="h-11 bg-gray-50 border border-gray-300 rounded-lg px-3 text-gray-800"
+                                onChangeText={(text) => fetchReferredByOptions(text)}
+                                autoFocus
+                            />
+                        </View>
+                        <ScrollView className="max-h-80">
+                            {referredByOptions.length > 0 ? referredByOptions.map(o => (
+                                <TouchableOpacity key={o.id} onPress={() => { setReferredBySync(o.display || o.name); setShowReferredByModal(false); }} className="p-4 border-b border-gray-100">
+                                    <Text className="text-gray-800 font-medium">{o.display || o.name}</Text>
+                                </TouchableOpacity>
+                            )) : (
+                                <View className="p-6 items-center">
+                                    <Text className="text-gray-400 text-sm">Type to search customers...</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+                        <TouchableOpacity onPress={() => setShowReferredByModal(false)} className="p-3 border-t border-gray-200">
+                            <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Relationship */}
             <CustomModal visible={showRelationshipModal} onClose={() => setShowRelationshipModal(false)}>
@@ -2104,29 +2202,180 @@ export default function BookingActivityScreen({
             {/* Accessory */}
             <AccessoryModal visible={showAccessoryModal} onClose={() => setShowAccessoryModal(false)} onSave={handleAccessorySave} initialAccessories={accessories} />
 
-            {/* DOB Calendar */}
-            <Modal visible={showCalendarModal} transparent animationType="slide" onRequestClose={() => setShowCalendarModal(false)}>
-                <View className="flex-1 justify-center items-center bg-black/50">
-                    <View className="bg-white rounded-xl p-6 w-11/12 max-w-sm">
-                        <View className="flex-row justify-between items-center mb-4">
-                            <Text className="text-lg font-semibold text-gray-800">Select Date of Birth</Text>
-                            <TouchableOpacity onPress={() => setShowCalendarModal(false)}><X size={20} color={COLORS.gray[600]} /></TouchableOpacity>
+            {/* DOB Calendar — 3-step: Year → Month → Day */}
+            <Modal visible={showCalendarModal} transparent animationType="fade" onRequestClose={() => setShowCalendarModal(false)}>
+                <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                    <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+                        {/* Header */}
+                        <View className="bg-teal-600 px-5 py-4">
+                            <View className="flex-row justify-between items-center">
+                                <Text className="text-white text-lg font-bold">Select Date of Birth</Text>
+                                <TouchableOpacity onPress={() => setShowCalendarModal(false)}>
+                                    <X size={22} color="white" />
+                                </TouchableOpacity>
+                            </View>
+                            <Text className="text-teal-100 text-sm mt-1">
+                                {dobCalendarStep === 'year' ? 'Step 1: Choose Year' : dobCalendarStep === 'month' ? 'Step 2: Choose Month' : 'Step 3: Choose Day'}
+                            </Text>
+                            {/* Breadcrumb */}
+                            <View className="flex-row items-center mt-2">
+                                <TouchableOpacity onPress={() => setDobCalendarStep('year')}>
+                                    <Text className={`text-sm font-semibold ${dobCalendarStep === 'year' ? 'text-white' : 'text-teal-200'}`}>{dobPickYear}</Text>
+                                </TouchableOpacity>
+                                {dobCalendarStep !== 'year' && (
+                                    <>
+                                        <Text className="text-teal-200 mx-1">›</Text>
+                                        <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
+                                            <Text className={`text-sm font-semibold ${dobCalendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
+                                                {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dobPickMonth]}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </>
+                                )}
+                                {dobCalendarStep === 'day' && (
+                                    <>
+                                        <Text className="text-teal-200 mx-1">›</Text>
+                                        <Text className="text-white text-sm font-semibold">Day</Text>
+                                    </>
+                                )}
+                            </View>
                         </View>
-                        <View className="space-y-4">
-                            {[
-                                { label: 'Year', val: selectedDate.getFullYear().toString(), onChange: (t: string) => { const d = new Date(selectedDate); d.setFullYear(parseInt(t) || new Date().getFullYear()); setSelectedDate(d); }, ph: 'YYYY' },
-                                { label: 'Month', val: (selectedDate.getMonth() + 1).toString(), onChange: (t: string) => { const d = new Date(selectedDate); d.setMonth((parseInt(t) || 1) - 1); setSelectedDate(d); }, ph: 'MM' },
-                                { label: 'Day', val: selectedDate.getDate().toString(), onChange: (t: string) => { const d = new Date(selectedDate); d.setDate(parseInt(t) || 1); setSelectedDate(d); }, ph: 'DD' },
-                            ].map(({ label, val, onChange, ph }) => (
-                                <View key={label}>
-                                    <Text className="text-sm text-gray-600 mb-2">{label}</Text>
-                                    <TextInput value={val} onChangeText={onChange} keyboardType="numeric" placeholder={ph} className="h-10 border border-gray-300 rounded-lg px-3" />
+
+                        <View className="p-4">
+                            {/* STEP 1: Year Selection */}
+                            {dobCalendarStep === 'year' && (
+                                <FlatList
+                                    data={Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i)}
+                                    keyExtractor={(item) => item.toString()}
+                                    numColumns={4}
+                                    style={{ maxHeight: 320 }}
+                                    showsVerticalScrollIndicator={false}
+                                    initialScrollIndex={Math.max(0, new Date().getFullYear() - dobPickYear - 2)}
+                                    getItemLayout={(_, index) => ({ length: 52, offset: 52 * index, index })}
+                                    renderItem={({ item: year }) => {
+                                        const isSelected = year === dobPickYear;
+                                        const isFuture = year > new Date().getFullYear();
+                                        return (
+                                            <TouchableOpacity
+                                                disabled={isFuture}
+                                                onPress={() => { setDobPickYear(year); setDobCalendarStep('month'); }}
+                                                className={`flex-1 m-1 py-3 rounded-xl items-center justify-center ${isSelected ? 'bg-teal-600' : 'bg-gray-50 border border-gray-200'} ${isFuture ? 'opacity-30' : ''}`}
+                                            >
+                                                <Text className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{year}</Text>
+                                            </TouchableOpacity>
+                                        );
+                                    }}
+                                />
+                            )}
+
+                            {/* STEP 2: Month Selection */}
+                            {dobCalendarStep === 'month' && (
+                                <View className="flex-row flex-wrap">
+                                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
+                                        const isSelected = idx === dobPickMonth;
+                                        const now = new Date();
+                                        const isFuture = dobPickYear === now.getFullYear() && idx > now.getMonth();
+                                        return (
+                                            <TouchableOpacity
+                                                key={monthName}
+                                                disabled={isFuture}
+                                                onPress={() => { setDobPickMonth(idx); setDobCalendarStep('day'); }}
+                                                className={`w-1/3 p-1`}
+                                            >
+                                                <View className={`py-3 rounded-xl items-center ${isSelected ? 'bg-teal-600' : 'bg-gray-50 border border-gray-200'} ${isFuture ? 'opacity-30' : ''}`}>
+                                                    <Text className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{monthName.slice(0, 3)}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
                                 </View>
-                            ))}
+                            )}
+
+                            {/* STEP 3: Day Selection */}
+                            {dobCalendarStep === 'day' && (() => {
+                                const daysInMonth = new Date(dobPickYear, dobPickMonth + 1, 0).getDate();
+                                const firstDayOfWeek = new Date(dobPickYear, dobPickMonth, 1).getDay();
+                                const now = new Date();
+                                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                const selectedDobStr = dob && dob.includes('/') ? dob.split('/').reverse().join('-') : '';
+                                const daySlots: (number | null)[] = [...Array(firstDayOfWeek).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+
+                                return (
+                                    <View>
+                                        {/* Month/Year nav */}
+                                        <View className="flex-row justify-between items-center mb-3">
+                                            <TouchableOpacity onPress={() => {
+                                                if (dobPickMonth === 0) { setDobPickMonth(11); setDobPickYear(dobPickYear - 1); }
+                                                else setDobPickMonth(dobPickMonth - 1);
+                                            }} className="p-2">
+                                                <ChevronLeft size={20} color="#0d9488" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
+                                                <Text className="text-base font-bold text-teal-700">
+                                                    {['January','February','March','April','May','June','July','August','September','October','November','December'][dobPickMonth]} {dobPickYear}
+                                                </Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => {
+                                                const isCurrentMonth = dobPickYear === now.getFullYear() && dobPickMonth === now.getMonth();
+                                                if (!isCurrentMonth) {
+                                                    if (dobPickMonth === 11) { setDobPickMonth(0); setDobPickYear(dobPickYear + 1); }
+                                                    else setDobPickMonth(dobPickMonth + 1);
+                                                }
+                                            }} className="p-2">
+                                                <ChevronRight size={20} color="#0d9488" />
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        {/* Weekday headers */}
+                                        <View className="flex-row mb-1">
+                                            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                                                <View key={d} className="flex-1 items-center py-1">
+                                                    <Text className="text-xs font-semibold text-teal-600">{d}</Text>
+                                                </View>
+                                            ))}
+                                        </View>
+
+                                        {/* Day grid */}
+                                        <View className="flex-row flex-wrap">
+                                            {daySlots.map((day, idx) => {
+                                                if (day === null) {
+                                                    return <View key={`empty-${idx}`} style={{ width: '14.28%', height: 42 }} />;
+                                                }
+                                                const dateStr = `${dobPickYear}-${String(dobPickMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                                const isFuture = dateStr > todayStr;
+                                                const isSelected = dateStr === selectedDobStr;
+                                                const isToday = dateStr === todayStr;
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={day}
+                                                        disabled={isFuture}
+                                                        onPress={() => handleDateSelect(dateStr)}
+                                                        style={{ width: '14.28%', height: 42 }}
+                                                        className="items-center justify-center"
+                                                    >
+                                                        <View className={`w-9 h-9 rounded-full items-center justify-center ${isSelected ? 'bg-teal-600' : isToday ? 'border-2 border-teal-500' : ''}`}>
+                                                            <Text className={`text-sm ${isSelected ? 'text-white font-bold' : isFuture ? 'text-gray-300' : isToday ? 'text-teal-600 font-bold' : 'text-gray-800'}`}>{day}</Text>
+                                                        </View>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    </View>
+                                );
+                            })()}
                         </View>
-                        <TouchableOpacity onPress={() => handleDateSelect(selectedDate)} className="mt-6 bg-teal-600 rounded-lg py-3">
-                            <Text className="text-white text-center font-medium">Confirm</Text>
-                        </TouchableOpacity>
+
+                        {/* Footer */}
+                        <View className="flex-row justify-between items-center px-5 py-3 border-t border-gray-100">
+                            {dobCalendarStep !== 'year' ? (
+                                <TouchableOpacity onPress={() => setDobCalendarStep(dobCalendarStep === 'day' ? 'month' : 'year')} className="px-4 py-2 rounded-lg bg-gray-100">
+                                    <Text className="text-teal-700 font-semibold">Back</Text>
+                                </TouchableOpacity>
+                            ) : <View />}
+                            <TouchableOpacity onPress={() => setShowCalendarModal(false)} className="px-5 py-2 rounded-lg bg-teal-600">
+                                <Text className="text-white font-semibold">Close</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </Modal>
