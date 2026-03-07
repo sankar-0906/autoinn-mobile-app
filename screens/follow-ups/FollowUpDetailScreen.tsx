@@ -879,7 +879,7 @@ export default function FollowUpDetailScreen() {
                     <View className="bg-gray-100 px-3 py-3 flex-row">
                         <Text className="text-xs font-semibold text-gray-700 flex-1 mr-2">Quotation No</Text>
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-20 ">Created On</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20 mr-2">Created On</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
                     </View>
                     <View className={mergedQuotations.length >= 4 ? "max-h-[180px]" : ""}>

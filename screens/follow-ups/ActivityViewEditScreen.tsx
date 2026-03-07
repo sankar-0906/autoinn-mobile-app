@@ -90,7 +90,6 @@ export default function ActivityViewEditScreen() {
             const data = res.data?.response?.data;
             if (data) {
                 fetchedRef.current = true;
-                setActivityDetail(data);
                 setEnquiryType(data.enquiryType || 'Hot');
                 setRemarks(data.remarks || '');
 
@@ -102,6 +101,11 @@ export default function ActivityViewEditScreen() {
                     setFollowupDate(data.scheduleDate || '');
                     setFollowupTime(data.scheduleTime || '');
                 }
+
+                // Note: The activity API already returns complete quotation/booking objects
+                // with all fields including PDF URLs. No need for secondary API calls.
+
+                setActivityDetail(data);
             }
         } catch (err) {
             console.error('❌ Error fetching activity:', err);
@@ -117,6 +121,14 @@ export default function ActivityViewEditScreen() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Auto-switch to details tab if documents tab is not available
+    useEffect(() => {
+        if (activityDetail && activeTab === 'documents' && !activityDetail.booking && !activityDetail.quotation) {
+            console.log('🔍 Documents tab not available, switching to details tab');
+            setActiveTab('details');
+        }
+    }, [activityDetail, activeTab]);
 
     // Add debug effect for tab changes
     useEffect(() => {
@@ -223,25 +235,20 @@ export default function ActivityViewEditScreen() {
                         quotationId: q?.quotationId
                     });
 
-                    if (q?.pdfWithBrochure && typeof q.pdfWithBrochure === 'string') {
-                        console.log('🔍 Adding PDF WITH BROCHURE document');
-                        docs.push({
-                            type: 'PDF WITH BROCHURE',
-                            id: q.quotationId || q.id || 'N/A',
-                            status: 'Generated',
-                            url: q.pdfWithBrochure
-                        });
-                    }
-
-                    if (q?.pdfWithOutBrochure && typeof q.pdfWithOutBrochure === 'string') {
-                        console.log('🔍 Adding PDF WITHOUT BROCHURE document');
-                        docs.push({
-                            type: 'PDF WITHOUT BROCHURE',
-                            id: q.quotationId || q.id || 'N/A',
-                            status: 'Generated',
-                            url: q.pdfWithOutBrochure
-                        });
-                    }
+                    // Match web project logic: iterate through keys and create entries for pdf fields
+                    Object.keys(q).forEach(key => {
+                        if (key === 'pdfWithBrochure' || key === 'pdfWithOutBrochure') {
+                            const pdfUrl = q[key];
+                            const type = key === 'pdfWithBrochure' ? 'PDF WITH BROCHURE' : 'PDF WITHOUT BROCHURE';
+                            console.log(`🔍 Adding ${type} document:`, { hasUrl: !!pdfUrl });
+                            docs.push({
+                                type,
+                                id: q.quotationId || q.id || 'N/A',
+                                status: pdfUrl ? 'Generated' : 'Initiated',
+                                url: pdfUrl
+                            });
+                        }
+                    });
                 });
             }
 
@@ -254,25 +261,20 @@ export default function ActivityViewEditScreen() {
                     console.log('🔍 Processing authentication');
                     const auth = booking.authentication;
 
-                    if (auth?.beforeVerification && typeof auth.beforeVerification === 'string') {
-                        console.log('🔍 Adding BEFORE VERIFICATION document');
-                        docs.push({
-                            type: 'BEFORE VERIFICATION',
-                            id: booking.bookingId || booking.id || 'N/A',
-                            status: 'Generated',
-                            url: auth.beforeVerification
-                        });
-                    }
+                    // Match web project logic: always create entries for verification documents
+                    docs.push({
+                        type: 'BEFORE VERIFICATION',
+                        id: booking.bookingId || booking.id || 'N/A',
+                        status: auth.beforeVerification ? 'Generated' : 'Initiated',
+                        url: auth.beforeVerification
+                    });
 
-                    if (auth?.afterVerification && typeof auth.afterVerification === 'string') {
-                        console.log('🔍 Adding AFTER VERIFICATION document');
-                        docs.push({
-                            type: 'AFTER VERIFICATION',
-                            id: booking.bookingId || booking.id || 'N/A',
-                            status: 'Generated',
-                            url: auth.afterVerification
-                        });
-                    }
+                    docs.push({
+                        type: 'AFTER VERIFICATION',
+                        id: booking.bookingId || booking.id || 'N/A',
+                        status: auth.afterVerification ? 'Generated' : 'Initiated',
+                        url: auth.afterVerification
+                    });
                 }
             }
         } catch (error) {
@@ -374,7 +376,22 @@ export default function ActivityViewEditScreen() {
                             })
                         ) : (
                             <View className="py-12 items-center">
-                                <Text className="text-gray-400 italic text-sm">No documents found</Text>
+                                {activityDetail?.quotation ? (
+                                    <View className="items-center">
+                                        <Text className="text-gray-400 italic text-sm mb-2">No PDF documents generated yet</Text>
+                                        <Text className="text-gray-500 text-xs">Quotation PDFs will appear here once generated</Text>
+                                    </View>
+                                ) : activityDetail?.booking ? (
+                                    <View className="items-center">
+                                        <Text className="text-gray-400 italic text-sm mb-2">No verification documents found</Text>
+                                        <Text className="text-gray-500 text-xs">Authentication documents will appear here once uploaded</Text>
+                                    </View>
+                                ) : (
+                                    <View className="items-center">
+                                        <Text className="text-gray-400 italic text-sm mb-2">No documents found</Text>
+                                        <Text className="text-gray-500 text-xs">This activity has no associated quotation or booking</Text>
+                                    </View>
+                                )}
                             </View>
                         )}
                     </View>
@@ -447,15 +464,17 @@ export default function ActivityViewEditScreen() {
                     >
                         <Text className={`text-sm font-bold text-center ${activeTab === 'details' ? 'text-teal-600' : 'text-gray-600'}`}>Activity Details</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => {
-                            console.log('🔍 Switching to documents tab');
-                            setActiveTab('documents');
-                        }}
-                        className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
-                    >
-                        <Text className={`text-sm font-bold text-center ${activeTab === 'documents' ? 'text-teal-600' : 'text-gray-600'}`}>Associated Documents</Text>
-                    </TouchableOpacity>
+                    {activityDetail && (activityDetail.booking || activityDetail.quotation) ? (
+                        <TouchableOpacity
+                            onPress={() => {
+                                console.log('🔍 Switching to documents tab');
+                                setActiveTab('documents');
+                            }}
+                            className={`flex-1 px-6 py-3 border-b-2 ${activeTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
+                        >
+                            <Text className={`text-sm font-bold text-center ${activeTab === 'documents' ? 'text-teal-600' : 'text-gray-600'}`}>Associated Documents</Text>
+                        </TouchableOpacity>
+                    ) : null}
                 </View>
 
                 <ScrollView
