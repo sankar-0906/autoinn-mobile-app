@@ -353,35 +353,67 @@ export default function FollowUpDetailScreen() {
     }, [phoneNo]);
 
     // Handler functions from autoinn-fe
-    const updateCustomerData = async (customer: any) => {
+    const updateCustomerData = async (customerId: string, customerData: any) => {
         try {
-            const result = await updateCustomer(customer.id, customer);
+            // Use the customerId parameter for the API call
+            const result = await updateCustomer(customerId, customerData);
             const data = result.data;
+            
+            // Check if data exists before accessing its properties
+            if (!data) {
+                console.error('Update customer failed: No data in response', result);
+                toast.error("Unable to update customer - No response data");
+                return;
+            }
+            
             if (data.code === 200) {
                 const response = data.response;
-                if (response.code === 200) {
-                    await getCustomerInfo(customer.id);
+                if (response && response.code === 200) {
+                    await getCustomerInfo(customerId);
                     toast.success("Customer updated successfully");
                 } else {
+                    console.error('Update customer failed: Invalid response code', response);
                     toast.error("Unable to update customer");
                 }
-            } else if (data.code === 500 && data.err.code === 500) {
+            } else if (data.code === 500) {
+                console.error('Server error during customer update:', data);
+                // Handle 500 error gracefully - quotation was attached but customer update failed
+                toast.success("Quotation attached successfully, but customer update had issues");
+            } else if (data.code === 500 && data.err && data.err.code === 500) {
                 toast.error("Customer name already exists");
             } else {
+                console.error('Update customer failed: Invalid data code', data);
                 toast.error("Unable to update customer");
             }
         } catch (error) {
+            console.error('Error on customer update:', error);
             toast.error("Unable to update customer");
-            console.error("Error on customer update: ", error);
         }
     };
 
     const linkQuotation = async (quotationIds: string[]) => {
         try {
-            if (!customerDetails) return;
+            if (!customerDetails) {
+                toast.error("No customer details available");
+                return;
+            }
+
+            console.log('🔗 Linking quotations:', quotationIds);
+            console.log('👤 Customer details:', customerDetails);
+            
+            // The actual customer data is nested inside the 'customer' object
+            const actualCustomerData = customerDetails.customer || customerDetails;
+            console.log('🆔 Customer ID from details:', actualCustomerData.id);
+
+            // Check if customer ID exists
+            if (!actualCustomerData.id) {
+                console.error('❌ No customer ID found in customerDetails');
+                toast.error("Unable to attach quotations - Missing customer ID");
+                return;
+            }
 
             // Update customer with attached quotations
-            let customer = { ...customerDetails };
+            let customer = { ...actualCustomerData };
             let tmpData = quotationIds.map(id => ({ id }));
             customer.quotation = (customer.quotation || []).concat(tmpData);
 
@@ -391,13 +423,41 @@ export default function FollowUpDetailScreen() {
             }
             customer.update = "quotation"; // to update Quotation
 
-            await attachQuotation(quotationIds); // attach Quotation
-            await updateCustomerData(customer);
+            // Clean up customer data - only send necessary fields
+            const cleanCustomerData = {
+                id: customer.id,
+                customerId: customer.customerId,
+                name: customer.name,
+                customerType: customer.customerType,
+                gender: customer.gender,
+                dateOfBirth: customer.dateOfBirth,
+                contacts: customer.contacts,
+                address: customer.address,
+                quotation: customer.quotation,
+                update: customer.update
+            };
+
+            console.log('📤 Sending customer update (cleaned):', cleanCustomerData);
+
+            try {
+                // First attach quotation
+                const attachResult = await attachQuotation(quotationIds);
+                console.log('✅ Attach quotation result:', attachResult);
+            } catch (attachError) {
+                console.error('❌ Attach quotation failed:', attachError);
+                // Continue with customer update even if attach fails
+            }
+
+            // Then update customer data - FIX: Pass the ID correctly
+            // The first parameter should be actualCustomerData.id, not customer
+            await updateCustomerData(actualCustomerData.id, cleanCustomerData);
+            
+            // Refresh data
             await getCustomersByPhone(phoneNo);
             toast.success("Quotations attached successfully");
         } catch (error) {
+            console.error('❌ Error attaching quotations:', error);
             toast.error("Unable to attach quotations");
-            console.error('Error attaching quotations:', error);
         }
     };
 
