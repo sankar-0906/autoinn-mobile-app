@@ -160,7 +160,7 @@ const getVehicleNames = (obj: any): string[] => {
 export default function FollowUpDetailScreen() {
     const navigation = useNavigation<DetailNavProp>();
     const route = useRoute<DetailRouteProp>();
-    const { id: phoneNo } = route.params;
+    const { id: phoneNo } = route.params || {};
     const toast = useToast();
 
     const [loading, setLoading] = useState(true);
@@ -306,7 +306,7 @@ export default function FollowUpDetailScreen() {
 
                 // Set basic customer info for display in the swipe card and modals
                 const customerInfo = {
-                    id: customerData.customerId || customerData.id || custId,
+                    id: customerData.customerId || customerData.id || custId, // Fallback to the passed ID
                     name: customerData.name || 'Unknown',
                     customerId: customerData.customerId || customerData.id || custId,
                     customerType: customerData.customerType || 'Non Customer',
@@ -330,6 +330,7 @@ export default function FollowUpDetailScreen() {
             console.error('Error fetching customer info:', error);
         }
     };
+
     const getActivityByCustomer = async (ids: string[], limit = 15, offset = 0) => {
         try {
             const activityRes = await getActivitiesByCustomer({ ids, limit, offset });
@@ -802,7 +803,7 @@ export default function FollowUpDetailScreen() {
                 <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden shadow">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Quotation No</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1 mr-4">Vehicle</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-20 ">Created On</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
                     </View>
@@ -814,7 +815,7 @@ export default function FollowUpDetailScreen() {
                                 return (
                                     <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                         <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
-                                        <Text className="text-xs text-gray-800 flex-1 mr-4">{vehicleDisplay}</Text>
+                                        <Text className="text-xs text-gray-800 flex-1">{vehicleDisplay}</Text>
                                         <Text className="text-xs text-gray-800 w-20">{formatDate(q.createdAt)}</Text>
                                         <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                             <Eye size={14} color={COLORS.gray[600]} />
@@ -863,7 +864,7 @@ export default function FollowUpDetailScreen() {
                             title="Quotation"
                             variant="outline"
                             onPress={() =>
-                                navigation.navigate('FollowUpQuotationForm', {
+                                navigation.navigate('AddQuotation', {
                                     customerName: customer.name,
                                     customerPhone: phoneNo,
                                     locality: customer.locality,
@@ -1033,36 +1034,6 @@ export default function FollowUpDetailScreen() {
                                                 </View>
                                             </View>
                                         </View>
-
-                                        {/* Booking-specific fields */}
-                                        {(activity.type === 'Booking' || activity.activityType === 'Booking') && (
-                                            <View className="mt-4 pt-4 border-t border-gray-100">
-                                                <View className="flex-row gap-4 mb-2">
-                                                    <View className="flex-1 flex-row items-start gap-2">
-                                                        <User size={14} color="#6b7280" style={{ marginTop: 2 }} />
-                                                        <View className="flex-1">
-                                                            <Text className="text-gray-600 text-xs font-medium mb-1.5">
-                                                                Relationship
-                                                            </Text>
-                                                            <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
-                                                                {(activity as any).relationship || (activity as any).nomineeRelationship || '-'}
-                                                            </Text>
-                                                        </View>
-                                                    </View>
-                                                    <View className="flex-1 flex-row items-start gap-2">
-                                                        <FileText size={14} color="#6b7280" style={{ marginTop: 2 }} />
-                                                        <View className="flex-1">
-                                                            <Text className="text-gray-600 text-xs font-medium mb-1.5">
-                                                                Quotations Associated
-                                                            </Text>
-                                                            <Text className="text-gray-800 text-sm font-semibold" numberOfLines={2}>
-                                                                {(activity as any).quotationsAssociated || (activity as any).quotation || '-'}
-                                                            </Text>
-                                                        </View>
-                                                    </View>
-                                                </View>
-                                            </View>
-                                        )}
 
                                     </View>
 

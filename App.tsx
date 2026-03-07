@@ -32,13 +32,17 @@ ErrorUtils.setGlobalHandler((error, isFatal) => {
   originalErrorHandler(error, isFatal);
 });
 
+import { ToastProvider } from './src/ToastContext';
+
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <AppNavigator />
-        </NavigationContainer>
+        <ToastProvider>
+          <NavigationContainer>
+            <AppNavigator />
+          </NavigationContainer>
+        </ToastProvider>
         <StatusBar style="auto" />
       </SafeAreaProvider>
     </GestureHandlerRootView>
