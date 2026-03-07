@@ -583,7 +583,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                         </View>
                     </View>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('AddQuotation', { returnToPrevious: true })}
+                        onPress={() => navigation.navigate('AddQuotation')}
                         className="px-3 h-10 bg-teal-600 rounded-lg items-center justify-center"
                     >
                         <Text className="text-white font-semibold text-sm">+ Add Quotation</Text>

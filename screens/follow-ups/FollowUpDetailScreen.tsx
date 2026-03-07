@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
     Modal,
     ScrollView,
@@ -6,30 +6,76 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { ChevronLeft, Eye, Edit, Phone, Car, User, Smartphone } from 'lucide-react-native';
+import {
+    ChevronLeft,
+    Calendar,
+    Clock,
+    X,
+    Eye,
+    User,
+    Edit,
+    Phone,
+    CalendarDays,
+    Car,
+    Mail,
+    FileText,
+    Hash,
+    MessageSquare
+} from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { getActivitiesByCustomer, getCustomerByPhoneNo, getQuotationByCustomerId } from '../../src/api';
-import { ActivityIndicator, Alert } from 'react-native';
+import AttachQuotationModal from '../../components/AttachQuotationModal';
+import { getActivitiesByCustomer, getCustomerByPhoneNo, getCustomerQuotations, getMergedCustomerData, getCustomerDetails, updateCustomer, attachQuotation, createQuotation, scheduleFollowUp, getQuotationById } from '../../src/api';
+import { useToast } from '../../src/ToastContext';
 
 type DetailRouteProp = RouteProp<RootStackParamList, 'FollowUpDetail'>;
 type DetailNavProp = StackNavigationProp<RootStackParamList, 'FollowUpDetail'>;
 
 type Activity = {
     id: string;
+    activityId: string;
+    sessionId?: string;
     type: string;
     date: string;
     bookingId: string;
     customerAuth: string;
     vehicle: string;
+    vehicleMaster?: { modelName?: string };
+    vehicleInfo?: { modelName?: string };
     colorCode: string;
     supervisor: string;
     employee: string;
+    employeeName?: string;
+    enquiryType: string;
+    remarks: string;
+    interactionType: string;
+    scheduleDateAndTime: string;
+    followUpDate?: string;
+    followUpTime?: string;
+    createdAt?: string;
+    activityType?: string;
+    createdBy?: {
+        profile?: {
+            employeeName?: string;
+        }
+    };
+    quotation?: {
+        vehicleLabel?: string;
+        vehicleMaster?: { modelName?: string };
+    };
+    booking?: {
+        vehicleLabel?: string;
+        vehicleMaster?: { modelName?: string };
+    };
 };
 
 const CUSTOMER_TABS = [
@@ -44,16 +90,91 @@ const CUSTOMER_TABS = [
     { id: 'payments', label: 'Payments' },
 ] as const;
 
-export default function FollowUpDetailScreen({ navigation, route }: { navigation: DetailNavProp; route: DetailRouteProp }) {
+// Safe date formatting function that works in React Native
+const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}-${month}-${year}`;
+    } catch {
+        return '-';
+    }
+};
+
+const formatDateTime = (dateString: string | undefined) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${day}-${month}-${year} ${hours}:${minutes}`;
+    } catch {
+        return '-';
+    }
+};
+
+const formatTime = (dateString: string | undefined) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    } catch {
+        return '-';
+    }
+};
+
+const getVehicleNames = (obj: any): string[] => {
+    if (!obj) return [];
+    if (typeof obj === 'string') return [obj];
+    if (Array.isArray(obj)) {
+        return obj.flatMap(item => getVehicleNames(item));
+    }
+
+    const name = obj.modelName || obj.vehicleName || obj.vehicleLabel ||
+        obj.vehicleMaster?.modelName || obj.vehicleDetail?.modelName ||
+        obj.vehicle?.modelName || obj.vehicle?.name;
+
+    if (name) return [name];
+
+    if (obj.vehicle) return getVehicleNames(obj.vehicle);
+    if (obj.vehicleDetail) return getVehicleNames(obj.vehicleDetail);
+    if (obj.vehicleMaster) return getVehicleNames(obj.vehicleMaster);
+
+    return [];
+};
+
+export default function FollowUpDetailScreen() {
+    const navigation = useNavigation<DetailNavProp>();
+    const route = useRoute<DetailRouteProp>();
     const { id: phoneNo } = route.params;
+    const toast = useToast();
 
     const [loading, setLoading] = useState(true);
     const [customer, setCustomer] = useState<any>(null);
-    const [quotations, setQuotations] = useState<any[]>([]);
+    const [customers, setCustomers] = useState<any[]>([]);
+    const [customerIds, setCustomerIds] = useState<string[]>([]);
+    const [customerId, setCustomerId] = useState<string | null>(null);
+    const [customerDetails, setCustomerDetails] = useState<any>(null);
+    const [mergedQuotations, setMergedQuotations] = useState<any[]>([]);
+    const [mergedPurchasedVehicle, setMergedPurchasedVehicle] = useState<any[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
-
-    const [showAttachModal, setShowAttachModal] = useState(false);
-    const [quotationId, setQuotationId] = useState('');
+    const [followUpDate, setFollowUpDate] = useState<string>('');
+    const [status, setStatus] = useState<string>('');
+    const [currentCustomerIndex, setCurrentCustomerIndex] = useState(0);
 
     const [showCustomerModal, setShowCustomerModal] = useState(false);
     const [customerTab, setCustomerTab] = useState<(typeof CUSTOMER_TABS)[number]['id']>('customer-details');
@@ -62,90 +183,284 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
     const [activityMode, setActivityMode] = useState<'view' | 'edit'>('view');
     const [activityTab, setActivityTab] = useState<'details' | 'documents'>('details');
 
+    const [showAttachQuotationModal, setShowAttachQuotationModal] = useState(false);
+
     const [enquiryType, setEnquiryType] = useState<string>('Hot');
     const [followupDate, setFollowupDate] = useState('');
     const [followupTime, setFollowupTime] = useState('');
     const [remarks, setRemarks] = useState('');
 
-    const fetchData = React.useCallback(async () => {
-        setLoading(true);
+    // Handler functions
+    const openAttachQuotationModal = () => {
+        setShowAttachQuotationModal(true);
+    };
+
+    const closeAttachQuotationModal = () => {
+        setShowAttachQuotationModal(false);
+    };
+
+    const handleAttachQuotation = async (selectedQuotationIds: string[]) => {
         try {
-            // 1. Fetch customers by phone
-            const customerRes = await getCustomerByPhoneNo(phoneNo);
-            const customers = customerRes.data?.response?.data?.customers || [];
+            console.log('Attached quotations:', selectedQuotationIds);
 
-            if (customers.length > 0) {
-                const firstCustomer = customers[0];
-                setCustomer({
-                    name: firstCustomer.name || 'Unknown',
-                    customerId: firstCustomer.id,
-                    customerType: firstCustomer.type || 'Non Customer',
-                    gender: firstCustomer.gender || '-',
-                    age: firstCustomer.age || '-',
-                    location: firstCustomer.location || '-',
-                    mobile: firstCustomer.phone,
-                    fatherName: firstCustomer.fatherName || '-',
-                    email: firstCustomer.email || '-',
-                    locality: firstCustomer.location || '-',
-                    pincode: firstCustomer.pincode || '-',
-                });
+            // Get phone number from one of the quotations if possible to refresh data
+            if (selectedQuotationIds.length > 0) {
+                const res = await getQuotationById(selectedQuotationIds[0]);
+                const quoteData = res.data?.response?.data;
+                const contactPhone = quoteData?.customer?.contacts?.find((c: any) => c.type === "Primary")?.phone
+                    || quoteData?.customer?.phone;
 
-                const customerIds = customers.map((c: any) => c.id);
+                await linkQuotation(selectedQuotationIds);
 
-                // 2. Fetch quotations (using the first customer's ID for now, similar to web)
-                const quotationRes = await getQuotationByCustomerId(firstCustomer.id);
-                const qData = quotationRes.data?.response?.data || [];
-
-                // Transform quotations data safely
-                const transformedQuotations = qData.map((q: any) => {
-                    const vehicleLabel = q.vehicleMaster?.modelName
-                        || (Array.isArray(q.vehicle) && q.vehicle.length > 0
-                            ? q.vehicle.map((v: any) => v?.modelName || v?.vehicleDetail?.modelName || v?.vehicle || 'Unknown').join(', ')
-                            : q.vehicle && typeof q.vehicle === 'string' ? q.vehicle : 'Unknown');
-
-                    return {
-                        ...q,
-                        vehicleLabel
-                    };
-                });
-                setQuotations(transformedQuotations);
-
-                if (qData.length > 0) {
-                    const latest = qData[qData.length - 1];
-                    setFollowupDate(latest.scheduleDate || '');
-                    setFollowupTime(latest.scheduleTime || '');
+                if (contactPhone && contactPhone !== phoneNo) {
+                    // Navigate or refresh with new phone number
+                    navigation.setParams({ id: contactPhone });
+                } else {
+                    await fetchData();
                 }
+            }
 
-                // 3. Fetch activities for all associated customer IDs
-                const activityRes = await getActivitiesByCustomer({
-                    ids: customerIds,
-                    limit: 15,
-                    offset: 0
-                });
-                const aData = activityRes.data?.response?.data || [];
-                setActivities(aData.map((a: any) => ({
-                    id: a.id,
-                    type: a.activityType || 'Activity',
-                    date: a.createdAt ? (new Date(a.createdAt)).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-',
-                    bookingId: a.bookingId || '-',
-                    customerAuth: a.customerAuthStatus || 'Not verified',
-                    vehicle: a.vehicleModel || '-',
-                    colorCode: a.colorCode || '-',
-                    supervisor: a.supervisor || '-',
-                    employee: a.employeeName || '-',
-                })));
-            } else {
-                Alert.alert('Error', 'Customer not found');
+            closeAttachQuotationModal();
+        } catch (error) {
+            console.error('Error attaching quotation:', error);
+            toast.error("Unable to attach quotation");
+        }
+    };
+
+    // Data fetching functions matching autoinn-fe
+    const getCustomersByPhone = async (phoneNo: string) => {
+        try {
+            const customerRes = await getCustomerByPhoneNo(phoneNo);
+            const customersData = (customerRes.data?.response?.data?.customers as any[]) || [];
+
+            setCustomers(customersData);
+
+            if (customersData.length > 0) {
+                const allCustomerIds = customersData.map(customer => customer.id);
+                setCustomerIds(allCustomerIds);
+                setCustomerId(customersData[0].id);
+
+                await getCustomerInfo(customersData[0].id);
+                await getMergedInfo(allCustomerIds);
+                await getActivityByCustomer(allCustomerIds);
             }
         } catch (error) {
-            console.error('Error fetching detail data:', error);
-            Alert.alert('Error', 'Failed to load data');
+            console.error('Error fetching customers by phone:', error);
+            setCustomers([]);
+        }
+    };
+
+    const handleCustomerChange = async (index: number) => {
+        if (customers.length === 0) return;
+        setCurrentCustomerIndex(index);
+        const selectedCustomer = customers[index];
+        setCustomerId(selectedCustomer.id);
+        await getCustomerInfo(selectedCustomer.id);
+    };
+
+    const getMergedInfo = async (ids: string[]) => {
+        try {
+            const mergedRes = await getMergedCustomerData({ ids });
+            const data = mergedRes.data?.response?.data || {};
+
+            const purchasedVehicle = Array.isArray(data.purchasedVehicle) ? data.purchasedVehicle : [];
+            const quotation = Array.isArray(data.quotation) ? data.quotation : [];
+
+            // Filter vehicles based on date logic from autoinn-fe
+            const filteredVehicles = purchasedVehicle.filter((vehicle: any) =>
+                quotation.every((quo: any) => new Date(vehicle.dateOfSale) < new Date(quo.createdAt))
+            );
+
+            setMergedPurchasedVehicle(filteredVehicles);
+            setMergedQuotations(quotation);
+
+            if (quotation.length > 0) {
+                const latest = quotation[quotation.length - 1];
+                setStatus(latest?.quotationStatus || "");
+                setFollowUpDate(
+                    latest?.scheduleDateAndTime || latest?.scheduleDate || latest?.createdAt || ""
+                );
+            }
+        } catch (error) {
+            console.error('Error fetching merged info:', error);
+            setMergedPurchasedVehicle([]);
+            setMergedQuotations([]);
+        }
+    };
+
+    const getCustomerInfo = async (custId: string) => {
+        try {
+            console.log('🔍 getCustomerInfo called with custId:', custId);
+            const customerRes = await getCustomerDetails(custId);
+            const customerData = customerRes.data?.response?.data;
+
+            console.log('📄 Customer data received:', {
+                hasData: !!customerData,
+                customerId: customerData?.customerId,
+                id: customerData?.id,
+                name: customerData?.name
+            });
+
+            if (customerData) {
+                setCustomerDetails(customerData);
+
+                // Set basic customer info for display in the swipe card and modals
+                const customerInfo = {
+                    id: customerData.customerId || customerData.id || custId,
+                    name: customerData.name || 'Unknown',
+                    customerId: customerData.customerId || customerData.id || custId,
+                    customerType: customerData.customerType || 'Non Customer',
+                };
+                
+                console.log('👤 Setting customer info:', customerInfo);
+                setCustomer(customerInfo);
+            } else {
+                // Fallback when no customer data is available
+                console.log('⚠️ No customer data received, setting fallback info');
+                const fallbackCustomer = {
+                    id: custId,
+                    name: 'Unknown Customer',
+                    customerId: custId,
+                    customerType: 'Non Customer',
+                };
+                console.log('👤 Setting fallback customer info:', fallbackCustomer);
+                setCustomer(fallbackCustomer);
+            }
+        } catch (error) {
+            console.error('Error fetching customer info:', error);
+        }
+    };
+    const getActivityByCustomer = async (ids: string[], limit = 15, offset = 0) => {
+        try {
+            const activityRes = await getActivitiesByCustomer({ ids, limit, offset });
+            const activityData = activityRes.data?.response?.data || [];
+            setActivities(activityData);
+        } catch (error) {
+            console.error('Error fetching activities:', error);
+        }
+    };
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            await getCustomersByPhone(phoneNo);
+        } catch (error) {
+            console.error('Error in fetchData:', error);
         } finally {
             setLoading(false);
         }
     }, [phoneNo]);
 
-    React.useEffect(() => {
+    // Handler functions from autoinn-fe
+    const updateCustomerData = async (customer: any) => {
+        try {
+            const result = await updateCustomer(customer.id, customer);
+            const data = result.data;
+            if (data.code === 200) {
+                const response = data.response;
+                if (response.code === 200) {
+                    await getCustomerInfo(customer.id);
+                    toast.success("Customer updated successfully");
+                } else {
+                    toast.error("Unable to update customer");
+                }
+            } else if (data.code === 500 && data.err.code === 500) {
+                toast.error("Customer name already exists");
+            } else {
+                toast.error("Unable to update customer");
+            }
+        } catch (error) {
+            toast.error("Unable to update customer");
+            console.error("Error on customer update: ", error);
+        }
+    };
+
+    const linkQuotation = async (quotationIds: string[]) => {
+        try {
+            if (!customerDetails) return;
+
+            // Update customer with attached quotations
+            let customer = { ...customerDetails };
+            let tmpData = quotationIds.map(id => ({ id }));
+            customer.quotation = (customer.quotation || []).concat(tmpData);
+
+            if (customer.dateOfBirth) {
+                // Format date if needed
+                customer.dateOfBirth = customer.dateOfBirth;
+            }
+            customer.update = "quotation"; // to update Quotation
+
+            await attachQuotation(quotationIds); // attach Quotation
+            await updateCustomerData(customer);
+            await getCustomersByPhone(phoneNo);
+            toast.success("Quotations attached successfully");
+        } catch (error) {
+            toast.error("Unable to attach quotations");
+            console.error('Error attaching quotations:', error);
+        }
+    };
+
+    const createNewQuotation = async (quotation: any, callBack?: (success: boolean, quotationId?: string) => void) => {
+        try {
+            const formData = new FormData();
+            formData.append("finalData", JSON.stringify(quotation));
+
+            const result = await createQuotation(formData);
+            const data = result.data;
+
+            if (data.code === 200) {
+                const response = data.response;
+                if (response.code === 200) {
+                    await fetchData();
+                    toast.success("Quotation added successfully");
+                    setShowAttachQuotationModal(false);
+                    callBack?.(true, response.data.id);
+                } else {
+                    toast.error("Unable to add new quotation");
+                    callBack?.(false);
+                }
+            } else {
+                toast.error("Unable to add quotation");
+                callBack?.(false);
+            }
+        } catch (error) {
+            callBack?.(false);
+            console.error("Error creating quotation: ", error);
+            toast.error("Unable to add quotation");
+        }
+    };
+
+    const changeFollowUp = async (next = false) => {
+        try {
+            if (!mergedQuotations.length) return;
+
+            const lastQuotation = mergedQuotations[mergedQuotations.length - 1]?.id;
+            const quotations = mergedQuotations.map((data) => data.id);
+
+            const result = await scheduleFollowUp({
+                fupDateTime: followUpDate,
+                next,
+                status,
+                last_quotation: lastQuotation,
+                quotations,
+                phone: phoneNo,
+                filter: null
+            });
+
+            const data = result.data?.response?.data;
+            if (result.data.response.data) {
+                navigation.setParams({ id: result.data.response.data.phone });
+                toast.success(`Follow-up ${next ? 'next' : 'previous'} fetched successfully!`);
+            } else {
+                toast.warn(`No ${next ? 'Next' : 'Previous'} Follow-up Exists`);
+            }
+        } catch (error) {
+            toast.error("Unable to fetch follow-up");
+            console.error("Error on handleNext: ", error);
+        }
+    };
+
+    useEffect(() => {
         fetchData();
     }, [fetchData]);
 
@@ -179,16 +494,145 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
             );
         }
 
-        if (customerTab === 'bookings') {
+        if (customerTab === 'associated-vehicles') {
             return (
-                <View className="bg-white rounded-xl border border-gray-100 p-4">
-                    <Text className="text-gray-900 font-semibold mb-2">Bookings</Text>
-                    <Text className="text-sm text-gray-500">No bookings found for this customer</Text>
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Date of Sale</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle Model</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Reg. No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-16 text-center">Action</Text>
+                    </View>
+                    {mergedPurchasedVehicle.length > 0 ? (
+                        mergedPurchasedVehicle.map((vehicle, index) => (
+                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
+                                <Text className="text-xs text-gray-800 flex-1">{vehicle.vehicleModel || vehicle.modelName || '-'}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{vehicle.registrationNumber || vehicle.regNo || '-'}</Text>
+                                <TouchableOpacity className="w-16 items-center">
+                                    <Eye size={14} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No purchased vehicles found</Text>
+                        </View>
+                    )}
+                </View>
+            );
+        }
+
+        if (customerTab === 'bookings') {
+            const bookings = customerDetails?.booking || [];
+            return (
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Booking ID</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Date</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
+                    </View>
+                    {bookings.length > 0 ? (
+                        bookings.map((b: any, index: number) => (
+                            <View key={b.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-teal-600 flex-1">{b.bookingId}</Text>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(b.createdAt)}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{b.bookingStatus}</Text>
+                                <TouchableOpacity className="w-12 items-center">
+                                    <Eye size={14} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No bookings found</Text>
+                        </View>
+                    )}
+                </View>
+            );
+        }
+
+        if (customerTab === 'job-orders') {
+            const jobOrders = customerDetails?.jobOrders || [];
+            return (
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Job No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Date</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
+                    </View>
+                    {jobOrders.length > 0 ? (
+                        jobOrders.map((j: any, index: number) => (
+                            <View key={j.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 flex-1">{j.jobNo}</Text>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(j.dateTime)}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{j.jobStatus}</Text>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No job orders found</Text>
+                        </View>
+                    )}
+                </View>
+            );
+        }
+
+        if (customerTab === 'spare-orders') {
+            const spareOrders = customerDetails?.spareOrders || [];
+            return (
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Order No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Date</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
+                    </View>
+                    {spareOrders.length > 0 ? (
+                        spareOrders.map((s: any, index: number) => (
+                            <View key={s.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 flex-1">{s.orderNo}</Text>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(s.createdAt)}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{s.status}</Text>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No spare orders found</Text>
+                        </View>
+                    )}
+                </View>
+            );
+        }
+
+        if (customerTab === 'payments') {
+            const payments = customerDetails?.payments || [];
+            return (
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Receipt No</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Date</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Amount</Text>
+                    </View>
+                    {payments.length > 0 ? (
+                        payments.map((p: any, index: number) => (
+                            <View key={p.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 flex-1">{p.receiptNo}</Text>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(p.createdAt)}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{p.amount}</Text>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No payments found</Text>
+                        </View>
+                    )}
                 </View>
             );
         }
 
         if (customerTab === 'quotations') {
+            console.log('Rendering quotations in FollowUpDetail modal for customer:', customerDetails?.id, (customerDetails?.quotation || []).length);
             return (
                 <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
@@ -197,16 +641,45 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Model</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-14 text-center">Action</Text>
                     </View>
-                    {quotations.map((q, index) => (
-                        <View key={q.id} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                            <Text className="text-xs text-gray-700 w-24">{(new Date(q.createdAt)).toLocaleDateString('en-GB')}</Text>
+                    {(((customerDetails?.quotation || []) as any[])).map((q, index) => (
+                        <View key={q.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                            <Text className="text-xs text-gray-700 w-24">{formatDate(q.createdAt)}</Text>
                             <Text className="text-xs text-teal-600 flex-1">{q.quotationId}</Text>
-                            <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{q.vehicleMaster?.modelName || '-'}</Text>
-                            <TouchableOpacity className="w-14 items-center">
+                            <Text className="text-xs text-gray-800 flex-1">
+                                {getVehicleNames(q).filter(n => n && n !== '-').join(', ') || q.vehicleLabel || '-'}
+                            </Text>
+                            <TouchableOpacity className="w-14 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
                                 <Eye size={14} color={COLORS.primary} />
                             </TouchableOpacity>
                         </View>
                     ))}
+                </View>
+            );
+        }
+
+        if (customerTab === 'call-history') {
+            return (
+                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <View className="bg-gray-100 px-3 py-3 flex-row">
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Date</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-24">Activity</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1">Remarks</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20">Employee</Text>
+                    </View>
+                    {activities && activities.length > 0 ? (
+                        activities.map((activity, index) => (
+                            <View key={activity.id || index} className={`px-3 py-3 flex-row items-start ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 w-20">{formatDate(activity.createdAt)}</Text>
+                                <Text className="text-xs text-gray-800 w-24">{activity.activityType || activity.type || 'Activity'}</Text>
+                                <Text className="text-xs text-gray-700 flex-1" numberOfLines={2}>{activity.remarks || '-'}</Text>
+                                <Text className="text-xs text-gray-600 w-20">{activity.createdBy?.profile?.employeeName || '-'}</Text>
+                            </View>
+                        ))
+                    ) : (
+                        <View className="px-3 py-8 items-center">
+                            <Text className="text-sm text-gray-500">No activities found</Text>
+                        </View>
+                    )}
                 </View>
             );
         }
@@ -216,7 +689,7 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                 <Text className="text-center text-gray-400">No data available</Text>
             </View>
         );
-    }, [customerTab, customer, quotations]);
+    }, [customerTab, customer, customerDetails, mergedQuotations, mergedPurchasedVehicle, activities]);
 
     const openActivityModal = (mode: 'view' | 'edit') => {
         setActivityMode(mode);
@@ -245,40 +718,79 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                         </TouchableOpacity>
                         <Text className="text-lg font-bold text-gray-900">Follow-Ups</Text>
                     </View>
+                    <View className="flex-row gap-2">
+                        <TouchableOpacity
+                            onPress={() => changeFollowUp(false)}
+                            className="px-3 py-1.5 bg-gray-100 rounded-lg border border-gray-200"
+                        >
+                            <Text className="text-xs font-semibold text-gray-700">Previous</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => changeFollowUp(true)}
+                            className="px-3 py-1.5 bg-teal-600 rounded-lg"
+                        >
+                            <Text className="text-xs font-semibold text-white">Next</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-
             </View>
 
             <ScrollView className="flex-1 p-4" showsVerticalScrollIndicator={false}>
-                <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4 shadow">
-                    {/* header with name centered */}
-                    <View className="flex-row items-center justify-center mb-4">
-                        <User size={20} color={COLORS.gray[900]} className="mr-2" />
-                        <Text className="text-xl font-semibold text-gray-900">
-                            {customer.name}
-                        </Text>
-                    </View>
+                <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden shadow">
+                    <ScrollView
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        onMomentumScrollEnd={(e) => {
+                            const index = Math.round(e.nativeEvent.contentOffset.x / (Dimensions.get('window').width - 32));
+                            if (index !== currentCustomerIndex) {
+                                handleCustomerChange(index);
+                            }
+                        }}
+                    >
+                        {customers.map((c, idx) => (
+                            <View key={c.id} style={{ width: Dimensions.get('window').width - 32 }} className="p-4 items-center">
+                                <View className="flex-row items-center justify-center mb-4">
+                                    <User size={20} color={COLORS.gray[900]} className="mr-2" />
+                                    <Text className="ml-2 text-xl font-semibold text-gray-900">
+                                        {c.name}
+                                    </Text>
+                                </View>
 
-                    {/* customer details centered */}
-                    <View className="items-center mb-4">
-                        <Text className="text-sm font-semibold text-gray-900">Customer ID: {customer.customerId}</Text>
-                        <Text className="text-sm text-gray-600 mt-1">Customer Type: {customer.customerType}</Text>
-                        <Text className="text-sm text-gray-600 mt-1">
-                            {customer.gender} | {customer.location}
-                        </Text>
-                    </View>
+                                <View className="items-center mb-2">
+                                    <Text className="text-sm font-semibold text-gray-900">Customer ID: {c.customerId || c.id || '-'}</Text>
+                                    <Text className="text-sm text-gray-600 mt-1">Customer Type: {c.customerType || c.type || 'Non Customer'}</Text>
+                                    <Text className="text-sm text-gray-600 mt-1">
+                                        {c.gender || '-'} | {c.location || c.locality || c.address?.locality || c.address?.city || '-'}
+                                    </Text>
+                                </View>
+                            </View>
+                        ))}
+                    </ScrollView>
 
-                    {/* actions */}
-                    <View className="flex-row justify-center gap-3 border-t border-gray-100 pt-3">
+                    {customers.length > 1 && (
+                        <View className="flex-row justify-center gap-1.5 mb-3">
+                            {customers.map((_, idx) => (
+                                <View
+                                    key={idx}
+                                    className={`h-1.5 rounded-full ${idx === currentCustomerIndex ? 'w-5 bg-teal-600' : 'w-1.5 bg-gray-300'}`}
+                                />
+                            ))}
+                        </View>
+                    )}
+
+                    <View className="h-[1px] bg-gray-100 mx-4" />
+
+                    <View className="flex-row justify-center gap-3 p-4">
                         <TouchableOpacity
-                            onPress={() => setShowCustomerModal(true)}
+                            onPress={() => navigation.navigate('CustomerDetails', { customerId: customer.id })}
                             className="flex-row items-center px-4 py-2 bg-gray-50 rounded-lg"
                         >
                             <Eye size={18} color="#475569" />
                             <Text className="ml-2 text-xs font-medium text-gray-600">View Details</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('CustomerDetails')}
+                            onPress={() => navigation.navigate('CustomerDetails', { customerId: customer.id })}
                             className="flex-row items-center px-4 py-2 bg-teal-50 rounded-lg"
                         >
                             <Edit size={18} color="#0d9488" />
@@ -287,342 +799,485 @@ export default function FollowUpDetailScreen({ navigation, route }: { navigation
                     </View>
                 </View>
 
-                <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+                <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden shadow">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Quotation No</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-24">Created On</Text>
+                        <Text className="text-xs font-semibold text-gray-700 flex-1 mr-4">Vehicle</Text>
+                        <Text className="text-xs font-semibold text-gray-700 w-20 ">Created On</Text>
                         <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
                     </View>
-                    {quotations.map((q, idx) => {
-                        const vehicleDisplay = q.vehicleLabel || q.vehicleMaster?.modelName || '-';
-                        return (
-                            <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                                <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
-                                <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{vehicleDisplay}</Text>
-                                <Text className="text-xs text-gray-800 w-24">{q.createdAt ? new Date(q.createdAt).toLocaleDateString('en-GB') : '-'}</Text>
-                                <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
-                                    <Eye size={14} color={COLORS.gray[600]} />
-                                </TouchableOpacity>
-                            </View>
-                        );
-                    })}
-                    <View className="p-3 border-t border-gray-100">
-                        <Button title="Attach Quotation" className="w-full" onPress={() => setShowAttachModal(true)} />
+                    <View className={mergedQuotations.length >= 4 ? "max-h-[180px]" : ""}>
+                        <ScrollView nestedScrollEnabled={true}>
+                            {mergedQuotations.map((q, idx) => {
+                                const vehicleNames = getVehicleNames(q).filter(n => n && n !== '-');
+                                const vehicleDisplay = vehicleNames.length > 0 ? vehicleNames.join(', ') : (q.vehicleLabel || '-');
+                                return (
+                                    <View key={q.id || idx} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                        <Text className="text-xs text-teal-600 flex-1">{q.quotationId || '-'}</Text>
+                                        <Text className="text-xs text-gray-800 flex-1 mr-4">{vehicleDisplay}</Text>
+                                        <Text className="text-xs text-gray-800 w-20">{formatDate(q.createdAt)}</Text>
+                                        <TouchableOpacity className="w-12 items-center" onPress={() => navigation.navigate('QuotationView', { id: q.id })}>
+                                            <Eye size={14} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            })}
+                        </ScrollView>
                     </View>
                 </View>
 
+                {mergedPurchasedVehicle.length > 0 && (
+                    <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+                        <View className="bg-gray-100 px-3 py-3">
+                            <Text className="text-sm font-semibold text-gray-900">Purchased Vehicles</Text>
+                        </View>
+                        <View className="flex-row bg-gray-50 px-3 py-2 border-b border-gray-100">
+                            <Text className="text-xs font-semibold text-gray-600 w-24">Date of Sale</Text>
+                            <Text className="text-xs font-semibold text-gray-600 flex-1">Vehicle Model</Text>
+                            <Text className="text-xs font-semibold text-gray-600 w-20">Reg. No</Text>
+                        </View>
+                        {mergedPurchasedVehicle.map((vehicle: any, index: number) => (
+                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
+                                <Text className="text-xs text-gray-800 flex-1">{vehicle.vehicleModel || vehicle.modelName || '-'}</Text>
+                                <Text className="text-xs text-gray-700 w-20">{vehicle.registrationNumber || vehicle.regNo || '-'}</Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-                    <View className="flex-row gap-3">
-                        <Button 
-                            title="Booking" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('BookingActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
+                    <View className="gap-3">
+                        <Button
+                            title="Booking"
+                            variant="outline"
+                            onPress={() =>
+                                navigation.navigate('BookingActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.id,
+                                    customerPhone: phoneNo
+                                })
+                            }
                         />
-                        <Button 
-                            title="Quotation" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('AddQuotation', { customerName: customer.name, customerId: customer.customerId, phoneNumbers: [phoneNo] })} 
+                        <Button
+                            title="Quotation"
+                            variant="outline"
+                            onPress={() =>
+                                navigation.navigate('FollowUpQuotationForm', {
+                                    customerName: customer.name,
+                                    customerPhone: phoneNo,
+                                    locality: customer.locality,
+                                    customerType: customer.customerType,
+                                    gender: customer.gender
+                                })
+                            }
+                        />
+                        <Button
+                            title="Walk-In"
+                            variant="outline"
+                            onPress={() =>
+                                navigation.navigate('WalkInActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.id
+                                })
+                            }
+                        />
+                        <Button
+                            title="Call"
+                            variant="outline"
+                            onPress={() =>
+                                navigation.navigate('CallActivity', {
+                                    customerName: customer.name,
+                                    customerId: customer.id,
+                                    customerPhone: phoneNo
+                                })
+                            }
+                            icon={<Phone size={14} color={COLORS.primary} />}
                         />
                     </View>
-                    <View className="flex-row gap-3 mt-3">
-                        <Button 
-                            title="Walk-In" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('WalkInActivity', { customerName: customer.name, customerId: customer.customerId })} 
-                        />
-                        <Button 
-                            title="Call" 
-                            variant="outline" 
-                            className="flex-1" 
-                            onPress={() => navigation.navigate('CallActivity', { customerName: customer.name, customerId: customer.customerId, customerPhone: phoneNo })} 
-                            icon={<Phone size={14} color={COLORS.primary} />} 
+                    <View className='mt-3'>
+                        <Button
+                            title='Attach Quotation'
+                            onPress={openAttachQuotationModal}
                         />
                     </View>
                 </View>
 
                 <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Activity</Text>
-                {activities.map((activity) => (
-                    <View key={activity.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
-                        <View className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex-row items-center justify-between">
-                            <Text className="text-sm font-semibold text-gray-900">{activity.type}</Text>
-                            <Text className="text-xs text-gray-500">{activity.date}</Text>
-                        </View>
-                        <View className="p-4">
-                            <View className="flex-row items-start justify-between mb-3">
-                                <View>
-                                    <Text className="text-xs text-gray-500">Booking ID</Text>
-                                    <Text className="text-sm font-medium text-gray-900">{activity.bookingId}</Text>
-                                </View>
-                                <View className="items-end">
-                                    <Text className="text-xs text-red-600 mb-2">next</Text>
-                                    <View className="flex-row">
-                                        <TouchableOpacity className="mr-3" onPress={() => openActivityModal('view')}>
-                                            <Eye size={16} color={COLORS.gray[600]} />
+                <View style={activities && activities.length > 2 ? { height: 750 } : null}>
+                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={false}>
+                        {activities && activities.length > 0 ? activities.map((activity: Activity) => {
+                            if (!activity || typeof activity !== 'object') return null;
+
+                            const allVehicleSources = [
+                                activity.vehicle,
+                                activity.vehicleMaster,
+                                activity.vehicleInfo,
+                                activity.quotation,
+                                activity.booking,
+                                (activity as any).modelName,
+                                (activity as any).enquiryVehicle
+                            ];
+
+                            const uniqueVehicles = [...new Set(
+                                allVehicleSources.flatMap(src => getVehicleNames(src))
+                                    .filter(name => name && name !== '-')
+                            )];
+
+                            const activityVehicle = uniqueVehicles.length > 0
+                                ? uniqueVehicles.join(',\n')
+                                : '-';
+
+
+
+                            return (
+                                <View key={activity.id} className="bg-white rounded-2xl shadow-md overflow-hidden border-0 mb-4">
+                                    {/* Header */}
+                                    <View className="bg-white px-4 py-4 flex-row items-center justify-between border-b border-gray-100">
+                                        <View className="ml-1 flex-1">
+                                            <Text className="text-gray-800 font-semibold text-base mb-0.5">
+                                                {activity.type || activity.activityType || 'Activity'}
+                                            </Text>
+                                            <Text className="text-gray-500 text-xs">{formatDate(activity.date || activity.createdAt) || '-'}</Text>
+                                        </View>
+                                        <View className={`mr-4 px-3 py-1.5 rounded ${activity.enquiryType === 'Hot' ? 'bg-orange-400' :
+                                            activity.enquiryType === 'Warm' ? 'bg-yellow-400' :
+                                                'bg-blue-400'
+                                            }`}>
+                                            <Text className="text-white text-xs font-bold">
+                                                {activity.enquiryType || 'Cold'}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    {/* Content */}
+                                    <View className="px-4 py-4 space-y-4 bg-white">
+                                        {/* Row 1 - Activity ID and Interaction Type */}
+                                        <View className="flex-row gap-4 mb-2">
+                                            <View className="flex-1 flex-row items-start gap-2">
+                                                <Hash size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                                        Activity ID
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                        {activity.activityId || activity.sessionId || activity.id || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            <View className="flex-1 flex-row items-start gap-2">
+                                                <MessageSquare size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                                        Interaction Type
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                        {activity.interactionType || activity.type || activity.activityType || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        </View>
+
+                                        {/* Row 2 - Follow-up Date and Time */}
+                                        <View className="flex-row gap-4 mb-2 mt-4">
+                                            <View className="flex-1 flex-row items-center gap-2">
+                                                <CalendarDays size={14} color="#6b7280" />
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                        Followup Date
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                        {formatDate(activity.scheduleDateAndTime || activity.followUpDate) || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            <View className="flex-1 flex-row items-center gap-2">
+                                                <Clock size={14} color="#6b7280" />
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                        Followup Time
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                        {formatTime(activity.scheduleDateAndTime || activity.followUpTime) || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        </View>
+
+                                        {/* Row 3 - Vehicle and Employee */}
+                                        <View className="flex-row gap-4 mb-2 mt-4">
+                                            <View className="flex-1 flex-row items-start gap-2">
+                                                <Car size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                        Vehicle
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold leading-relaxed">
+                                                        {activityVehicle}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            <View className="flex-1 flex-row items-center gap-2">
+                                                <View className="w-5 h-5 bg-gray-200 rounded-full items-center justify-center">
+                                                    <Text className="text-gray-600 text-xs font-bold">
+                                                        {(activity.employee || activity.createdBy?.profile?.employeeName)?.charAt(0)?.toUpperCase() || '-'}
+                                                    </Text>
+                                                </View>
+                                                <View className="flex-1">
+                                                    <Text className="text-gray-600 text-xs font-medium mb-1">
+                                                        Employee
+                                                    </Text>
+                                                    <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                        {activity.employee || activity.createdBy?.profile?.employeeName || activity.employeeName || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        </View>
+
+                                        {/* Booking-specific fields */}
+                                        {(activity.type === 'Booking' || activity.activityType === 'Booking') && (
+                                            <View className="mt-4 pt-4 border-t border-gray-100">
+                                                <View className="flex-row gap-4 mb-2">
+                                                    <View className="flex-1 flex-row items-start gap-2">
+                                                        <User size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                        <View className="flex-1">
+                                                            <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                                                Relationship
+                                                            </Text>
+                                                            <Text className="text-gray-800 text-sm font-semibold" numberOfLines={1}>
+                                                                {(activity as any).relationship || (activity as any).nomineeRelationship || '-'}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                    <View className="flex-1 flex-row items-start gap-2">
+                                                        <FileText size={14} color="#6b7280" style={{ marginTop: 2 }} />
+                                                        <View className="flex-1">
+                                                            <Text className="text-gray-600 text-xs font-medium mb-1.5">
+                                                                Quotations Associated
+                                                            </Text>
+                                                            <Text className="text-gray-800 text-sm font-semibold" numberOfLines={2}>
+                                                                {(activity as any).quotationsAssociated || (activity as any).quotation || '-'}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                </View>
+                                            </View>
+                                        )}
+
+                                    </View>
+
+                                    {/* Footer Buttons */}
+                                    <View className="border-t border-gray-100 px-4 py-3 flex-row gap-3 bg-white ">
+                                        <TouchableOpacity
+                                            onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'view', activityId: activity.id || '' })}
+                                            className="flex-1 flex-row items-center justify-center gap-2 py-3 rounded-lg bg-teal-100"
+                                        >
+                                            <Eye size={14} color="#6b7280" />
+                                            <Text className="text-teal-600 text-sm font-semibold ">View</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => openActivityModal('edit')}>
-                                            <Edit size={16} color={COLORS.gray[600]} />
+                                        <TouchableOpacity
+                                            onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id || '' })}
+                                            className="flex-1 flex-row items-center justify-center gap-2 bg-teal-600 py-3 rounded-lg"
+                                        >
+                                            <Edit size={14} color="white" />
+                                            <Text className="text-white text-sm font-semibold">Edit</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </View>
+                            );
+                        }) : (
+                            <View className="bg-white rounded-xl border border-gray-200 p-8 mb-4">
+                                <Text className="text-center text-gray-400">No activities found</Text>
                             </View>
-
-                            <Text className="text-xs text-gray-500 mb-1">Customer Authentication</Text>
-                            <Text className="text-sm text-red-600 font-semibold mb-3">{activity.customerAuth}</Text>
-
-                            <View className="bg-gray-50 rounded-xl p-3 mb-3 flex-row">
-                                <View className="w-12 h-12 rounded-full bg-white items-center justify-center mr-3">
-                                    <Car size={20} color={COLORS.gray[600]} />
-                                </View>
-                                <View className="flex-1">
-                                    <Text className="text-xs text-gray-500">Vehicle</Text>
-                                    <Text className="text-xs text-gray-800 mb-1" numberOfLines={2}>{activity.vehicle}</Text>
-                                    <Text className="text-xs text-gray-500">Color Code: <Text className="text-gray-900">{activity.colorCode}</Text></Text>
-                                    <Text className="text-xs text-gray-500">Supervisor: <Text className="text-gray-900">{activity.supervisor}</Text></Text>
-                                </View>
-                            </View>
-
-                            <Text className="text-xs text-gray-500">Employee: <Text className="text-gray-900">{activity.employee}</Text></Text>
-                        </View>
-                    </View>
-                ))}
-            </ScrollView>
-
-            <Modal
-                visible={showAttachModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowAttachModal(false)}
-            >
-                <View className="flex-1 bg-black/40 justify-center px-4">
-                    <View className="bg-white rounded-xl overflow-hidden">
-                        <View className="bg-gray-500 px-4 py-3">
-                            <Text className="text-white font-semibold">Attach Quotation</Text>
-                        </View>
-                        <View className="p-4">
-                            <TextInput
-                                placeholder="Enter Quotation"
-                                value={quotationId}
-                                onChangeText={setQuotationId}
-                                className="h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                        </View>
-                        <View className="flex-row px-4 pb-4">
-                            <Button
-                                title="Cancel"
-                                variant="outline"
-                                className="flex-1 mr-2"
-                                onPress={() => setShowAttachModal(false)}
-                            />
-                            <Button
-                                title="Attach"
-                                className="flex-1 ml-2"
-                                onPress={() => {
-                                    setShowAttachModal(false);
-                                    setQuotationId('');
-                                }}
-                            />
-                        </View>
-                    </View>
+                        )}
+                    </ScrollView>
                 </View>
-            </Modal>
 
-            <Modal
-                visible={showCustomerModal}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowCustomerModal(false)}
-            >
-                <View className="flex-1 bg-black/40 justify-center px-3 py-6">
-                    <View className="bg-white rounded-xl overflow-hidden max-h-full">
-                        <View className="bg-gray-600 px-4 py-3 flex-row items-center justify-between">
-                            <Text className="text-white font-semibold text-base">Customer Details</Text>
-                            <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
-                                <Text className="text-white text-base font-semibold">Close</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-gray-200 bg-white" contentContainerStyle={{ paddingHorizontal: 8 }}>
-                            {CUSTOMER_TABS.map((tab) => (
-                                <TouchableOpacity
-                                    key={tab.id}
-                                    onPress={() => setCustomerTab(tab.id)}
-                                    className={`px-3 py-3 border-b-2 ${customerTab === tab.id ? 'border-teal-600' : 'border-transparent'}`}
-                                >
-                                    <Text className={`text-xs ${customerTab === tab.id ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>
-                                        {tab.label}
-                                    </Text>
+                {/* Customer Details Modal */}
+                <Modal
+                    visible={showCustomerModal}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setShowCustomerModal(false)}
+                >
+                    <View className="flex-1 bg-black/40 justify-center px-3 py-6">
+                        <View className="bg-white rounded-xl overflow-hidden max-h-full">
+                            <View className="bg-gray-600 px-4 py-3 flex-row items-center justify-between">
+                                <Text className="text-white font-semibold text-base">Customer Details</Text>
+                                <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
+                                    <Text className="text-white text-base font-semibold">Close</Text>
                                 </TouchableOpacity>
-                            ))}
-                        </ScrollView>
+                            </View>
 
-                        <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
-                            {customerTabContent}
-                        </ScrollView>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-gray-200 bg-white" contentContainerStyle={{ paddingHorizontal: 8 }}>
+                                {CUSTOMER_TABS.map((tab) => (
+                                    <TouchableOpacity
+                                        key={tab.id}
+                                        onPress={() => setCustomerTab(tab.id)}
+                                        className={`px-3 py-3 border-b-2 ${customerTab === tab.id ? 'border-teal-600' : 'border-transparent'}`}
+                                    >
+                                        <Text className={`text-xs ${customerTab === tab.id ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>
+                                            {tab.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
 
-                        <View className="bg-gray-50 border-t border-gray-100 p-4 flex-row">
-                            <Button title="Cancel" variant="outline" className="flex-1 mr-2" onPress={() => setShowCustomerModal(false)} />
-                            <Button title="Save" className="flex-1 ml-2" onPress={() => setShowCustomerModal(false)} />
+                            <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
+                                {customerTabContent}
+                            </ScrollView>
+
+                            <View className="bg-gray-50 border-t border-gray-100 p-4 flex-row">
+                                <Button title="Cancel" variant="outline" className="flex-1 mr-2" onPress={() => setShowCustomerModal(false)} />
+                                <Button title="Save" className="flex-1 ml-2" onPress={() => setShowCustomerModal(false)} />
+                            </View>
                         </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
 
-            <Modal
-                visible={showActivityModal}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowActivityModal(false)}
-            >
-                <View className="flex-1 bg-black/40 justify-center px-3 py-6">
-                    <View className="bg-white rounded-xl overflow-hidden max-h-full">
-                        <View className="bg-gray-500 px-4 py-3 flex-row items-center justify-between">
-                            <Text className="text-white font-semibold text-base">Activity Editor</Text>
-                            <TouchableOpacity onPress={() => setShowActivityModal(false)}>
-                                <Text className="text-white text-base font-semibold">Close</Text>
-                            </TouchableOpacity>
-                        </View>
+                {/* Activity Modal */}
+                <Modal
+                    visible={showActivityModal}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setShowActivityModal(false)}
+                >
+                    <View className="flex-1 bg-black/40 justify-center px-3 py-6">
+                        <View className="bg-white rounded-xl overflow-hidden max-h-full">
+                            <View className="bg-gray-500 px-4 py-3 flex-row items-center justify-between">
+                                <Text className="text-white font-semibold text-base">Activity Editor</Text>
+                                <TouchableOpacity onPress={() => setShowActivityModal(false)}>
+                                    <Text className="text-white text-base font-semibold">Close</Text>
+                                </TouchableOpacity>
+                            </View>
 
-                        <View className="border-b border-gray-200 bg-white flex-row">
-                            <TouchableOpacity
-                                onPress={() => setActivityTab('details')}
-                                className={`px-4 py-3 border-b-2 ${activityTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}
-                            >
-                                <Text className={`text-sm ${activityTab === 'details' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Activity Details</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => setActivityTab('documents')}
-                                className={`px-4 py-3 border-b-2 ${activityTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
-                            >
-                                <Text className={`text-sm ${activityTab === 'documents' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Associated Documents</Text>
-                            </TouchableOpacity>
-                        </View>
+                            <View className="border-b border-gray-200 bg-white flex-row">
+                                <TouchableOpacity
+                                    onPress={() => setActivityTab('details')}
+                                    className={`px-4 py-3 border-b-2 ${activityTab === 'details' ? 'border-teal-600' : 'border-transparent'}`}
+                                >
+                                    <Text className={`text-sm ${activityTab === 'details' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Activity Details</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => setActivityTab('documents')}
+                                    className={`px-4 py-3 border-b-2 ${activityTab === 'documents' ? 'border-teal-600' : 'border-transparent'}`}
+                                >
+                                    <Text className={`text-sm ${activityTab === 'documents' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Associated Documents</Text>
+                                </TouchableOpacity>
+                            </View>
 
-                        <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
-                            {activityTab === 'details' ? (
-                                <View>
-                                    <View className="flex-row mb-3">
-                                        <View className="flex-1 mr-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Activity Session ID</Text>
-                                            <Text className="text-sm font-semibold text-gray-900">ACTNY10029</Text>
-                                        </View>
-                                        <View className="flex-1 ml-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Session Date</Text>
-                                            <Text className="text-sm font-semibold text-gray-900">17-02-2026</Text>
-                                        </View>
-                                    </View>
-
-                                    <View className="flex-row mb-3">
-                                        <View className="flex-1 mr-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Lead Source</Text>
-                                            <Text className="text-sm font-semibold text-gray-900">CALL ENQUIRY</Text>
-                                        </View>
-                                        <View className="flex-1 ml-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Session Time</Text>
-                                            <Text className="text-sm font-semibold text-gray-900">17:20</Text>
-                                        </View>
-                                    </View>
-
-                                    <View className="mb-3">
-                                        <Text className="text-xs text-gray-500 mb-1">Enquiry Type</Text>
-                                        <View className="flex-row">
-                                            {(['Hot', 'Warm', 'Cold'] as const).map((type, idx) => (
-                                                <TouchableOpacity
-                                                    key={type}
-                                                    onPress={() => setEnquiryType(type)}
-                                                    className={`h-10 px-4 rounded-lg border items-center justify-center ${idx !== 0 ? 'ml-2' : ''} ${enquiryType === type ? 'bg-teal-600 border-teal-600' : 'bg-white border-gray-300'}`}
-                                                >
-                                                    <Text className={enquiryType === type ? 'text-white font-semibold' : 'text-gray-700'}>{type}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-
-                                    <View className="flex-row mb-3">
-                                        <View className="flex-1 mr-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Next Follow-up Date</Text>
-                                            <TextInput
-                                                editable={activityMode === 'edit'}
-                                                value={followupDate}
-                                                onChangeText={setFollowupDate}
-                                                className={`h-11 rounded-lg px-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
-                                            />
-                                        </View>
-                                        <View className="flex-1 ml-2">
-                                            <Text className="text-xs text-gray-500 mb-1">Next Follow-up Time</Text>
-                                            <TextInput
-                                                editable={activityMode === 'edit'}
-                                                value={followupTime}
-                                                onChangeText={setFollowupTime}
-                                                className={`h-11 rounded-lg px-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
-                                            />
-                                        </View>
-                                    </View>
-
+                            <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
+                                {activityTab === 'details' ? (
                                     <View>
-                                        <Text className="text-xs text-gray-500 mb-1">Remarks</Text>
-                                        <TextInput
-                                            editable={activityMode === 'edit'}
-                                            multiline
-                                            value={remarks}
-                                            onChangeText={setRemarks}
-                                            textAlignVertical="top"
-                                            className={`min-h-[110px] rounded-lg px-3 py-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
-                                        />
-                                    </View>
-                                </View>
-                            ) : (
-                                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                                    <View className="bg-gray-100 px-3 py-3 flex-row">
-                                        <Text className="text-xs font-semibold text-gray-700 flex-1">Document Type</Text>
-                                        <Text className="text-xs font-semibold text-gray-700 w-28">Document ID</Text>
-                                        <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
-                                        <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
-                                    </View>
-                                    {[{ type: 'PDFWITHOUTBROCHURE', id: 'QDB/25-26/115' }, { type: 'PDFWITHBROCHURE', id: 'QDB/25-26/115' }].map((doc, idx) => (
-                                        <View key={doc.type} className={`px-3 py-3 flex-row items-center ${idx % 2 ? 'bg-white' : 'bg-gray-50'}`}>
-                                            <Text className="text-xs text-gray-800 flex-1" numberOfLines={1}>{doc.type}</Text>
-                                            <Text className="text-xs text-gray-700 w-28">{doc.id}</Text>
-                                            <Text className="text-xs text-gray-700 w-20">Initiated</Text>
-                                            <TouchableOpacity className="w-12 items-center">
-                                                <Text className="text-xs text-teal-600 font-semibold">View</Text>
-                                            </TouchableOpacity>
+                                        <View className="flex-row mb-3">
+                                            <View className="flex-1 mr-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Activity Session ID</Text>
+                                                <Text className="text-sm font-semibold text-gray-900">ACTNY10029</Text>
+                                            </View>
+                                            <View className="flex-1 ml-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Session Date</Text>
+                                                <Text className="text-sm font-semibold text-gray-900">17-02-2026</Text>
+                                            </View>
                                         </View>
-                                    ))}
-                                </View>
-                            )}
-                        </ScrollView>
 
-                        <View className="border-t border-gray-100 p-4 flex-row">
-                            {activityMode === 'edit' ? (
-                                <>
-                                    <Button title="Cancel" variant="outline" className="flex-1 mr-2" onPress={() => setShowActivityModal(false)} />
-                                    <Button title="Save" className="flex-1 ml-2" onPress={() => setShowActivityModal(false)} />
-                                </>
-                            ) : (
-                                <Button title="Close" variant="outline" className="flex-1" onPress={() => setShowActivityModal(false)} />
-                            )}
+                                        <View className="flex-row mb-3">
+                                            <View className="flex-1 mr-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Lead Source</Text>
+                                                <Text className="text-sm font-semibold text-gray-900">CALL ENQUIRY</Text>
+                                            </View>
+                                            <View className="flex-1 ml-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Session Time</Text>
+                                                <Text className="text-sm font-semibold text-gray-900">17:20</Text>
+                                            </View>
+                                        </View>
+
+                                        <View className="mb-3">
+                                            <Text className="text-xs text-gray-500 mb-1">Enquiry Type</Text>
+                                            <View className="flex-row">
+                                                {(['Hot', 'Warm', 'Cold'] as const).map((type, idx) => (
+                                                    <TouchableOpacity
+                                                        key={type}
+                                                        onPress={() => setEnquiryType(type)}
+                                                        className={`h-10 px-4 rounded-lg border items-center justify-center ${idx !== 0 ? 'ml-2' : ''} ${enquiryType === type ? 'bg-teal-600 border-teal-600' : 'bg-white border-gray-300'}`}
+                                                    >
+                                                        <Text className={enquiryType === type ? 'text-white font-semibold' : 'text-gray-700'}>{type}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        </View>
+
+                                        <View className="flex-row mb-3">
+                                            <View className="flex-1 mr-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Next Follow-up Date</Text>
+                                                <TextInput
+                                                    editable={activityMode === 'edit'}
+                                                    value={followupDate}
+                                                    onChangeText={setFollowupDate}
+                                                    className={`h-11 rounded-lg px-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
+                                                />
+                                            </View>
+                                            <View className="flex-1 ml-2">
+                                                <Text className="text-xs text-gray-500 mb-1">Next Follow-up Time</Text>
+                                                <TextInput
+                                                    editable={activityMode === 'edit'}
+                                                    value={followupTime}
+                                                    onChangeText={setFollowupTime}
+                                                    className={`h-11 rounded-lg px-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
+                                                />
+                                            </View>
+                                        </View>
+
+                                        <View>
+                                            <Text className="text-xs text-gray-500 mb-1">Remarks</Text>
+                                            <TextInput
+                                                editable={activityMode === 'edit'}
+                                                multiline
+                                                value={remarks}
+                                                onChangeText={setRemarks}
+                                                textAlignVertical="top"
+                                                className={`min-h-[110px] rounded-lg px-3 py-3 text-gray-900 border ${activityMode === 'edit' ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200'}`}
+                                            />
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                                        <View className="bg-gray-100 px-3 py-3 flex-row">
+                                            <Text className="text-xs font-semibold text-gray-700 flex-1">Document Type</Text>
+                                            <Text className="text-xs font-semibold text-gray-700 w-28">Document ID</Text>
+                                            <Text className="text-xs font-semibold text-gray-700 w-20">Status</Text>
+                                            <Text className="text-xs font-semibold text-gray-700 w-12 text-center">Action</Text>
+                                        </View>
+                                        <View className="py-8 items-center">
+                                            <Text className="text-gray-400 text-sm">No documents available</Text>
+                                        </View>
+                                    </View>
+                                )}
+                            </ScrollView>
+
+                            <View className="border-t border-gray-100 p-4 flex-row">
+                                {activityMode === 'edit' ? (
+                                    <>
+                                        <Button title="Cancel" variant="outline" className="flex-1 mr-2" onPress={() => setShowActivityModal(false)} />
+                                        <Button title="Save" className="flex-1 ml-2" onPress={() => setShowActivityModal(false)} />
+                                    </>
+                                ) : (
+                                    <Button title="Close" variant="outline" className="flex-1" onPress={() => setShowActivityModal(false)} />
+                                )}
+                            </View>
                         </View>
                     </View>
-                </View>
-            </Modal>
-            {/* Bottom Navigation Buttons */}
-            <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
-                <Button
-                    title="Previous"
-                    variant="outline"
-                    className="flex-1 h-11"
-                    onPress={() => navigation.goBack()}
+                </Modal>
+
+                {/* Attach Quotation Modal */}
+                <AttachQuotationModal
+                    visible={showAttachQuotationModal}
+                    onClose={closeAttachQuotationModal}
+                    onAttach={handleAttachQuotation}
+                    customerId={customer.id}
+                    excludeIds={mergedQuotations.map(q => q.id)}
                 />
-                <Button
-                    title="Next"
-                    className="flex-1 h-11 bg-teal-600"
-                    onPress={() => navigation.goBack()}
-                />
-            </View>
+
+            </ScrollView>
         </SafeAreaView>
     );
 }

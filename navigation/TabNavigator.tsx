@@ -5,9 +5,8 @@ import JobCardsListScreen from '../screens/job-cards/JobCardsListScreen';
 import AccountScreen from '../screens/account/AccountScreen';
 import { FileText, ClipboardList, CircleUserRound } from 'lucide-react-native';
 import { COLORS } from '../constants/colors';
-import { TabParamList } from './types';
-
-const Tab = createBottomTabNavigator<TabParamList>();
+// in customer details page -> booking section -> i cant see that 2 buttons .. refer @FigmaDesign
+const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
     return (

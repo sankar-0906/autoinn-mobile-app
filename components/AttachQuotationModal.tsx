@@ -335,12 +335,7 @@ export default function AttachQuotationModal({
       toast.warn('Please select at least one quotation');
       return;
     }
-    // Convert selected quotation IDs (display IDs) to database IDs
-    const selectedDbIds = Array.from(selectedQuotations).map(selectedId => {
-      const quotation = quotations.find(q => q.quotationId === selectedId);
-      return quotation ? quotation.id : selectedId;
-    });
-    onAttach(selectedDbIds);
+    onAttach(Array.from(selectedQuotations));
     onClose();
   };
 
@@ -488,7 +483,7 @@ export default function AttachQuotationModal({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  const allIds = new Set(filteredQuotations.map(q => q.quotationId));
+                  const allIds = new Set(filteredQuotations.map(q => q.id));
                   setSelectedQuotations(allIds);
                 }}
                 disabled={filteredQuotations.length === 0}

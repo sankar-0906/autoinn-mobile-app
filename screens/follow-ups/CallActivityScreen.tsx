@@ -162,7 +162,13 @@ export default function CallActivityScreen({
     };
 
     const handleCreateQuotation = () => {
-        navigation.navigate('AddQuotation', { returnToPrevious: true });
+        navigation.navigate('FollowUpQuotationForm', {
+            customerName: customerName || customerData?.name || '',
+            customerPhone: phone || customerPhone || customerData?.contacts?.[0]?.phone || '',
+            locality: customerData?.address?.locality || customerData?.locality || customerData?.location || '',
+            customerType: customerData?.type || '',
+            gender: customerData?.gender || 'male'
+        });
     };
 
     const handleCallCustomer = async () => {
