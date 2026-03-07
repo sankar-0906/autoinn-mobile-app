@@ -597,14 +597,8 @@ export default function BookingActivityScreen({
 
             if (!phoneToUse || String(phoneToUse).length !== 10) return;
 
-            // Prevent re-fetching if customer already loaded AND user has entered data manually
+            // Prevent re-fetching if customer already loaded (refs are always fresh, unlike state closures)
             if (customerFetchedRef.current && customerDataRef.current) {
-                // Check if user has manually entered data that we don't want to overwrite
-                const hasManualData = customerFullName || locality || quotationsAssociated || (customerGender && customerGender !== 'Male');
-                if (hasManualData) {
-                    console.log('🔍 fetchCustomerData — skipped, user has entered manual data');
-                    return;
-                }
                 console.log('🔍 fetchCustomerData — skipped, customer already loaded');
                 return;
             }
@@ -673,17 +667,19 @@ export default function BookingActivityScreen({
             fetchManufacturers();
             fetchSalesOfficers('1');
             fetchReferredByOptions();
+            fetchRelationshipOptions();
+            fetchBranches();
+            generateNewCustomerId();
             setDataLoaded(true);
         }
-        fetchRelationshipOptions();
-        fetchBranches();
-        generateNewCustomerId();
 
         // If phone came from route params, fetch immediately — pass directly
-        if (customerPhone && String(customerPhone).length === 10) {
+        // But ONLY if we haven't already fetched customer data (prevents re-fetch on remount)
+        if (customerPhone && String(customerPhone).length === 10 && !customerFetchedRef.current && !customerDataRef.current) {
             console.log('🔍 Mount effect — fetching customer for phone from route params:', customerPhone);
-            customerFetchedRef.current = false; // Reset for initial fetch
             fetchCustomerData(String(customerPhone));
+        } else if (customerPhone && customerFetchedRef.current) {
+            console.log('🔍 Mount effect — skipping fetch, customer already loaded for:', customerPhone);
         }
     }, []);
 
@@ -1061,7 +1057,16 @@ export default function BookingActivityScreen({
                 quantity: a.quantity,
             })),
             quotation: currentQuotes
-                ? currentQuotes.split(', ').map(id => ({ id: id.trim() }))
+                ? currentQuotes.split(', ').map(qId => {
+                    const trimmedId = qId.trim();
+                    // Convert user-friendly quotation ID back to internal database ID
+                    const matchingQuotation = snap?.quotation?.find(
+                        (q: any) => q.quotationId === trimmedId
+                    );
+                    const internalId = matchingQuotation?.id || trimmedId;
+                    console.log('📄 Quotation mapping:', trimmedId, '->', internalId);
+                    return { id: internalId };
+                })
                 : [],
 
             color: { id: vehicleData?.color?.id || null },
@@ -1125,11 +1130,16 @@ export default function BookingActivityScreen({
             const validation = validateBookingPayload(bookingPayload);
             if (!validation.isValid) {
                 console.error('❌ Payload validation errors:', validation.errors);
-                toast.error('Invalid booking data. Check all required fields.');
+                toast.error('Invalid booking data. Please check all required fields.');
                 return;
             }
 
+            console.log('📦 Sending booking payload:', JSON.stringify(bookingPayload, null, 2));
             const response = await createBooking(bookingPayload);
+            console.log('📦 Booking response:', response);
+            console.log('📦 Response data:', response.data);
+            console.log('📦 Response status:', response.status);
+            
             if (response.data.code === 200) {
                 toast.success('Booking saved successfully!');
                 // Navigate to FollowUpDetail with customer phone number
@@ -1140,16 +1150,26 @@ export default function BookingActivityScreen({
                     setTimeout(() => navigation.navigate('FollowUps'), 1500);
                 }
             } else {
-                const err = response.data;
-                if (err?.err?.data?.errors) {
-                    err.err.data.errors.forEach((e: any) => console.error('GraphQL error:', e.message));
-                }
-                toast.error(err?.err?.message || err?.message || 'Failed to save booking');
+                console.error('❌ Booking creation failed:', response);
+                console.error('❌ Response data details:', JSON.stringify(response.data, null, 2));
+                const err = response.data?.err || response.data;
+                console.error('❌ Error object:', err);
+                console.error('❌ Error message:', err?.message || err?.err?.message);
+                toast.error(err?.message || err?.err?.message || 'Failed to save booking');
             }
         } catch (error: any) {
-            if (error.response) toast.error(error.response.data?.message || 'Server error');
-            else if (error.request) toast.error('Network error. Check your connection.');
-            else toast.error(error.message || 'Failed to save booking');
+            console.error('❌ Booking creation error:', error);
+            console.error('❌ Error response:', error.response);
+            console.error('❌ Error request:', error.request);
+            
+            if (error.response) {
+                console.error('❌ Server response data:', error.response.data);
+                toast.error(error.response.data?.message || error.response.data?.err?.message || 'Server error');
+            } else if (error.request) {
+                toast.error('Network error. Check your connection.');
+            } else {
+                toast.error(error.message || 'Failed to save booking');
+            }
         }
     };
 
