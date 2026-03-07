@@ -167,6 +167,8 @@ export default function BookingActivityScreen({
     const [generatedCustomerId, setGeneratedCustomerId] = useState('');
     const [customerData, setCustomerData]         = useState<any>(null);
 
+    const [selectedFinancerId, setSelectedFinancerId]             = useState('');
+
     // ── Dropdown data ──────────────────────────────────────────────────────
     const [countries, setCountries]               = useState<any[]>([]);
     const [states, setStates]                     = useState<any[]>([]);
@@ -248,6 +250,9 @@ export default function BookingActivityScreen({
     const [showLoanTypeModal, setShowLoanTypeModal]               = useState(false);
     const [showTenureModal, setShowTenureModal]                   = useState(false);
     const [showEmiDayModal, setShowEmiDayModal]                   = useState(false);
+    const [showFinancerModal, setShowFinancerModal]               = useState(false);
+    const [showEmiStartDateModal, setShowEmiStartDateModal]       = useState(false);
+    const [financerOptions, setFinancerOptions]                   = useState<any[]>([]);
     const [selectedDate, setSelectedDate]                         = useState(new Date());
     const [dobCalendarStep, setDobCalendarStep]                   = useState<'year' | 'month' | 'day'>('year');
     const [dobPickYear, setDobPickYear]                           = useState(new Date().getFullYear());
@@ -470,6 +475,23 @@ export default function BookingActivityScreen({
         }
     };
 
+    const fetchFinancerOptions = async () => {
+        try {
+            const response = await platformApi.get('/api/financer');
+            const data = response.data;
+            if (data.code === 200) {
+                const list = data.response?.code === 200
+                    ? data.response.data || []
+                    : Array.isArray(data.response) ? data.response : data.data || [];
+                setFinancerOptions(list);
+            } else {
+                setFinancerOptions([]);
+            }
+        } catch {
+            setFinancerOptions([]);
+        }
+    };
+
     const fetchRelationshipOptions = async () => {
         setRelationshipOptions([
             { id: '1', name: 'Father' }, { id: '2', name: 'Mother' },
@@ -667,6 +689,7 @@ export default function BookingActivityScreen({
             fetchSalesOfficers('1');
             fetchReferredByOptions();
             fetchRelationshipOptions();
+            fetchFinancerOptions();
             fetchBranches();
             generateNewCustomerId();
             setDataLoaded(true);
@@ -968,12 +991,18 @@ export default function BookingActivityScreen({
         const loanPayload = {
             hypothecation:          isFinance ? paymentHypothecation : false,
             financerBranch:         isFinance ? financierBranch : '',
-            financer:               isFinance && financer ? { id: financer, name: financer } : null,
+            financer:               isFinance && selectedFinancerId ? { id: selectedFinancerId, name: financer } : null,
             downPayment:            isFinance ? (parseFloat(downPayment) || 0) : 0,
             loanAmount:             isFinance ? (parseFloat(loanAmount) || 0) : 0,
             tenure:                 isFinance ? (parseInt(tenure) || 0) : 0,
             emiDate:                isFinance ? (parseInt(emiDay) || 0) : 0,
-            emiStartDate:           isFinance ? (emiStartDate || null) : null,
+            emiStartDate:           isFinance && emiStartDate ? (() => {
+                if (emiStartDate.includes('/')) {
+                    const [dd, mm, yyyy] = emiStartDate.split('/');
+                    return `${yyyy}-${mm}-${dd}`;
+                }
+                return emiStartDate;
+            })() : null,
             loanType:               normalizedLoanType,
             emiAmount:              isFinance ? (parseFloat(emiAmount) || 0) : 0,
             disbursementAmount:     isFinance ? (parseFloat(loanDisbursementAmount) || 0) : 0,
@@ -1971,7 +2000,10 @@ export default function BookingActivityScreen({
                                         </View>
                                         <View className="mb-4">
                                             <FormLabel label="Financier Name" required />
-                                            <TextInput value={financer} onChangeText={setFinancer} placeholder="Financier Name" className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800" />
+                                            <TouchableOpacity onPress={() => setShowFinancerModal(true)} className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
+                                                <Text className="text-gray-800 flex-1">{financer || 'Select Financier'}</Text>
+                                                <ChevronRight size={16} color={COLORS.gray[400]} />
+                                            </TouchableOpacity>
                                         </View>
                                         <View>
                                             <FormLabel label="Financier Branch" />
@@ -2015,7 +2047,20 @@ export default function BookingActivityScreen({
                                         </View>
                                         <View>
                                             <FormLabel label="EMI Start Date" />
-                                            <TextInput value={emiStartDate} onChangeText={setEmiStartDate} placeholder="YYYY-MM-DD" className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800" />
+                                            <View className="flex-row items-center">
+                                                <TextInput
+                                                    value={emiStartDate}
+                                                    onChangeText={setEmiStartDate}
+                                                    placeholder="DD/MM/YYYY"
+                                                    className="flex-1 h-12 bg-white border border-gray-300 rounded-l-lg px-3 text-gray-800"
+                                                />
+                                                <TouchableOpacity
+                                                    onPress={() => setShowEmiStartDateModal(true)}
+                                                    className="h-12 bg-teal-600 rounded-r-lg px-4 justify-center"
+                                                >
+                                                    <Calendar size={20} color="white" />
+                                                </TouchableOpacity>
+                                            </View>
                                         </View>
                                     </View>
                                 )}
@@ -2195,6 +2240,62 @@ export default function BookingActivityScreen({
                 <ScrollView>{Array.from({ length: 31 }, (_, i) => i + 1).map(d => (<TouchableOpacity key={d} onPress={() => { setEmiDay(d.toString()); setShowEmiDayModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{d}</Text></TouchableOpacity>))}</ScrollView>
                 <TouchableOpacity onPress={() => setShowEmiDayModal(false)} className="p-4 border-t border-gray-200"><Text className="text-center text-gray-600">Cancel</Text></TouchableOpacity>
             </CustomModal>
+
+            {/* Financer */}
+            <Modal visible={showFinancerModal} transparent animationType="fade" onRequestClose={() => setShowFinancerModal(false)}>
+                <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                    <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                        <View className="p-4 border-b border-gray-200">
+                            <View className="flex-row justify-between items-center">
+                                <Text className="text-lg font-semibold text-gray-800">Select Financier</Text>
+                                <TouchableOpacity onPress={() => setShowFinancerModal(false)}>
+                                    <X size={20} color={COLORS.gray[600]} />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                        <ScrollView>
+                            {financerOptions.length > 0 ? financerOptions.map(o => (
+                                <TouchableOpacity key={o.id} onPress={() => { setFinancer(o.name); setSelectedFinancerId(o.id); setShowFinancerModal(false); }} className="p-4 border-b border-gray-100">
+                                    <Text className={`text-gray-800 ${selectedFinancerId === o.id ? 'font-bold text-teal-700' : ''}`}>{o.name}</Text>
+                                </TouchableOpacity>
+                            )) : (
+                                <View className="p-6 items-center">
+                                    <Text className="text-gray-400 text-sm">No financiers available</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+                        <TouchableOpacity onPress={() => setShowFinancerModal(false)} className="p-3 border-t border-gray-200">
+                            <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* EMI Start Date Calendar */}
+            <Modal visible={showEmiStartDateModal} transparent animationType="fade" onRequestClose={() => setShowEmiStartDateModal(false)}>
+                <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                    <View className="bg-white rounded-2xl p-4 w-full max-w-md">
+                        <Text className="text-gray-900 font-bold mb-3">Select EMI Start Date</Text>
+                        <RNCalendar
+                            current={emiStartDate ? emiStartDate.split('/').reverse().join('-') : undefined}
+                            minDate={new Date().toISOString().split('T')[0]}
+                            maxDate={(() => { const d = new Date(); d.setMonth(d.getMonth() + 2); return d.toISOString().split('T')[0]; })()}
+                            onDayPress={(day: any) => {
+                                const [yyyy, mm, dd] = day.dateString.split('-');
+                                setEmiStartDate(`${dd}/${mm}/${yyyy}`);
+                                setShowEmiStartDateModal(false);
+                            }}
+                            theme={{ todayTextColor: COLORS.primary, selectedDayBackgroundColor: COLORS.primary, selectedDayTextColor: '#fff', arrowColor: COLORS.primary }}
+                            markedDates={emiStartDate ? { [emiStartDate.split('/').reverse().join('-')]: { selected: true, selectedColor: COLORS.primary } } : undefined}
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity onPress={() => setShowEmiStartDateModal(false)} className="px-4 py-2 rounded-lg bg-teal-600">
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Attach Quotation */}
             <AttachQuotationModal visible={showAttachQuotationModal} onClose={() => setShowAttachQuotationModal(false)} onAttach={handleAttachQuotation} />
