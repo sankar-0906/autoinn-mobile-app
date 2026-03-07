@@ -497,4 +497,8 @@ export const updateBookingStatus = (bookingId: string, statusData: any) => {
   return platformApi.put(`/api/booking/updateStatus/${bookingId}`, statusData);
 };
 
+export const updateQuotationStatus = (quotationId: string, status: string) => {
+  return platformApi.put(`/api/quotation/updateStatus/${quotationId}`, { status });
+};
+
 export default platformApi;

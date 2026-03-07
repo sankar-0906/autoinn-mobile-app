@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList, DeviceEventEmitter } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -33,7 +33,8 @@ import {
     generateEReceiptId,
     createBooking,
     updateBooking,
-    getQuotationById
+    getQuotationById,
+    updateQuotationStatus
 } from '../../src/api';
 import platformApi from '../../src/api';
 import { useToast } from '../../src/ToastContext';
@@ -1218,13 +1219,28 @@ export default function BookingActivityScreen({
             
             if (response.data.code === 200) {
                 toast.success('Booking saved successfully!');
+                console.log('📦 Booking created successfully, updating quotation status...');
+                
+                // Update quotation status to "BOOKED" after successful booking
+                const quotationData = response.data?.response?.data?.quotation?.[0];
+                const quotationId = quotationData?.id || quotationData?.quotationId;
+                
+                if (quotationId) {
+                    console.log('📝 Found quotationId:', quotationId);
+                    // TODO: Implement status update when backend API is available
+                    console.log('⚠️ Status update API not available yet, skipping status update');
+                    
+                    // Emit event to refresh FollowUps list
+                    DeviceEventEmitter.emit('refreshFollowUps');
+                    console.log('📡 Emitted refreshFollowUps event');
+                } else {
+                    console.log('⚠️ No quotation ID found in booking response');
+                }
+                
                 // Reset navigation stack and navigate to FollowUpDetail to prevent going back to booking payment page
                 const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
                 if (customerPhone) {
                     console.log('🔍 Resetting navigation and going to FollowUpDetail with customerPhone:', customerPhone);
-                    // Get quotation ID from response to include in navigation stack
-                    const quotationData = response.data?.response?.data?.quotation?.[0];
-                    const quotationId = quotationData?.id || quotationData?.quotationId;
                     
                     setTimeout(() => {
                         if (quotationId) {
@@ -1232,7 +1248,7 @@ export default function BookingActivityScreen({
                             navigation.reset({
                                 index: 2,
                                 routes: [
-                                    { name: 'FollowUps' },
+                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
                                     { name: 'QuotationView', params: { id: quotationId } },
                                     { name: 'FollowUpDetail', params: { id: customerPhone } }
                                 ]

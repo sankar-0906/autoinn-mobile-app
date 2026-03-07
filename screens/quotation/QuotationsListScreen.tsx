@@ -49,6 +49,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     const [currentPage, setCurrentPage] = useState(1);
     const [showReassignModal, setShowReassignModal] = useState(false);
     const [selectedQuotation, setSelectedQuotation] = useState<string | null>(null);
+    const [selectedQuotationDisplay, setSelectedQuotationDisplay] = useState<string | null>(null);
     const [selectedBranch, setSelectedBranch] = useState('');
     const [selectedExecutive, setSelectedExecutive] = useState('');
     const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -253,8 +254,9 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
         fetchQuotations();
     };
 
-    const handleReassign = (quotationId: string) => {
+    const handleReassign = (quotationId: string, displayId: string) => {
         setSelectedQuotation(quotationId);
+        setSelectedQuotationDisplay(displayId);
         setSelectedBranch('');
         setSelectedExecutive('');
         setShowReassignModal(true);
@@ -346,7 +348,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                     <TouchableOpacity
                         onPress={(e) => {
                             e.stopPropagation();
-                            handleReassign(item.id);
+                            handleReassign(item.id, item.displayId);
                         }}
                         className="flex-1 h-10 rounded-lg border border-teal-600 items-center justify-center"
                         activeOpacity={0.7}
@@ -700,55 +702,66 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                             </TouchableOpacity>
                         </View>
                         <Text className="text-gray-500 text-sm mb-4">
-                            Select the branch and sales executive to reassign {selectedQuotation ?? 'quotation'}.
+                            Select the branch and sales executive to reassign{'\n'}
+                            <Text className="text-teal-600 font-semibold">
+                                {selectedQuotationDisplay ?? selectedQuotation ?? 'quotation'}
+                            </Text>
                         </Text>
 
                         <View className="mb-4">
                             <Text className="text-sm text-gray-600 font-medium mb-2">Branch</Text>
-                            <View className="gap-2">
-                                {loadingBranches && (
-                                    <Text className="text-gray-500 text-sm">Loading branches...</Text>
-                                )}
-                                {!loadingBranches && branchOptions.map((branch) => (
-                                    <TouchableOpacity
-                                        key={branch.id}
-                                        className={`px-3 py-2 rounded-lg border ${selectedBranch === branch.id ? 'border-teal-600 bg-teal-50' : 'border-gray-200 bg-white'}`}
-                                        onPress={() => {
-                                            setSelectedBranch(branch.id);
-                                            setSelectedExecutive('');
-                                        }}
-                                    >
-                                        <Text className={selectedBranch === branch.id ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
-                                            {branch.name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                                {!loadingBranches && branchOptions.length === 0 && (
-                                    <Text className="text-gray-500 text-sm">No branches found</Text>
-                                )}
+                            <View className="max-h-32">
+                                <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                    <View className="gap-2">
+                                        {loadingBranches && (
+                                            <Text className="text-gray-500 text-sm">Loading branches...</Text>
+                                        )}
+                                        {!loadingBranches && branchOptions.map((branch) => (
+                                            <TouchableOpacity
+                                                key={branch.id}
+                                                className={`px-3 py-2 rounded-lg border ${selectedBranch === branch.id ? 'border-teal-600 bg-teal-50' : 'border-gray-200 bg-white'}`}
+                                                onPress={() => {
+                                                    setSelectedBranch(branch.id);
+                                                    setSelectedExecutive('');
+                                                }}
+                                            >
+                                                <Text className={selectedBranch === branch.id ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
+                                                    {branch.name}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                        {!loadingBranches && branchOptions.length === 0 && (
+                                            <Text className="text-gray-500 text-sm">No branches found</Text>
+                                        )}
+                                    </View>
+                                </ScrollView>
                             </View>
                         </View>
 
                         <View className="mb-5">
                             <Text className="text-sm text-gray-600 font-medium mb-2">Sales Executive</Text>
-                            <View className="gap-2">
-                                {loadingExecutives && (
-                                    <Text className="text-gray-500 text-sm">Loading executives...</Text>
-                                )}
-                                {!loadingExecutives && executiveOptions.map((exec) => (
-                                    <TouchableOpacity
-                                        key={exec.id}
-                                        className={`px-3 py-2 rounded-lg border ${selectedExecutive === exec.id ? 'border-teal-600 bg-teal-50' : 'border-gray-200 bg-white'}`}
-                                        onPress={() => setSelectedExecutive(exec.id)}
-                                    >
-                                        <Text className={selectedExecutive === exec.id ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
-                                            {exec.name}{exec.employeeId ? ` (${exec.employeeId})` : ''}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                                {!loadingExecutives && executiveOptions.length === 0 && (
-                                    <Text className="text-gray-500 text-sm">No executives found</Text>
-                                )}
+                            <View className="max-h-48">
+                                <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                    <View className="gap-2">
+                                        {loadingExecutives && (
+                                            <Text className="text-gray-500 text-sm">Loading executives...</Text>
+                                        )}
+                                        {!loadingExecutives && executiveOptions.map((exec) => (
+                                            <TouchableOpacity
+                                                key={exec.id}
+                                                className={`px-3 py-2 rounded-lg border ${selectedExecutive === exec.id ? 'border-teal-600 bg-teal-50' : 'border-gray-200 bg-white'}`}
+                                                onPress={() => setSelectedExecutive(exec.id)}
+                                            >
+                                                <Text className={selectedExecutive === exec.id ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
+                                                    {exec.name}{exec.employeeId ? ` (${exec.employeeId})` : ''}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                        {!loadingExecutives && executiveOptions.length === 0 && (
+                                            <Text className="text-gray-500 text-sm">No executives found</Text>
+                                        )}
+                                    </View>
+                                </ScrollView>
                             </View>
                         </View>
 
