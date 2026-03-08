@@ -77,8 +77,8 @@ interface Accessory {
     new?: boolean;
 }
 
-type BookingActivityRouteProp = RouteProp<RootStackParamList, 'BookingActivity'>;
-type BookingActivityNavigationProp = StackNavigationProp<RootStackParamList, 'BookingActivity'>;
+type BookingConfirmActivityRouteProp = RouteProp<RootStackParamList, 'BookingActivity'>;
+type BookingConfirmActivityNavigationProp = StackNavigationProp<RootStackParamList, 'BookingActivity'>;
 
 const FormLabel = ({ label, required = false }: { label: string; required?: boolean }) => (
     <Text className="text-sm text-gray-600 mb-1 font-medium">
@@ -88,14 +88,14 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
 );
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function BookingActivityScreen({
+export default function BookingConfirmActivityScreen({
     navigation,
     route,
 }: {
-    navigation: BookingActivityNavigationProp;
-    route: BookingActivityRouteProp;
+    navigation: BookingConfirmActivityNavigationProp;
+    route: BookingConfirmActivityRouteProp;
 }) {
-    const { isAdvancedBooking, customerId, customerName, customerPhone } = route.params || {};
+    const { isAdvancedBooking, isConfirmBooking, customerId, customerName, customerPhone } = route.params || {};
 
     const toast = useToast();
     const insets = useSafeAreaInsets();
@@ -104,11 +104,11 @@ export default function BookingActivityScreen({
 
     // Determine the back navigation target based on how we got here
     const getBackNavigationTarget = () => {
-        if (isAdvancedBooking && customerId) {
-            // If we came from Advanced Booking, go back to Customer Details
+        if (customerId) {
+            // For Confirm Booking, always go back to Customer Details
             return { screen: 'CustomerDetails' as const, params: { customerId } };
         }
-        // Otherwise, go to FollowUps (default behavior)
+        // Fallback to FollowUps if no customerId
         return { screen: 'FollowUps' as const, params: undefined };
     };
 
@@ -164,7 +164,7 @@ export default function BookingActivityScreen({
     const [dataLoaded, setDataLoaded]                               = useState(false);
     const [isVehicleSelectionInProgress, setIsVehicleSelectionInProgress] = useState(false);
     const [hasEverSelectedVehicle, setHasEverSelectedVehicle]       = useState(false);
-    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment'>('customer');
+    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
 
     // ── Customer fields ────────────────────────────────────────────────────
     const [branch, setBranch]                     = useState('');
@@ -246,11 +246,17 @@ export default function BookingActivityScreen({
     const [financierBranch, setFinancierBranch]       = useState('');
     const [paymentHypothecation, setPaymentHypothecation] = useState<boolean>(false);
     const [remarks, setRemarks]                       = useState('');
-    const [netReceivables, setNetReceivables]         = useState('');
-    const [downPayment, setDownPayment]               = useState('');
-    const [tenure, setTenure]                         = useState('');
-    const [loanAmount, setLoanAmount]                 = useState('');
-    const [emiAmount, setEmiAmount]                   = useState('');
+    const [downPayment, setDownPayment]           = useState('');
+    const [tenure, setTenure]                     = useState('');
+    const [loanAmount, setLoanAmount]             = useState('');
+    const [emiAmount, setEmiAmount]               = useState('');
+    const [netReceivables, setNetReceivables]       = useState('');
+
+    // ── Authentication fields (4th tab) ───────────────────────────────
+    const [registeredPhone, setRegisteredPhone]   = useState('');
+    const [otp, setOtp]                           = useState('');
+    const [authStatus, setAuthStatus]             = useState<'Pending' | 'Sent' | 'Verified'>('Pending');
+
     const [emiDay, setEmiDay]                         = useState('');
     const [emiStartDate, setEmiStartDate]             = useState('');
     const [loanDisbursementAmount, setLoanDisbursementAmount] = useState('');
@@ -864,7 +870,7 @@ export default function BookingActivityScreen({
     // ─────────────────────────────────────────────────────────────────────
     // Validation
     // ─────────────────────────────────────────────────────────────────────
-    const validateForm = (): 'customer' | 'vehicle' | 'payment' | null => {
+    const validateForm = (): 'customer' | 'vehicle' | 'payment' | 'auth' | null => {
         setNameError(''); setPhoneError(''); setSalesOfficerError('');
         setAddressError(''); setLocalityError(''); setPincodeError(''); setModelError('');
 
@@ -1409,30 +1415,34 @@ export default function BookingActivityScreen({
         setAccessoriesAfterDiscount(after.toString());
     };
 
+    const handleBack = () => {
+        if (activeTab === 'auth') setActiveTab('payment');
+        else if (activeTab === 'payment') setActiveTab('vehicle');
+        else if (activeTab === 'vehicle') setActiveTab('customer');
+    };
+
     const handleNext = () => {
         if (activeTab === 'customer') {
             setNameError(''); setPhoneError(''); setAddressError('');
             setLocalityError(''); setPincodeError(''); setSalesOfficerError('');
             let err = false;
-            if (!customerFullName.trim()) { setNameError('Required'); err = true; }
-            if (!phone.trim())            { setPhoneError('Required'); err = true; }
-            if (!address.trim())          { setAddressError('Required'); err = true; }
-            if (!locality.trim())         { setLocalityError('Required'); err = true; }
-            if (!pincode.trim())          { setPincodeError('Required'); err = true; }
-            if (!salesOfficer.trim())     { setSalesOfficerError('Required'); err = true; }
-            if (!age.trim())              { toast.error('Age is required'); err = true; }
+            if (!customerFullName.trim())   { setNameError('Customer name is required'); err = true; }
+            if (!phone.trim())             { setPhoneError('Phone number is required'); err = true; }
+            else if (phone.length !== 10 || !/^\d+$/.test(phone)) { setPhoneError('Enter a valid 10-digit phone'); err = true; }
+            if (!salesOfficer.trim())      { setSalesOfficerError('Sales officer is required'); err = true; }
+            if (!address.trim())          { setAddressError('Address is required'); err = true; }
+            if (!locality.trim())         { setLocalityError('Locality is required'); err = true; }
+            if (!pincode.trim())          { setPincodeError('Pincode is required'); err = true; }
+            else if (!/^\d{6}$/.test(pincode)) { setPincodeError('Enter a valid 6-digit pincode'); err = true; }
             if (!customerGender.trim())   { toast.error('Gender is required'); err = true; }
             if (!err) setActiveTab('vehicle');
         } else if (activeTab === 'vehicle') {
             if (!model) { toast.error('Please select a vehicle model'); return; }
             if (!expectedDelivery || expectedDelivery.trim() === '' || expectedDelivery === 'DD/MM/YYYY') { toast.error('Expected Delivery Date is required'); return; }
             setActiveTab('payment');
+        } else if (activeTab === 'payment') {
+            setActiveTab('auth');
         }
-    };
-
-    const handleBack = () => {
-        if (activeTab === 'payment') setActiveTab('vehicle');
-        else if (activeTab === 'vehicle') setActiveTab('customer');
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1443,7 +1453,7 @@ export default function BookingActivityScreen({
             {/* Header */}
             <HeaderWithBack
                 title="Booking Register"
-                subtitle={isAdvancedBooking ? "Advanced Booking" : undefined}
+                subtitle="Confirm Booking"
                 onBackPress={() => {
                     const target = getBackNavigationTarget();
                     console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
@@ -1470,7 +1480,7 @@ export default function BookingActivityScreen({
             {/* Tabs */}
             <View className="w-[340px] self-center bg-white border-b border-gray-100">
                 <View className="flex-row items-center px-4">
-                    {(['customer', 'vehicle', 'payment'] as const).map((tab, idx, arr) => (
+                    {(['customer', 'vehicle', 'payment', 'auth'] as const).map((tab, idx, arr) => (
                         <React.Fragment key={tab}>
                             <TouchableOpacity
                                 onPress={() => setActiveTab(tab)}
@@ -2171,6 +2181,89 @@ export default function BookingActivityScreen({
                                 </View>
                             </View>
                         )}
+
+                        {/* ── AUTH TAB ─────────────────────────────────── */}
+                        {activeTab === 'auth' && (
+                            <View>
+                                <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
+                                    Customer Authentication
+                                </Text>
+
+                                {/* Digital Authentication Section */}
+                                <View className="mb-6">
+                                    <Text className="text-gray-700 font-medium mb-4">Digital Authentication</Text>
+                                    
+                                    <View className="bg-gray-50 rounded-lg p-4 mb-4">
+                                        <View className="mb-4">
+                                            <FormLabel label="Registered Phone Number" />
+                                            <TextInput
+                                                value={registeredPhone}
+                                                onChangeText={setRegisteredPhone}
+                                                placeholder="Enter registered phone number"
+                                                keyboardType="phone-pad"
+                                                className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
+                                            />
+                                        </View>
+
+                                        <TouchableOpacity
+                                            onPress={() => setAuthStatus('Sent')}
+                                            className="bg-teal-600 rounded-lg py-3 items-center mb-4"
+                                        >
+                                            <Text className="text-white font-medium">Generate OTP and Link</Text>
+                                        </TouchableOpacity>
+
+                                        <View className="mb-4">
+                                            <FormLabel label="Enter OTP" />
+                                            <TextInput
+                                                value={otp}
+                                                onChangeText={setOtp}
+                                                placeholder="Enter OTP"
+                                                keyboardType="numeric"
+                                                maxLength={6}
+                                                className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
+                                            />
+                                        </View>
+
+                                        <TouchableOpacity
+                                            onPress={() => setAuthStatus('Verified')}
+                                            className="bg-teal-600 rounded-lg py-3 items-center"
+                                        >
+                                            <Text className="text-white font-medium">Verify</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View className="flex-row justify-end">
+                                        <Text className="text-sm text-gray-600">
+                                            Authentication Status:{' '}
+                                            <Text className="font-medium text-gray-900">{authStatus}</Text>
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                {/* Manual Authentication Section */}
+                                <View className="border-t pt-6">
+                                    <Text className="text-gray-700 font-medium mb-4">Manual Authentication</Text>
+                                    
+                                    <View className="grid grid-cols-2 gap-4">
+                                        <View>
+                                            <FormLabel label="Download Booking Form" />
+                                            <TouchableOpacity className="bg-white border border-gray-300 rounded-lg py-3 px-4 flex-row items-center justify-center">
+                                                <Text className="text-gray-700 text-sm mr-2">📥</Text>
+                                                <Text className="text-gray-700 text-sm">Click to download</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        <View>
+                                            <FormLabel label="Upload Booking Form" />
+                                            <TouchableOpacity className="bg-white border border-gray-300 rounded-lg py-3 px-4 flex-row items-center justify-center">
+                                                <Text className="text-gray-700 text-sm mr-2">📤</Text>
+                                                <Text className="text-gray-700 text-sm">Upload Form</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -2187,12 +2280,17 @@ export default function BookingActivityScreen({
                         <Button title="Back" variant="outline" className="flex-1" onPress={handleBack} />
                         <Button title="Next" className="flex-1" onPress={handleNext} />
                     </>
-                ) : (
+                ) : activeTab === 'payment' ? (
+                    <>
+                        <Button title="Back" variant="outline" className="flex-1" onPress={handleBack} />
+                        <Button title="Next" className="flex-1" onPress={handleNext} />
+                    </>
+                ) : activeTab === 'auth' ? (
                     <>
                         <Button title="Back" variant="outline" className="flex-1" onPress={handleBack} />
                         <Button title="Save & Complete" className="flex-1" onPress={handleSaveComplete} />
                     </>
-                )}
+                ) : null}
             </View>
 
             {/* ── MODALS ──────────────────────────────────────────────────── */}

@@ -391,6 +391,62 @@ export const getVehicleAccessories = (modelId: string) => {
   return platformApi.get(`/api/partsMaster/Cloudsuit/${modelId}`);
 };
 
+// Vehicle specific APIs based on web implementation
+export const getVehicleById = (vehicleId: string) => {
+  return platformApi.get(`/api/vehicle/${vehicleId}`);
+};
+
+export const getVehicleManufacturers = () => {
+  return platformApi.get('/api/manufacturer/branch');
+};
+
+export const getVehicleModelsByManufacturerId = (manufacturerId: string) => {
+  return platformApi.get(`/api/vehicleMaster/manAll/${manufacturerId}`);
+};
+
+export const updateVehicle = (vehicleId: string, formData: FormData) => {
+  return platformApi.put(`/api/vehicle/${vehicleId}`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const checkRegistrationNumber = (registerNo: string, vehicleId?: string) => {
+  return platformApi.post(`/api/vehicle/checkRegisterNo`, { registerNo, id: vehicleId });
+};
+
+export const checkEngineNumber = (engineNo: string, vehicleId?: string) => {
+  return platformApi.post(`/api/vehicle/checkEngineNo`, { engineNo, id: vehicleId });
+};
+
+export const getVehicleColor = (vehicleId: string) => {
+  return platformApi.post(`/api/vehicle/get?color=${vehicleId}`);
+};
+
+export const getVehicleFiles = (vehicleId: string) => {
+  return platformApi.post(`/api/vehicle/get?vehicleFiles=${vehicleId}`);
+};
+
+export const getVehicleServices = (vehicleId: string) => {
+  return platformApi.post(`/api/vehicle/get?vehicleServices=${vehicleId}`);
+};
+
+export const getVehicleCustomers = (customerIds: string[]) => {
+  return platformApi.post('/api/vehicle/getCustomer', {
+    customer: customerIds
+  });
+};
+
+// Customer search API - matches web project dropdownSearch
+export const searchCustomers = (searchString: string, size: number = 50) => {
+  return platformApi.post('/api/options/get', {
+    module: "customers",
+    column: "phone",
+    searchString: searchString,
+    fields: ["contacts{phone}"],
+    size: size
+  });
+};
+
 export const deleteBookingAccessory = (accessoryId: string) => {
   return platformApi.delete(`/api/booking/accessory/${accessoryId}`);
 };

@@ -30,7 +30,9 @@ import {
     searchQuotations
 } from '../../src/api';
 import { Button } from '../../components/ui/Button';
+import { BackButton, HeaderWithBack, useBackButton, backNavigationHelpers } from '../../components/ui/BackButton';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import BookingConfirmActivityScreen from '../follow-ups/BookingConfirmActivityScreen';
 import { useToast } from '../../src/ToastContext';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -134,6 +136,23 @@ export default function CustomerDetailsScreen() {
     const navigation = useNavigation<StackNavigationProp<RootStackParamList, 'CustomerDetails'>>();
     const route = useRoute<CustomerDetailsRouteProp>();
     const toast = useToast();
+
+    // Use the custom back button hook
+    useBackButton({
+        onBackPress: () => {
+            // Check if we came from FollowUpDetail by looking at navigation state
+            const state = navigation.getState();
+            const previousRoute = state?.routes?.[state.index - 1];
+            
+            if (previousRoute?.name === 'FollowUpDetail') {
+                // Go back to FollowUpDetail
+                navigation.goBack();
+            } else {
+                // Default behavior - go to Main
+                safeNavigate('Main' as any);
+            }
+        }
+    });
 
     // Memoize customerId to prevent infinite re-renders
     const customerId = useMemo(() => route.params?.customerId, [route.params?.customerId]);
@@ -1395,10 +1414,18 @@ export default function CustomerDetailsScreen() {
         return (
             <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
                 {/* Customer ID */}
-                <View className="mb-4 mt-2">
+                {/* <View className="mb-4 mt-2">
                     <FormLabel label="Customer ID" />
                     <View className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-2.5">
                         <Text className="text-gray-600 font-medium">{displayCustomerId || 'Loading...'}</Text>
+                    </View>
+                </View> */}
+
+                <View className="mt-2 bg-white rounded-xl border border-gray-100 p-4 mb-2 w-[330px] self-center">
+
+                    <View className="flex-row">
+                        <Text className="text-gray-500 text-sm">Customer Id :  </Text>
+                        <Text className="text-gray-900 text-sm font-medium">{displayCustomerId || 'Loading...'}</Text>
                     </View>
                 </View>
 
@@ -2608,11 +2635,11 @@ export default function CustomerDetailsScreen() {
                         </View>
                         <View className="space-y-1">
                             <View className="flex-row">
-                                <Text className="text-xs text-gray-500 w-24">Chassis No:</Text>
+                                <Text className="text-xs text-gray-500 w-24 mb-2">Chassis No:</Text>
                                 <Text className="text-xs text-gray-800 font-medium">{vehicle.chassisNo || 'N/A'}</Text>
                             </View>
                             <View className="flex-row">
-                                <Text className="text-xs text-gray-500 w-24">Color:</Text>
+                                <Text className="text-xs text-gray-500 w-24 mb-2">Color:</Text>
                                 <Text className="text-xs text-gray-800 font-medium">{vehicle.color?.color || 'N/A'}</Text>
                             </View>
                             <View className="flex-row">
@@ -2622,7 +2649,16 @@ export default function CustomerDetailsScreen() {
                                 </Text>
                             </View>
                         </View>
-                        <TouchableOpacity className="mt-4 border border-teal-600 rounded-lg py-2 items-center">
+                        <TouchableOpacity
+                            className="mt-4 border border-teal-600 rounded-lg py-2 items-center"
+                            onPress={() => {
+                                if (navigation && navigation.navigate) {
+                                    navigation.navigate('VehicleDetails' as any, { vehicle });
+                                } else {
+                                    console.error('❌ Navigation not available');
+                                }
+                            }}
+                        >
                             <Text className="text-teal-600 text-xs font-bold">View Vehicle Details</Text>
                         </TouchableOpacity>
                     </View>
@@ -2642,7 +2678,13 @@ export default function CustomerDetailsScreen() {
                             onPress={() => {
                                 try {
                                     if (navigation && navigation.navigate) {
-                                        navigation.navigate('ConfirmBooking' as any, { customerId, customerName, phoneNumbers });
+                                        const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
+                                        navigation.navigate('BookingConfirmActivity' as any, { 
+                                            customerId, 
+                                            customerName, 
+                                            customerPhone,
+                                            isConfirmBooking: true 
+                                        });
                                     } else {
                                         console.error('❌ Navigation or navigate method not available');
                                     }
@@ -2658,12 +2700,18 @@ export default function CustomerDetailsScreen() {
                             onPress={() => {
                                 try {
                                     if (navigation && navigation.navigate) {
-                                        navigation.navigate('AdvancedBooking' as any, { customerId, customerName, phoneNumbers });
+                                        const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
+                                        navigation.navigate('BookingActivity' as any, {
+                                            customerId,
+                                            customerName,
+                                            customerPhone,
+                                            isAdvancedBooking: true
+                                        });
                                     } else {
                                         console.error('❌ Navigation or navigate method not available');
                                     }
                                 } catch (error) {
-                                    console.error('❌ AdvancedBooking navigation error:', error);
+                                    console.error('❌ BookingActivity navigation error:', error);
                                 }
                             }}
                         >
@@ -2929,12 +2977,10 @@ export default function CustomerDetailsScreen() {
     return (
         <SafeAreaView className="flex-1 bg-[#f5f5f5]">
             {/* Header */}
-            <View className="bg-white border-b border-gray-200 px-4 py-4 flex-row items-center">
-                <TouchableOpacity onPress={handleClose} className="mr-3">
-                    <ChevronLeft size={22} color="#333" />
-                </TouchableOpacity>
-                <Text className="text-gray-900 text-lg font-bold">Customer Details</Text>
-            </View>
+            <HeaderWithBack
+                title="Customer Details"
+                onBackPress={() => safeNavigate('Main' as any)}
+            />
 
             {/* Tabs */}
             <ScrollView

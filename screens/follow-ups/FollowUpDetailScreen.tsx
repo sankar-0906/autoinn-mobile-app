@@ -117,7 +117,7 @@ const formatDate = (dateString: string | undefined) => {
             const [day, month, year] = datePart.split('/');
             return `${day}-${month}-${year}`;
         }
-        
+
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
@@ -155,7 +155,7 @@ const formatTime = (dateString: string | undefined) => {
             const [, timePart] = dateString.split(' ');
             return timePart;
         }
-        
+
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
 
@@ -224,7 +224,7 @@ export default function FollowUpDetailScreen() {
     useEffect(() => {
         const subscription = DeviceEventEmitter.addListener('activityCreated', (event) => {
             console.log('🔍 Received activity creation event:', event);
-            
+
             if (event.activity) {
                 // Add the new activity to the existing activities list
                 setActivities(prevActivities => {
@@ -320,7 +320,6 @@ export default function FollowUpDetailScreen() {
             const filteredVehicles = purchasedVehicle.filter((vehicle: any) =>
                 quotation.every((quo: any) => new Date(vehicle.dateOfSale) < new Date(quo.createdAt))
             );
-
             setMergedPurchasedVehicle(filteredVehicles);
             setMergedQuotations(quotation);
 
@@ -361,7 +360,7 @@ export default function FollowUpDetailScreen() {
                     customerId: customerData.customerId || customerData.id || custId,
                     customerType: customerData.customerType || 'Non Customer',
                 };
-                
+
                 console.log('👤 Setting customer info:', customerInfo);
                 setCustomer(customerInfo);
             } else {
@@ -408,14 +407,14 @@ export default function FollowUpDetailScreen() {
             // Use the customerId parameter for the API call
             const result = await updateCustomer(customerId, customerData);
             const data = result.data;
-            
+
             // Check if data exists before accessing its properties
             if (!data) {
                 console.error('Update customer failed: No data in response', result);
                 toast.error("Unable to update customer - No response data");
                 return;
             }
-            
+
             if (data.code === 200) {
                 const response = data.response;
                 if (response && response.code === 200) {
@@ -450,7 +449,7 @@ export default function FollowUpDetailScreen() {
 
             console.log('🔗 Linking quotations:', quotationIds);
             console.log('👤 Customer details:', customerDetails);
-            
+
             // The actual customer data is nested inside the 'customer' object
             const actualCustomerData = customerDetails.customer || customerDetails;
             console.log('🆔 Customer ID from details:', actualCustomerData.id);
@@ -501,7 +500,7 @@ export default function FollowUpDetailScreen() {
             // Then update customer data - FIX: Pass the ID correctly
             // The first parameter should be actualCustomerData.id, not customer
             await updateCustomerData(actualCustomerData.id, cleanCustomerData);
-            
+
             // Refresh data
             await getCustomersByPhone(phoneNo);
             toast.success("Quotations attached successfully");
@@ -618,8 +617,12 @@ export default function FollowUpDetailScreen() {
                         mergedPurchasedVehicle.map((vehicle, index) => (
                             <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                 <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
-                                <Text className="text-xs text-gray-800 flex-1">{vehicle.vehicleModel || vehicle.modelName || '-'}</Text>
-                                <Text className="text-xs text-gray-700 w-20">{vehicle.registrationNumber || vehicle.regNo || '-'}</Text>
+                                <Text className="text-xs text-gray-800 flex-1">
+                                    {getVehicleNames(vehicle)?.[0] || '-'}
+                                </Text>
+                                <Text className="text-xs text-gray-700 w-20">
+                                    {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
+                                </Text>
                                 <TouchableOpacity className="w-16 items-center">
                                     <Eye size={14} color={COLORS.primary} />
                                 </TouchableOpacity>
@@ -937,26 +940,6 @@ export default function FollowUpDetailScreen() {
                     </View>
                 </View>
 
-                {mergedPurchasedVehicle.length > 0 && (
-                    <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
-                        <View className="bg-gray-100 px-3 py-3">
-                            <Text className="text-sm font-semibold text-gray-900">Purchased Vehicles</Text>
-                        </View>
-                        <View className="flex-row bg-gray-50 px-3 py-2 border-b border-gray-100">
-                            <Text className="text-xs font-semibold text-gray-600 w-24">Date of Sale</Text>
-                            <Text className="text-xs font-semibold text-gray-600 flex-1">Vehicle Model</Text>
-                            <Text className="text-xs font-semibold text-gray-600 w-20">Reg. No</Text>
-                        </View>
-                        {mergedPurchasedVehicle.map((vehicle: any, index: number) => (
-                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                                <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
-                                <Text className="text-xs text-gray-800 flex-1">{vehicle.vehicleModel || vehicle.modelName || '-'}</Text>
-                                <Text className="text-xs text-gray-700 w-20">{vehicle.registrationNumber || vehicle.regNo || '-'}</Text>
-                            </View>
-                        ))}
-                    </View>
-                )}
-
                 <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
                     <View className="gap-3">
                         <Button
@@ -1013,6 +996,48 @@ export default function FollowUpDetailScreen() {
                         />
                     </View>
                 </View>
+
+                {mergedPurchasedVehicle.length > 0 && (
+                    <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+                        <View className="bg-gray-100 px-3 py-3 flex-row items-center justify-between">
+
+                            <View className="flex-row items-center gap-2">
+                                <Car size={20} color={COLORS.primary} />
+                                <Text className="text-sm font-semibold text-gray-900">Vehicle Info</Text>
+                            </View>
+                            <View className="flex-row gap-3">
+                                <TouchableOpacity 
+                                    className="p-2 rounded-lg bg-white/80 border border-gray-300"
+                                    onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0] })}
+                                >
+                                    <Eye size={16} color={COLORS.primary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    className="p-2 rounded-lg bg-white/80 border border-gray-300"
+                                    onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0], mode: 'edit' })}
+                                >
+                                    <Edit size={16} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                        <View className="flex-row bg-gray-50 px-3 py-2 border-b border-gray-100">
+                            <Text className="text-xs font-semibold text-gray-600 flex-1">Date of Sale</Text>
+                            <Text className="text-xs font-semibold text-gray-600 flex-1">Vehicle Model</Text>
+                            <Text className="text-xs font-semibold text-gray-600 flex-1">Reg. No</Text>
+                        </View>
+                        {mergedPurchasedVehicle.map((vehicle: any, index: number) => (
+                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                <Text className="text-xs text-gray-700 flex-1">{formatDate(vehicle.dateOfSale)}</Text>
+                                <Text className="text-xs text-gray-800 flex-1">
+                                    {getVehicleNames(vehicle)?.[0] || '-'}
+                                </Text>
+                                <Text className="text-xs text-gray-700 flex-1">
+                                    {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
 
                 <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Activity</Text>
                 <View style={activities && activities.length > 2 ? { height: 750 } : null}>

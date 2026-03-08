@@ -46,10 +46,12 @@ export type RootStackParamList = {
     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     JobCardsList: undefined;
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
-    BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean };
+    BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
+    BookingConfirmActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
     WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
+    VehicleDetails: { vehicle: any; mode?: 'view' | 'edit' };
 };
 
 export type TabParamList = {
