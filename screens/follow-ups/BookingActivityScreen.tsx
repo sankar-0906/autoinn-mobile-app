@@ -168,7 +168,7 @@ export default function BookingActivityScreen({
     const nomineeRef            = useRef('');
     const nomineeAgeRef         = useRef('');
     const relationshipRef       = useRef('');
-    const referredByRef         = useRef('');
+    const referredByRef         = useRef<any>(null);
     const paymentModeRef        = useRef('cash');
     const customerDataRef       = useRef<any>(null);
     const customerFetchedRef    = useRef(false); // prevent re-fetching on focus regain
@@ -339,7 +339,7 @@ export default function BookingActivityScreen({
     const setNomineeSync          = (v: string) => { nomineeRef.current = v; setNominee(v); };
     const setNomineeAgeSync       = (v: string) => { nomineeAgeRef.current = v; setNomineeAge(v); };
     const setRelationshipSync     = (v: string) => { relationshipRef.current = v; setRelationship(v); };
-    const setReferredBySync       = (v: string) => { referredByRef.current = v; setReferredBy(v); };
+    const setReferredBySync       = (v: any) => { referredByRef.current = v; setReferredBy(v && (v.name || v.display) ? v.name || v.display : v); };
     const setPaymentModeSync      = (v: string) => { paymentModeRef.current = v; setPaymentMode(v); };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -577,14 +577,14 @@ export default function BookingActivityScreen({
                 setGeneratedCustomerId('CNB' + Math.floor(Math.random() * 100000));
             }
         } catch {
-            setGeneratedCustomerId('CNB' + Math.floor(Math.random() * 100000));
         }
     };
 
     // ─────────────────────────────────────────────────────────────────────
-    // Auto-fill — ONLY 5 fields as required:
-    // Phone, Customer Name, Locality, Quotations, Gender
-    // ─────────────────────────────────────────────────────────────────────
+    // Auto-fill — Customer fields from database:
+// Phone, Customer Name, Locality, Quotations, Gender, Father Name, Email, 
+// Address Lines, Pincode, Country, State, City, Referred By
+// ─────────────────────────────────────────────────────────────────────
     const autoFillCustomerFields = (customer: any) => {
         console.log('🔍 autoFillCustomerFields — filling fields');
         console.log('👤 Customer data structure:', JSON.stringify(customer, null, 2));
@@ -639,6 +639,81 @@ export default function BookingActivityScreen({
         if (customer.gender && (!customerGenderRef.current || customerGenderRef.current === 'Male')) {
             setCustomerGenderSync(String(customer.gender));
             console.log('✅ Gender set to:', customer.gender);
+        }
+
+        // 6. Father Name — only set if current father name is empty
+        console.log('👨 Father Name check:', { customerFatherName: customer.fatherName, currentFatherName: fatherNameRef.current });
+        if (customer.fatherName && !fatherNameRef.current) {
+            setFatherNameSync(String(customer.fatherName));
+            console.log('✅ Father Name set to:', customer.fatherName);
+        }
+
+        // 7. Email — only set if current email is empty
+        console.log('📧 Email check:', { customerEmail: customer.email, currentEmail: emailRef.current });
+        if (customer.email && !emailRef.current) {
+            setEmailSync(String(customer.email));
+            console.log('✅ Email set to:', customer.email);
+        }
+
+        // 8. Address Lines — only set if current address lines are empty
+        console.log('🏠 Address check:', { 
+            customerAddress: customer.address, 
+            currentAddr: addressRef.current,
+            currentAddr2: address2Ref.current,
+            currentAddr3: address3Ref.current
+        });
+        if (customer.address) {
+            if (customer.address.line1 && !addressRef.current) {
+                setAddressSync(String(customer.address.line1));
+                console.log('✅ Address Line 1 set to:', customer.address.line1);
+            }
+            if (customer.address.line2 && !address2Ref.current) {
+                setAddress2Sync(String(customer.address.line2));
+                console.log('✅ Address Line 2 set to:', customer.address.line2);
+            }
+            if (customer.address.line3 && !address3Ref.current) {
+                setAddress3Sync(String(customer.address.line3));
+                console.log('✅ Address Line 3 set to:', customer.address.line3);
+            }
+        }
+
+        // 9. Pincode — only set if current pincode is empty
+        console.log('📍 Pincode check:', { customerPincode: customer.address?.pincode, currentPincode: pincodeRef.current });
+        if (customer.address?.pincode && !pincodeRef.current) {
+            setPincodeSync(String(customer.address.pincode));
+            console.log('✅ Pincode set to:', customer.address.pincode);
+        }
+
+        // 10. Country — only set if current country is empty
+        console.log('🌍 Country check:', { customerCountry: customer.address?.country, currentCountry: countryRef.current });
+        if (customer.address?.country?.name && !countryRef.current) {
+            setCountrySync(String(customer.address.country.name));
+            console.log('✅ Country set to:', customer.address.country.name);
+        }
+
+        // 11. State — only set if current state is empty
+        console.log('🗺️ State check:', { customerState: customer.address?.state, currentState: stateValRef.current });
+        if (customer.address?.state?.name && !stateValRef.current) {
+            setStateValSync(String(customer.address.state.name));
+            console.log('✅ State set to:', customer.address.state.name);
+        }
+
+        // 12. City — only set if current city is empty
+        console.log('🏙️ City check:', { customerCity: customer.address?.city, currentCity: cityRef.current });
+        if (customer.address?.city?.name && !cityRef.current) {
+            setCitySync(String(customer.address.city.name));
+            console.log('✅ City set to:', customer.address.city.name);
+        }
+
+        // 13. Referred By — only set if current referred by is empty
+        console.log('👥 Referred By check:', { customerReferredBy: customer.refferedBy, currentReferredBy: referredByRef.current });
+        if (customer.refferedBy && !referredByRef.current) {
+            // Handle both object and string formats
+            const referredByData = typeof customer.refferedBy === 'object' && customer.refferedBy.id 
+                ? customer.refferedBy 
+                : { name: String(customer.refferedBy) };
+            setReferredBySync(referredByData);
+            console.log('✅ Referred By set to:', referredByData);
         }
     };
 
@@ -1101,10 +1176,6 @@ export default function BookingActivityScreen({
             customerId:         displayCustomerId,
             customerName:       currentName,
             customerFatherName: currentFather || '',
-            customerAddress: null,
-            customerLine1:      currentAddr,
-            customerLine2:      currentAddr2,
-            customerLine3:      currentAddr3,
             customerPhone:      currentPhone,
             customerGender:     currentGender,
             customerLocality:   currentLoc,
@@ -1225,7 +1296,7 @@ export default function BookingActivityScreen({
                 }
                 return currentExpDel;
             })() : null,
-            refferedBy:      currentReferred || null,
+            refferedBy:      currentReferred && currentReferred.id ? { id: currentReferred.id } : null,
             confirmBookingId: null,
         };
 
@@ -2301,7 +2372,7 @@ export default function BookingActivityScreen({
                         </View>
                         <ScrollView className="max-h-80">
                             {referredByOptions.length > 0 ? referredByOptions.map(o => (
-                                <TouchableOpacity key={o.id} onPress={() => { setReferredBySync(o.display || o.name); setShowReferredByModal(false); }} className="p-4 border-b border-gray-100">
+                                <TouchableOpacity key={o.id} onPress={() => { setReferredBySync(o); setShowReferredByModal(false); }} className="p-4 border-b border-gray-100">
                                     <Text className="text-gray-800 font-medium">{o.display || o.name}</Text>
                                 </TouchableOpacity>
                             )) : (

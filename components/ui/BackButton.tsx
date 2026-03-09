@@ -29,9 +29,20 @@ interface UseBackButtonOptions {
     cancelText?: string;
 }
 
+const useOptionalNavigation = <T extends StackNavigationProp<RootStackParamList>>() => {
+    try {
+        return useNavigation<T>();
+    } catch (error) {
+        if (__DEV__) {
+            console.warn('⚠️ Navigation context not available for BackButton/useBackButton');
+        }
+        return null;
+    }
+};
+
 // Custom hook for handling back button press
 export const useBackButton = (options: UseBackButtonOptions = {}) => {
-    const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+    const navigation = useOptionalNavigation<StackNavigationProp<RootStackParamList>>();
     const {
         onBackPress,
         showConfirmation = false,
@@ -42,6 +53,8 @@ export const useBackButton = (options: UseBackButtonOptions = {}) => {
     } = options;
 
     const handleBackPress = useCallback(() => {
+        if (!navigation) return false;
+
         if (showConfirmation && onBackPress) {
             Alert.alert(
                 confirmationTitle,
@@ -81,10 +94,11 @@ export const useBackButton = (options: UseBackButtonOptions = {}) => {
 
     // Handle Android hardware back button
     useEffect(() => {
+        if (!navigation) return;
         const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
 
         return () => backHandler.remove();
-    }, [handleBackPress]);
+    }, [handleBackPress, navigation]);
 
     return handleBackPress;
 };
@@ -102,7 +116,7 @@ export const BackButton: React.FC<BackButtonProps> = ({
     className = 'mr-3',
     disabled = false
 }) => {
-    const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+    const navigation = useOptionalNavigation<StackNavigationProp<RootStackParamList>>();
 
     const handlePress = useCallback(() => {
         if (disabled) return;
@@ -111,6 +125,8 @@ export const BackButton: React.FC<BackButtonProps> = ({
             onPress();
             return;
         }
+
+        if (!navigation) return;
 
         if (showConfirmation) {
             Alert.alert(

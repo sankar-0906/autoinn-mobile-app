@@ -601,7 +601,9 @@ export default function FollowUpDetailScreen() {
 
         if (customerTab === 'associated-vehicles') {
             return (
-                <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <View>
+                    <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Vehicle Info</Text>
+                    <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                     <View className="bg-gray-100 px-3 py-3 flex-row">
                         <Text className="text-xs font-semibold text-gray-700 w-24">Date of Sale</Text>
                         <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle Model</Text>
@@ -628,6 +630,7 @@ export default function FollowUpDetailScreen() {
                             <Text className="text-sm text-gray-500">No purchased vehicles found</Text>
                         </View>
                     )}
+                </View>
                 </View>
             );
         }
