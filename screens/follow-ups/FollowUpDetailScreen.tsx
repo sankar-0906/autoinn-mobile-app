@@ -339,16 +339,8 @@ export default function FollowUpDetailScreen() {
 
     const getCustomerInfo = async (custId: string) => {
         try {
-            console.log('🔍 getCustomerInfo called with custId:', custId);
             const customerRes = await getCustomerDetails(custId);
             const customerData = customerRes.data?.response?.data;
-
-            console.log('📄 Customer data received:', {
-                hasData: !!customerData,
-                customerId: customerData?.customerId,
-                id: customerData?.id,
-                name: customerData?.name
-            });
 
             if (customerData) {
                 setCustomerDetails(customerData);
@@ -359,9 +351,12 @@ export default function FollowUpDetailScreen() {
                     name: customerData.name || 'Unknown',
                     customerId: customerData.customerId || customerData.id || custId,
                     customerType: customerData.customerType || 'Non Customer',
+                    gender: customerData.gender,
+                    location: customerData.billingAddress?.locality || customerData.address?.locality || customerData.locality,
+                    locality: customerData.billingAddress?.locality || customerData.address?.locality || customerData.locality,
+                    address: customerData.billingAddress || customerData.address
                 };
 
-                console.log('👤 Setting customer info:', customerInfo);
                 setCustomer(customerInfo);
             } else {
                 // Fallback when no customer data is available

@@ -1,28 +1,3 @@
-// export type RootStackParamList = {
-//     Login: undefined;
-//     Main: undefined;
-//     QuotationDetails: { id: string };
-//     QuotationForm: { id: string; selectedVehicle?: any; paymentDetails?: any; viewMode?: boolean };
-//     QuotationView: { id: string };
-//     FollowUpQuotationForm: { customerName: string; customerPhone: string; locality: string; customerType: string; gender?: string };
-//     SelectModel: { returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; viewVehicleData?: any; paymentDetails?: any } | undefined;
-//     SelectPrice: { vehicleId: string; vehicleData?: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
-//     SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'FollowUpQuotationForm' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
-//     AddQuotation: { selectedVehicle?: any; customerId?: string; customerName?: string; phoneNumbers?: any[] };
-//     AdvancedFilters: undefined;
-//     FollowUpFilters: undefined;
-//     FollowUpDetail: { id: string };
-//     CustomerDetails: { customerId?: string };
-//     CustomerEdit: { customerId?: string; customerName?: string };
-//     ConfirmBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
-//     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
-//     JobCardsList: undefined;
-//     BookingRegister: undefined;
-//     BookingActivity: { customerName?: string; customerId?: string; customerPhone?: string };
-//     WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string };
-//     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string };
-//     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
-// };
 
 
 export type RootStackParamList = {

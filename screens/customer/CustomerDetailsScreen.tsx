@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { unstable_batchedUpdates } from 'react-native';
 import {
     ScrollView,
     Text,
@@ -18,6 +19,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { COLORS } from '../../constants/colors';
+import { Calendar as RNCalendar } from 'react-native-calendars';
+import moment from 'moment';
 import {
     getCustomerById,
     getCustomerDetails,
@@ -27,7 +30,8 @@ import {
     verifyGST,
     getCustomerQuotations,
     getQuotationByCustomerId,
-    searchQuotations
+    searchQuotations,
+    updateCustomer
 } from '../../src/api';
 import { Button } from '../../components/ui/Button';
 import { BackButton, HeaderWithBack, useBackButton, backNavigationHelpers } from '../../components/ui/BackButton';
@@ -132,30 +136,144 @@ const CUSTOMER_TABS = [
     { id: 'payments', label: 'Payments' },
 ] as const;
 
-export default function CustomerDetailsScreen() {
+function CustomerDetailsScreenComponent() {
     const navigation = useNavigation<StackNavigationProp<RootStackParamList, 'CustomerDetails'>>();
     const route = useRoute<CustomerDetailsRouteProp>();
     const toast = useToast();
+    
+    // Create a ref to persist navigation across re-renders
+    const navigationRef = useRef(navigation);
+    navigationRef.current = navigation;
+    
+    // Add mount guard to prevent stale instance navigation
+    const isMounted = useRef(true);
 
-    // Use the custom back button hook
-    useBackButton({
-        onBackPress: () => {
-            // Check if we came from FollowUpDetail by looking at navigation state
-            const state = navigation.getState();
-            const previousRoute = state?.routes?.[state.index - 1];
-            
-            if (previousRoute?.name === 'FollowUpDetail') {
-                // Go back to FollowUpDetail
-                navigation.goBack();
-            } else {
-                // Default behavior - go to Main
-                safeNavigate('Main' as any);
-            }
-        }
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { 
+            isMounted.current = false; 
+            console.log('💀 CustomerDetailsScreen - Component unmounting:', {
+                customerId: route.params?.customerId,
+                timestamp: new Date().toISOString()
+            });
+        };
+    }, [route.params?.customerId]);
+
+    // Debug navigation context at component initialization
+    console.log('🚀 CustomerDetailsScreen - Component initialization:', {
+        hasNavigation: !!navigation,
+        hasNavigate: !!(navigation && navigation.navigate),
+        navigationType: typeof navigation,
+        navigationMethods: navigation ? Object.keys(navigation) : [],
+        routeParams: route.params,
+        customerId: route.params?.customerId,
+        timestamp: new Date().toISOString()
     });
 
     // Memoize customerId to prevent infinite re-renders
     const customerId = useMemo(() => route.params?.customerId, [route.params?.customerId]);
+
+    // Define safeNavigate BEFORE useBackButton hook - Fix 2
+    const safeNavigate = useCallback((screen: keyof RootStackParamList, params?: any) => {
+        // Prevent stale instance navigation - Fix 1
+        if (!isMounted.current) {
+            console.log('🚫 safeNavigate blocked - component unmounted');
+            return;
+        }
+        
+        const currentNavigation = navigationRef.current;
+        
+        console.log('🧭 safeNavigate called:', {
+            screen,
+            params,
+            hasNavigation: !!currentNavigation,
+            hasNavigate: !!(currentNavigation && currentNavigation.navigate),
+            navigationType: typeof currentNavigation,
+            stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
+        });
+
+        try {
+            if (!currentNavigation) {
+                console.error('❌ Navigation context not available');
+                return;
+            }
+            console.log('🧭 Attempting navigation to:', screen, params);
+            currentNavigation.navigate(screen, params);
+        } catch (error) {
+            console.error('❌ Navigation error:', error);
+            console.error('❌ Error details:', {
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : 'No stack trace'
+            });
+            
+            // If it's a navigation context error, wait and retry
+            if (error instanceof Error && error.message.includes('navigation context')) {
+                console.log('⏳ Navigation context error detected, waiting 100ms to retry...');
+                setTimeout(() => {
+                    // Check if still mounted before retry
+                    if (!isMounted.current) {
+                        console.log('🚫 Retry blocked - component unmounted');
+                        return;
+                    }
+                    try {
+                        const retryNavigation = navigationRef.current;
+                        if (retryNavigation && retryNavigation.navigate) {
+                            console.log('🔄 Retrying navigation after delay');
+                            retryNavigation.navigate(screen, params);
+                        }
+                    } catch (retryError) {
+                        console.error('❌ Retry navigation failed:', retryError);
+                    }
+                }, 100);
+                return;
+            }
+            
+            // Try direct navigation as fallback
+            try {
+                if (currentNavigation) {
+                    console.log('🔄 Trying fallback navigation');
+                    currentNavigation.navigate(screen, params);
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback navigation also failed:', fallbackError);
+            }
+        }
+    }, []); // Remove navigation from dependencies since we use ref
+
+    // Determine the back navigation target based on how we got here
+    const getBackNavigationTarget = () => {
+        // Check if we came from FollowUpDetail by looking at navigation state
+        const state = navigation.getState();
+        const previousRoute = state?.routes?.[state.index - 1];
+        
+        if (previousRoute?.name === 'FollowUpDetail') {
+            // Go back to FollowUpDetail using goBack() to preserve the exact state
+            return { screen: 'FollowUpDetail' as const, useGoBack: true };
+        } else if (previousRoute?.name === 'FollowUps') {
+            // Go back to FollowUps using goBack()
+            return { screen: 'FollowUps' as const, useGoBack: true };
+        } else if (previousRoute?.name === 'Main') {
+            // Go back to Main using goBack()
+            return { screen: 'Main' as const, useGoBack: true };
+        } else {
+            // Default behavior - go to Main
+            return { screen: 'Main' as const, useGoBack: false };
+        }
+    };
+
+    // Use the custom back button hook after safeNavigate is defined
+    useBackButton({
+        onBackPress: () => {
+            const target = getBackNavigationTarget();
+            console.log(`🔍 Closing CustomerDetails, navigating to ${target.screen}`);
+            
+            if (target.useGoBack) {
+                navigation.goBack();
+            } else {
+                safeNavigate(target.screen as any);
+            }
+        },
+    });
 
     // Guard for missing customerId
     if (!customerId) {
@@ -184,28 +302,7 @@ export default function CustomerDetailsScreen() {
         );
     }
 
-    // Safe navigation helper
-    const safeNavigate = useCallback((screen: keyof RootStackParamList, params?: any) => {
-        try {
-            if (!navigation) {
-                console.error('❌ Navigation context not available');
-                return;
-            }
-            console.log('🧭 Navigating to:', screen, params);
-            navigation.navigate(screen, params);
-        } catch (error) {
-            console.error('❌ Navigation error:', error);
-            // Try direct navigation as fallback
-            try {
-                if (navigation) {
-                    navigation.navigate(screen, params);
-                }
-            } catch (fallbackError) {
-                console.error('❌ Fallback navigation also failed:', fallbackError);
-            }
-        }
-    }, [navigation]);
-
+    
     const [activeTab, setActiveTab] = useState('customer-details');
     const [loading, setLoading] = useState(true);
     const [loadingQuotations, setLoadingQuotations] = useState(false);
@@ -226,6 +323,7 @@ export default function CustomerDetailsScreen() {
     // Call Activity states
     const [showFollowUpDatePicker, setShowFollowUpDatePicker] = useState(false);
     const [showDobDatePicker, setShowDobDatePicker] = useState(false);
+    const [showDobCalendarModal, setShowDobCalendarModal] = useState(false);
     const [followUpDate, setFollowUpDate] = useState('');
     const [followUpTime, setFollowUpTime] = useState('');
     const [followUpDateError, setFollowUpDateError] = useState('');
@@ -257,6 +355,7 @@ export default function CustomerDetailsScreen() {
     const [checkAll, setCheckAll] = useState(true);
     const [checkName, setCheckName] = useState(true);
     const [isGstRequired, setIsGstRequired] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Dropdown data state
     const [countries, setCountries] = useState<Array<{ id: string; name: string }>>([]);
@@ -369,6 +468,13 @@ export default function CustomerDetailsScreen() {
 
     // Phone number editing states
     const [editingPhoneIndex, setEditingPhoneIndex] = useState<number | null>(null);
+    const [showEditPhoneModal, setShowEditPhoneModal] = useState(false);
+    const [editPhoneData, setEditPhoneData] = useState({
+        number: '',
+        type: 'Alternate',
+        whatsApp: 'No',
+        dnd: 'No'
+    });
     const [showPhoneTypeDropdown, setShowPhoneTypeDropdown] = useState(false);
     const [showWhatsAppDropdown, setShowWhatsAppDropdown] = useState(false);
     const [showDNDDropdown, setShowDNDDropdown] = useState(false);
@@ -388,17 +494,21 @@ export default function CustomerDetailsScreen() {
 
     // Phone number editing handlers
     const handleEditPhone = (index: number) => {
+        const phone = phoneNumbers[index];
+        setEditPhoneData({
+            number: phone?.number || '',
+            type: phone?.type || 'Alternate',
+            whatsApp: phone?.whatsApp || 'No',
+            dnd: phone?.dnd || 'No'
+        });
         setEditingPhoneIndex(index);
-        setShowPhoneTypeDropdown(false);
-        setShowWhatsAppDropdown(false);
-        setShowDNDDropdown(false);
+        setShowEditPhoneModal(true);
     };
 
     const handlePhoneTypeChange = (index: number | null, type: any) => {
         if (index !== null) {
-            const updatedPhones = [...phoneNumbers];
-            updatedPhones[index].type = type;
-            setPhoneNumbers(updatedPhones);
+            // Update edit modal data
+            setEditPhoneData(prev => ({ ...prev, type }));
         } else {
             setNewPhoneType(type);
         }
@@ -407,9 +517,8 @@ export default function CustomerDetailsScreen() {
 
     const handleWhatsAppChange = (index: number | null, whatsApp: any) => {
         if (index !== null) {
-            const updatedPhones = [...phoneNumbers];
-            updatedPhones[index].whatsApp = whatsApp;
-            setPhoneNumbers(updatedPhones);
+            // Update edit modal data
+            setEditPhoneData(prev => ({ ...prev, whatsApp }));
         } else {
             setNewWhatsApp(whatsApp);
         }
@@ -418,13 +527,36 @@ export default function CustomerDetailsScreen() {
 
     const handleDNDChange = (index: number | null, dnd: any) => {
         if (index !== null) {
-            const updatedPhones = [...phoneNumbers];
-            updatedPhones[index].dnd = dnd;
-            setPhoneNumbers(updatedPhones);
+            // Update edit modal data
+            setEditPhoneData(prev => ({ ...prev, dnd }));
         } else {
             setNewDND(dnd);
         }
         setShowDNDDropdown(false);
+    };
+
+    const handleSavePhoneEdit = () => {
+        if (editingPhoneIndex !== null) {
+            const updatedPhones = [...phoneNumbers];
+            updatedPhones[editingPhoneIndex] = {
+                ...updatedPhones[editingPhoneIndex],
+                ...editPhoneData
+            };
+            setPhoneNumbers(updatedPhones);
+            setShowEditPhoneModal(false);
+            setEditingPhoneIndex(null);
+        }
+    };
+
+    const handleCancelPhoneEdit = () => {
+        setShowEditPhoneModal(false);
+        setEditingPhoneIndex(null);
+        setEditPhoneData({
+            number: '',
+            type: 'Alternate',
+            whatsApp: 'No',
+            dnd: 'No'
+        });
     };
 
     const handleDeletePhone = (index: number) => {
@@ -511,12 +643,14 @@ export default function CustomerDetailsScreen() {
 
             if (Array.isArray(quotationsData) && quotationsData.length > 0) {
                 console.log('✅ Strategy 1 succeeded - Found', quotationsData.length, 'quotations');
+                if (!isMounted.current) return;
                 setQuotations(quotationsData);
                 setLoadingQuotations(false);
                 return;
             } else if (Array.isArray(quotationsData) && quotationsData.length === 0) {
                 console.log('⚠️ Strategy 1 returned empty array - Customer has no quotations');
                 // Set empty array but don't try other strategies
+                if (!isMounted.current) return;
                 setQuotations([]);
                 setLoadingQuotations(false);
                 return;
@@ -534,6 +668,7 @@ export default function CustomerDetailsScreen() {
 
             if (Array.isArray(quotationsData) && quotationsData.length > 0) {
                 console.log('✅ Strategy 2 succeeded - Found', quotationsData.length, 'quotations');
+                if (!isMounted.current) return;
                 setQuotations(quotationsData);
                 setLoadingQuotations(false);
                 return;
@@ -557,6 +692,7 @@ export default function CustomerDetailsScreen() {
 
             if (Array.isArray(quotationsData) && quotationsData.length > 0) {
                 console.log('✅ Strategy 3 succeeded - Found', quotationsData.length, 'quotations');
+                if (!isMounted.current) return;
                 setQuotations(quotationsData);
                 setLoadingQuotations(false);
                 return;
@@ -568,6 +704,7 @@ export default function CustomerDetailsScreen() {
                 const masterQuotations = Array.isArray(customer.quotations) ? customer.quotations : [customer.quotations];
                 if (masterQuotations.length > 0) {
                     console.log('✅ Strategy 4 succeeded - Found', masterQuotations.length, 'quotations from master');
+                    if (!isMounted.current) return;
                     setQuotations(masterQuotations);
                     setLoadingQuotations(false);
                     return;
@@ -575,6 +712,7 @@ export default function CustomerDetailsScreen() {
             }
 
             console.log('⚠️ All strategies failed - No quotations found');
+            if (!isMounted.current) return;
             setQuotations([]);
 
         } catch (error) {
@@ -586,8 +724,10 @@ export default function CustomerDetailsScreen() {
                     data: error.response.data
                 });
             }
+            if (!isMounted.current) return;
             setQuotations([]);
         } finally {
+            if (!isMounted.current) return;
             setLoadingQuotations(false);
         }
     };
@@ -624,85 +764,95 @@ export default function CustomerDetailsScreen() {
                 masterCustomer = customerResponse.data?.response?.data || customerResponse.data?.data || customerResponse.data;
             }
 
-            setCustomerDetails(detailsData);
-            setCustomer(masterCustomer);
+            // Fix 3: Batch state updates to reduce re-renders
+            if (!isMounted.current) return;
+            unstable_batchedUpdates(() => {
+                setCustomerDetails(detailsData);
+                setCustomer(masterCustomer);
 
-            // Set associated arrays from the correct source
-            setAssociatedVehicles(masterCustomer?.purchasedVehicle || []);
-            setBookings(masterCustomer?.booking || []);
+                // Set associated arrays from the correct source
+                setAssociatedVehicles(masterCustomer?.purchasedVehicle || []);
+                setBookings(masterCustomer?.booking || []);
+                setJobOrders(detailsData?.jobOrders || masterCustomer?.jobOrders || []);
+                setSpareOrders(detailsData?.spareOrders || masterCustomer?.spareOrders || []);
+                setCallHistory(detailsData?.telecmiCallHistory || detailsData?.callHistory || masterCustomer?.callHistory || []);
+                setNumberPlates(detailsData?.numberPlates || masterCustomer?.numberPlates || []);
+                setPayments(masterCustomer?.payments || []);
+            });
 
-            // Fetch quotations separately
+            // Fetch quotations separately (async, outside batch)
             const uuid = masterCustomer?.id || customerId;
             console.log('🆔 UUID for quotations fetch:', uuid);
             await fetchQuotations(uuid);
 
-            setJobOrders(detailsData?.jobOrders || masterCustomer?.jobOrders || []);
-            setSpareOrders(detailsData?.spareOrders || masterCustomer?.spareOrders || []);
-            setCallHistory(detailsData?.telecmiCallHistory || detailsData?.callHistory || masterCustomer?.callHistory || []);
-            setNumberPlates(detailsData?.numberPlates || masterCustomer?.numberPlates || []);
-            setPayments(masterCustomer?.payments || []);
-
-            // Set form data from fetched customer data
+            // Fix 3: Batch form data updates to reduce re-renders
             if (masterCustomer) {
-                console.log('Setting form data for customer:', masterCustomer.name);
-                setCustomerType(masterCustomer.customerType || 'Non-Customer');
-                setSalutation(masterCustomer.salutation || '');
-                setCustomerName(masterCustomer.name || masterCustomer.customerName || '');
-                setFatherName(masterCustomer.fatherName || '');
-                setGender(masterCustomer.gender || 'Male');
-                setDob(masterCustomer.dob || masterCustomer.dateOfBirth || '');
-                setEmail(masterCustomer.email || '');
-                setGstTypeValue(masterCustomer.gstType || masterCustomer.GSTType || 'Unregistered');
-                setGstin(masterCustomer.gstin || masterCustomer.GSTNo || '');
-                setCustomerGrouping(masterCustomer.customerGrouping || '');
-                setDisplayCustomerId(masterCustomer.customerId || masterCustomer.customer_id || masterCustomer.id || '');
-
-                // Set phone numbers
+                console.log('📋 Setting form data for customer:', masterCustomer.name);
+                console.log('📊 Master customer data:', JSON.stringify(masterCustomer, null, 2));
+                
+                // Prepare phone numbers
+                let phoneNumbersData: any[] = [];
                 if (masterCustomer.contacts && Array.isArray(masterCustomer.contacts)) {
-                    setPhoneNumbers(masterCustomer.contacts.map((c: any) => ({
+                    phoneNumbersData = masterCustomer.contacts.map((c: any) => ({
                         number: c.phone || c.number || 'N/A',
                         type: c.type || 'Alternate',
                         validity: c.valid ? 'Valid' : 'Invalid',
                         whatsApp: c.WhatsApp ? 'Yes' : 'No',
                         dnd: c.DND ? 'Yes' : 'No'
-                    })));
+                    }));
                 } else if (masterCustomer.phoneNumbers && Array.isArray(masterCustomer.phoneNumbers)) {
-                    setPhoneNumbers(masterCustomer.phoneNumbers.map((phone: any) => ({
+                    phoneNumbersData = masterCustomer.phoneNumbers.map((phone: any) => ({
                         number: phone?.number || phone?.phone || 'N/A',
                         type: phone?.type || 'Alternate',
                         validity: phone?.validity || 'Valid',
                         whatsApp: phone?.whatsApp || phone?.WhatsApp ? 'Yes' : 'No',
                         dnd: phone?.dnd || phone?.DND ? 'Yes' : 'No'
-                    })));
-                } else {
-                    setPhoneNumbers([]);
+                    }));
                 }
 
-                // Set billing address
+                // Prepare addresses
                 const bAddr = masterCustomer.address || masterCustomer.billingAddress;
-                if (bAddr) {
-                    setBillingAddress1(bAddr.line1 || bAddr.addressLine1 || '');
-                    setBillingAddress2(bAddr.line2 || bAddr.addressLine2 || '');
-                    setBillingAddress3(bAddr.line3 || bAddr.addressLine3 || '');
-                    setBillingLocality(bAddr.locality || '');
-                    setBillingCountryId(bAddr.country?.id || bAddr.country || '');
-                    setBillingStateId(bAddr.state?.id || bAddr.state || '');
-                    setBillingDistrictId(bAddr.district?.id || bAddr.city || '');
-                    setBillingPincode(bAddr.pincode || '');
-                }
-
-                // Set shipping address
                 const sAddr = masterCustomer.shippingAddress;
-                if (sAddr) {
-                    setShippingAddress1(sAddr.line1 || sAddr.addressLine1 || sAddr.shippingline1 || '');
-                    setShippingAddress2(sAddr.line2 || sAddr.addressLine2 || sAddr.shippingline2 || '');
-                    setShippingAddress3(sAddr.line3 || sAddr.addressLine3 || sAddr.shippingline3 || '');
-                    setShippingLocality(sAddr.locality || sAddr.shippinglocality || '');
-                    setShippingCountryId(sAddr.country?.id || sAddr.country || sAddr.shippingcountry || '');
-                    setShippingStateId(sAddr.state?.id || sAddr.state || sAddr.shippingstate || '');
-                    setShippingDistrictId(sAddr.district?.id || sAddr.shippingdistrict || sAddr.city || '');
-                    setShippingPincode(sAddr.pincode || sAddr.shippingpincode || '');
-                }
+
+                if (!isMounted.current) return;
+                unstable_batchedUpdates(() => {
+                    setCustomerType(masterCustomer.customerType || 'Non-Customer');
+                    setSalutation(masterCustomer.salutation || '');
+                    setCustomerName(masterCustomer.name || masterCustomer.customerName || '');
+                    setFatherName(masterCustomer.fatherName || '');
+                    setGender(masterCustomer.gender || 'Male');
+                    setDob(masterCustomer.dob || masterCustomer.dateOfBirth || '');
+                    setEmail(masterCustomer.email || '');
+                    setGstTypeValue(masterCustomer.gstType || masterCustomer.GSTType || 'Unregistered');
+                    setGstin(masterCustomer.gstin || masterCustomer.GSTNo || '');
+                    setCustomerGrouping(masterCustomer.customerGrouping || '');
+                    setDisplayCustomerId(masterCustomer.customerId || masterCustomer.customer_id || masterCustomer.id || '');
+                    setPhoneNumbers(phoneNumbersData);
+
+                    // Set billing address
+                    if (bAddr) {
+                        setBillingAddress1(bAddr.line1 || bAddr.addressLine1 || '');
+                        setBillingAddress2(bAddr.line2 || bAddr.addressLine2 || '');
+                        setBillingAddress3(bAddr.line3 || bAddr.addressLine3 || '');
+                        setBillingLocality(bAddr.locality || '');
+                        setBillingCountryId(bAddr.country?.id || bAddr.country || '');
+                        setBillingStateId(bAddr.state?.id || bAddr.state || '');
+                        setBillingDistrictId(bAddr.district?.id || bAddr.city || '');
+                        setBillingPincode(bAddr.pincode || '');
+                    }
+
+                    // Set shipping address
+                    if (sAddr) {
+                        setShippingAddress1(sAddr.line1 || sAddr.addressLine1 || sAddr.shippingline1 || '');
+                        setShippingAddress2(sAddr.line2 || sAddr.addressLine2 || sAddr.shippingline2 || '');
+                        setShippingAddress3(sAddr.line3 || sAddr.addressLine3 || sAddr.shippingline3 || '');
+                        setShippingLocality(sAddr.locality || sAddr.shippinglocality || '');
+                        setShippingCountryId(sAddr.country?.id || sAddr.country || sAddr.shippingcountry || '');
+                        setShippingStateId(sAddr.state?.id || sAddr.state || sAddr.shippingstate || '');
+                        setShippingDistrictId(sAddr.district?.id || sAddr.shippingdistrict || sAddr.city || '');
+                        setShippingPincode(sAddr.pincode || sAddr.shippingpincode || '');
+                    }
+                });
             }
 
         } catch (error) {
@@ -1150,7 +1300,14 @@ export default function CustomerDetailsScreen() {
     };
 
     const handleClose = () => {
-        safeNavigate('Main' as any);
+        const target = getBackNavigationTarget();
+        console.log(`🔍 Closing CustomerDetails, navigating to ${target.screen}`);
+        
+        if (target.useGoBack) {
+            navigation.goBack();
+        } else {
+            safeNavigate(target.screen as any);
+        }
     };
 
     const handleAddContact = () => {
@@ -1182,6 +1339,7 @@ export default function CustomerDetailsScreen() {
                 const indiaOnly = (data.data || []).filter((c: any) =>
                     c.name.toLowerCase() === 'india' || c.id === 'India'
                 );
+                if (!isMounted.current) return;
                 setCountries(indiaOnly);
                 if (indiaOnly.length > 0 && !billingCountryId) {
                     setBillingCountryId(indiaOnly[0].id);
@@ -1192,6 +1350,7 @@ export default function CustomerDetailsScreen() {
         } catch (error) {
             console.error('Error fetching countries:', error);
         } finally {
+            if (!isMounted.current) return;
             setLoadingCountries(false);
         }
     };
@@ -1202,12 +1361,14 @@ export default function CustomerDetailsScreen() {
             const response = await getStates(countryId);
             const data = response?.data;
             if (data?.code === 200) {
+                if (!isMounted.current) return;
                 setStates(data.data || []);
                 setDistricts([]);
             }
         } catch (error) {
             console.error('Error fetching states:', error);
         } finally {
+            if (!isMounted.current) return;
             setLoadingStates(false);
         }
     };
@@ -1218,11 +1379,13 @@ export default function CustomerDetailsScreen() {
             const response = await getCities(stateId);
             const data = response?.data;
             if (data?.code === 200) {
+                if (!isMounted.current) return;
                 setDistricts(data.data || []);
             }
         } catch (error) {
             console.error('Error fetching districts:', error);
         } finally {
+            if (!isMounted.current) return;
             setLoadingDistricts(false);
         }
     };
@@ -1310,7 +1473,7 @@ export default function CustomerDetailsScreen() {
         }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         // Save logic here
         // Validate all required fields before saving
         const validationErrors: Record<string, string> = {};
@@ -1370,13 +1533,80 @@ export default function CustomerDetailsScreen() {
 
         if (Object.keys(validationErrors).length > 0) {
             setErrors(validationErrors);
-            toast.error('Please fix the errors before saving.');
+            toast.error('Fill the mandatory fields');
             return;
         }
 
         // If validation passes, save the data
-        toast.success('Customer details saved successfully!');
-        safeNavigate('Main' as any);
+        setIsSaving(true);
+        try {
+            const customerData = {
+                name: customerName,
+                fatherName: fatherName,
+                gender: gender,
+                dob: dob,
+                email: email,
+                gstType: gstTypeValue,
+                gstin: gstin,
+                customerType: customerType,
+                customerGrouping: customerGrouping,
+                salutation: salutation,
+                contacts: phoneNumbers,
+                billingAddress: {
+                    line1: billingAddress1,
+                    line2: billingAddress2,
+                    line3: billingAddress3,
+                    locality: billingLocality,
+                    country: billingCountryId,
+                    state: billingStateId,
+                    city: billingDistrictId,
+                    pincode: billingPincode
+                },
+                shippingAddress: sameAsBilling ? {
+                    line1: billingAddress1,
+                    line2: billingAddress2,
+                    line3: billingAddress3,
+                    locality: billingLocality,
+                    country: billingCountryId,
+                    state: billingStateId,
+                    city: billingDistrictId,
+                    pincode: billingPincode
+                } : {
+                    line1: shippingAddress1,
+                    line2: shippingAddress2,
+                    line3: shippingAddress3,
+                    locality: shippingLocality,
+                    country: shippingCountryId,
+                    state: shippingStateId,
+                    city: shippingDistrictId,
+                    pincode: shippingPincode
+                }
+            };
+
+            console.log('🔍 Saving customer data:', JSON.stringify(customerData, null, 2));
+            console.log('🆔 Customer ID being updated:', customerId);
+
+            if (customerId) {
+                // Update existing customer
+                const response = await updateCustomer(customerId, customerData);
+                console.log('✅ Update customer response:', response);
+                
+                // Refresh the customer data after successful update
+                await fetchCustomerData();
+                
+                toast.success('Customer details updated successfully!');
+            } else {
+                // Create new customer (if needed)
+                toast.success('Customer details saved successfully!');
+            }
+            
+            safeNavigate('Main' as any);
+        } catch (error) {
+            console.error('❌ Error saving customer:', error);
+            toast.error('Failed to save customer details. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleFollowUpDateChange = (event: any, selectedDate?: Date) => {
@@ -1402,7 +1632,23 @@ export default function CustomerDetailsScreen() {
         }
     };
 
+    const handleDobDateSelect = (day: any) => {
+        const date = new Date(day.dateString);
+        const formattedDate = moment(date).format('DD/MM/YYYY');
+        setDob(formattedDate);
+        setShowDobCalendarModal(false);
+    };
+
     const renderCustomerDetailsTab = () => {
+        // Debug navigation context
+        console.log('🔍 renderCustomerDetailsTab - Navigation context check:', {
+            hasNavigation: !!navigation,
+            hasNavigate: !!(navigation && navigation.navigate),
+            navigationType: typeof navigation,
+            customerId: customerId,
+            loading: loading
+        });
+
         if (loading) {
             return (
                 <View className="flex-1 bg-[#f5f5f5] items-center justify-center">
@@ -1526,14 +1772,21 @@ export default function CustomerDetailsScreen() {
 
                     {/* DOB */}
                     <View className="mb-3">
-                        <FormLabel label="Date of Birth" />
-                        <TouchableOpacity
-                            onPress={() => setShowDobDatePicker(true)}
-                            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 flex-row items-center justify-between"
-                        >
-                            <Text className="text-gray-900">{dob}</Text>
-                            <Calendar size={18} color="#666" />
-                        </TouchableOpacity>
+                        <FormLabel label="Date of Birth" required/>
+                        <View className="flex-row items-center">
+                            <TextInput
+                                value={dob}
+                                onChangeText={setDob}
+                                placeholder="DD/MM/YYYY"
+                                className="flex-1 h-12 bg-white border border-gray-300 rounded-l-lg px-3 text-gray-800"
+                             />
+                            <TouchableOpacity
+                                onPress={() => setShowDobCalendarModal(true)}
+                                className="h-12 bg-teal-600 rounded-r-lg px-4 justify-center"
+                            >
+                                <Calendar size={20} color="white" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     {/* Phone Numbers Table */}
@@ -1544,25 +1797,22 @@ export default function CustomerDetailsScreen() {
                         </View>
                         <View className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                <View className="min-w-[650px]">
+                                <View className="min-w-[500px]">
                                     {/* Table Header */}
                                     <View className="bg-gray-200 flex-row border-b border-gray-300">
-                                        <View className="w-[150px] px-4 py-3">
-                                            <Text className="text-gray-700 text-[11px] font-bold">Phone Number</Text>
+                                        <View className="w-[120px] px-3 py-3">
+                                            <Text className="text-gray-700 text-[11px] font-bold">Phone</Text>
                                         </View>
-                                        <View className="w-[100px] px-4 py-3">
+                                        <View className="w-[80px] px-3 py-3">
                                             <Text className="text-gray-700 text-[11px] font-bold">Type</Text>
                                         </View>
-                                        <View className="w-[100px] px-4 py-3">
-                                            <Text className="text-gray-700 text-[11px] font-bold">Validity</Text>
-                                        </View>
-                                        <View className="w-[100px] px-4 py-3">
+                                        <View className="w-[80px] px-3 py-3">
                                             <Text className="text-gray-700 text-[11px] font-bold">WhatsApp</Text>
                                         </View>
-                                        <View className="w-[100px] px-4 py-3">
+                                        <View className="w-[80px] px-3 py-3">
                                             <Text className="text-gray-700 text-[11px] font-bold">DND</Text>
                                         </View>
-                                        <View className="w-[100px] px-4 py-3">
+                                        <View className="w-[80px] px-3 py-3">
                                             <Text className="text-gray-700 text-[11px] font-bold text-center">Action</Text>
                                         </View>
                                     </View>
@@ -1577,30 +1827,26 @@ export default function CustomerDetailsScreen() {
                                             key={index}
                                             className={`flex-row border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-[#fafafa]'}`}
                                         >
-                                            <View className="w-[150px] px-4 py-3 flex-row items-center">
+                                            <View className="w-[120px] px-3 py-3 flex-row items-center">
                                                 <Text className="text-gray-600 text-xs font-medium">{phone?.number || 'N/A'}</Text>
                                             </View>
 
                                             {/* Phone Type - Plain Text */}
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center">
+                                            <View className="w-[80px] px-3 py-3 flex-row items-center">
                                                 <Text className="text-gray-600 text-xs">{phone?.type || 'Alternate'}</Text>
                                             </View>
 
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center">
-                                                <Text className="text-gray-600 text-xs">{phone?.validity || 'Valid'}</Text>
-                                            </View>
-
                                             {/* WhatsApp - Plain Text */}
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center">
+                                            <View className="w-[80px] px-3 py-3 flex-row items-center">
                                                 <Text className="text-gray-600 text-xs">{phone?.whatsApp || 'No'}</Text>
                                             </View>
 
                                             {/* DND - Plain Text */}
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center">
+                                            <View className="w-[80px] px-3 py-3 flex-row items-center">
                                                 <Text className="text-gray-600 text-xs">{phone?.dnd || 'No'}</Text>
                                             </View>
 
-                                            <View className="w-[100px] px-4 py-3 flex-row items-center justify-center gap-2">
+                                            <View className="w-[80px] px-3 py-3 flex-row items-center justify-center gap-2">
                                                 <TouchableOpacity onPress={() => handleEditPhone(index)}>
                                                     <Edit2 size={16} color="#666" />
                                                 </TouchableOpacity>
@@ -1656,7 +1902,9 @@ export default function CustomerDetailsScreen() {
                                     <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
                                 </TouchableOpacity>
                             </View>
+                        </View>
 
+                        <View className="flex-row gap-3 mb-5">
                             {/* WhatsApp Dropdown */}
                             <View className="flex-1">
                                 <FormLabel label="WhatsApp" />
@@ -1675,11 +1923,9 @@ export default function CustomerDetailsScreen() {
                                     <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
                                 </TouchableOpacity>
                             </View>
-                        </View>
 
-                        <View className="flex-row gap-3 mb-5">
                             {/* DND Dropdown */}
-                            <View className="w-[50%]">
+                            <View className="flex-1">
                                 <FormLabel label="DND" />
                                 <TouchableOpacity
                                     onPress={(event) => {
@@ -1706,139 +1952,80 @@ export default function CustomerDetailsScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Phone Type Dropdown Modal */}
-                    <Modal
-                        visible={showPhoneTypeDropdown}
-                        transparent={true}
-                        animationType="none"
-                        onRequestClose={() => setShowPhoneTypeDropdown(false)}
-                    >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowPhoneTypeDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 0,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                    marginLeft: dropdownLayout ? 0 : 20,
-                                }}
-                            >
-                                <ScrollView>
-                                    {phoneTypes.map((type) => (
-                                        <TouchableOpacity
-                                            key={type.key}
-                                            className="p-3 border-b border-gray-100"
-                                            onPress={() => handlePhoneTypeChange(editingPhoneIndex, type.key)}
-                                        >
-                                            <Text className="text-gray-900 text-xs">{type.title}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                        </TouchableOpacity>
-                    </Modal>
-
                     {/* WhatsApp Dropdown Modal */}
                     <Modal
                         visible={showWhatsAppDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => setShowWhatsAppDropdown(false)}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowWhatsAppDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 0,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                    marginLeft: dropdownLayout ? 0 : 20,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">
+                                            {editingPhoneIndex !== null && showEditPhoneModal ? 'Edit WhatsApp' : 'Select WhatsApp'}
+                                        </Text>
+                                        <TouchableOpacity onPress={() => setShowWhatsAppDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {yesNoOptions.map((option) => (
                                         <TouchableOpacity
                                             key={option.key}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => handleWhatsAppChange(editingPhoneIndex, option.key)}
                                         >
-                                            <Text className="text-gray-900 text-xs">{option.title}</Text>
+                                            <Text className={`text-gray-800 ${(editingPhoneIndex !== null && showEditPhoneModal ? editPhoneData.whatsApp : (editingPhoneIndex !== null ? phoneNumbers[editingPhoneIndex]?.whatsApp : newWhatsApp)) === option.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {option.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowWhatsAppDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* DND Dropdown Modal */}
                     <Modal
                         visible={showDNDDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => setShowDNDDropdown(false)}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowDNDDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 0,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                    marginLeft: dropdownLayout ? 0 : 20,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">
+                                            {editingPhoneIndex !== null && showEditPhoneModal ? 'Edit DND' : 'Select DND'}
+                                        </Text>
+                                        <TouchableOpacity onPress={() => setShowDNDDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {yesNoOptions.map((option) => (
                                         <TouchableOpacity
                                             key={option.key}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => handleDNDChange(editingPhoneIndex, option.key)}
                                         >
-                                            <Text className="text-gray-900 text-xs">{option.title}</Text>
+                                            <Text className={`text-gray-800 ${(editingPhoneIndex !== null && showEditPhoneModal ? editPhoneData.dnd : (editingPhoneIndex !== null ? phoneNumbers[editingPhoneIndex]?.dnd : newDND)) === option.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {option.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowDNDDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* Email */}
@@ -1899,48 +2086,142 @@ export default function CustomerDetailsScreen() {
                         )}
                     </View>
 
-                    {/* GST Type Dropdown Modal */}
+                    {/* Edit Phone Modal */}
                     <Modal
-                        visible={showGSTTypeDropdown}
-                        transparent={true}
-                        animationType="none"
-                        onRequestClose={() => setShowGSTTypeDropdown(false)}
+                        visible={showEditPhoneModal}
+                        transparent animationType="fade"
+                        onRequestClose={handleCancelPhoneEdit}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowGSTTypeDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md">
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Edit Contact</Text>
+                                        <TouchableOpacity onPress={handleCancelPhoneEdit}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                                
+                                <View className="p-4">
+                                    {/* Phone Number */}
+                                    <View className="mb-4">
+                                        <FormLabel label="Phone Number" />
+                                        <View className="flex-row border border-gray-300 rounded-lg overflow-hidden bg-white h-12">
+                                            <View className="bg-gray-50 px-3 justify-center border-r border-gray-300">
+                                                <Text className="text-gray-700 text-sm font-medium">+91</Text>
+                                            </View>
+                                            <TextInput
+                                                value={editPhoneData.number}
+                                                onChangeText={(value) => setEditPhoneData(prev => ({ ...prev, number: value }))}
+                                                placeholder=""
+                                                placeholderTextColor="#999"
+                                                keyboardType="phone-pad"
+                                                className="flex-1 px-3 text-gray-900 text-sm"
+                                            />
+                                        </View>
+                                    </View>
+
+                                    {/* Type Dropdown */}
+                                    <View className="mb-4">
+                                        <FormLabel label="Type" />
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setEditingPhoneIndex(editingPhoneIndex);
+                                                setShowPhoneTypeDropdown(true);
+                                            }}
+                                            className="bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-12"
+                                        >
+                                            <Text className="text-gray-600 text-sm">{editPhoneData.type}</Text>
+                                            <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* WhatsApp Dropdown */}
+                                    <View className="mb-4">
+                                        <FormLabel label="WhatsApp" />
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setEditingPhoneIndex(editingPhoneIndex);
+                                                setShowWhatsAppDropdown(true);
+                                            }}
+                                            className="bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-12"
+                                        >
+                                            <Text className="text-gray-600 text-sm">{editPhoneData.whatsApp}</Text>
+                                            <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* DND Dropdown */}
+                                    <View className="mb-4">
+                                        <FormLabel label="DND" />
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setEditingPhoneIndex(editingPhoneIndex);
+                                                setShowDNDDropdown(true);
+                                            }}
+                                            className="bg-white border border-gray-300 rounded-lg px-3 flex-row justify-between items-center h-12"
+                                        >
+                                            <Text className="text-gray-600 text-sm">{editPhoneData.dnd}</Text>
+                                            <ChevronLeft size={16} color="#999" style={{ transform: [{ rotate: '-90deg' }] }} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+
+                                <View className="flex-row border-t border-gray-200">
+                                    <TouchableOpacity 
+                                        onPress={handleCancelPhoneEdit}
+                                        className="flex-1 p-3 border-r border-gray-200"
+                                    >
+                                        <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        onPress={handleSavePhoneEdit}
+                                        className="flex-1 p-3"
+                                    >
+                                        <Text className="text-center text-teal-600 font-medium">Save</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+                    {/* Phone Type Dropdown Modal */}
+                    <Modal
+                        visible={showPhoneTypeDropdown}
+                        transparent animationType="fade"
+                        onRequestClose={() => setShowPhoneTypeDropdown(false)}
+                    >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">
+                                            {editingPhoneIndex !== null && showEditPhoneModal ? 'Edit Phone Type' : 'Select Phone Type'}
+                                        </Text>
+                                        <TouchableOpacity onPress={() => setShowPhoneTypeDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
-                                    {gstTypes.map((type) => (
+                                    {phoneTypes.map((type) => (
                                         <TouchableOpacity
                                             key={type.key}
-                                            className="p-3 border-b border-gray-100"
-                                            onPress={() => handleGSTTypeChange(type.key)}
+                                            className="p-4 border-b border-gray-100"
+                                            onPress={() => handlePhoneTypeChange(editingPhoneIndex, type.key)}
                                         >
-                                            <Text className="text-gray-900 text-sm">{type.title}</Text>
+                                            <Text className={`text-gray-800 ${(editingPhoneIndex !== null && showEditPhoneModal ? editPhoneData.type : (editingPhoneIndex !== null ? phoneNumbers[editingPhoneIndex]?.type : newPhoneType)) === type.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {type.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowPhoneTypeDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* Customer Grouping */}
@@ -1964,187 +2245,186 @@ export default function CustomerDetailsScreen() {
                     {/* Customer Type Dropdown Modal */}
                     <Modal
                         visible={showCustomerTypeDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => setShowCustomerTypeDropdown(false)}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowCustomerTypeDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select Customer Type</Text>
+                                        <TouchableOpacity onPress={() => setShowCustomerTypeDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {customerTypes.map((type) => (
                                         <TouchableOpacity
                                             key={type.key}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => {
                                                 setCustomerType(type.key);
                                                 setShowCustomerTypeDropdown(false);
                                             }}
                                         >
-                                            <Text className="text-gray-900 text-sm">{type.title}</Text>
+                                            <Text className={`text-gray-800 ${customerType === type.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {type.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowCustomerTypeDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* Salutation Dropdown Modal */}
                     <Modal
                         visible={showSalutationDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => setShowSalutationDropdown(false)}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowSalutationDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select Salutation</Text>
+                                        <TouchableOpacity onPress={() => setShowSalutationDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {salutations.map((sal) => (
                                         <TouchableOpacity
                                             key={sal.key}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => {
                                                 setSalutation(sal.key);
                                                 setShowSalutationDropdown(false);
                                             }}
                                         >
-                                            <Text className="text-gray-900 text-sm">{sal.title}</Text>
+                                            <Text className={`text-gray-800 ${salutation === sal.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {sal.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowSalutationDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* Customer Grouping Dropdown Modal */}
                     <Modal
                         visible={showCustomerGroupingDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => setShowCustomerGroupingDropdown(false)}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => setShowCustomerGroupingDropdown(false)}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select Customer Grouping</Text>
+                                        <TouchableOpacity onPress={() => setShowCustomerGroupingDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {customerGroupingOptions.map((option) => (
                                         <TouchableOpacity
                                             key={option.key}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => {
                                                 setCustomerGrouping(option.key);
                                                 setShowCustomerGroupingDropdown(false);
                                                 setErrors(prev => ({ ...prev, customerGrouping: '' }));
                                             }}
                                         >
-                                            <Text className="text-gray-900 text-sm">{option.title}</Text>
+                                            <Text className={`text-gray-800 ${customerGrouping === option.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {option.title}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => setShowCustomerGroupingDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
+                    </Modal>
+
+                    {/* GST Type Dropdown Modal */}
+                    <Modal
+                        visible={showGSTTypeDropdown}
+                        transparent animationType="fade"
+                        onRequestClose={() => setShowGSTTypeDropdown(false)}
+                    >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select GST Type</Text>
+                                        <TouchableOpacity onPress={() => setShowGSTTypeDropdown(false)}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                                <ScrollView>
+                                    {gstTypes.map((type) => (
+                                        <TouchableOpacity
+                                            key={type.key}
+                                            className="p-4 border-b border-gray-100"
+                                            onPress={() => handleGSTTypeChange(type.key)}
+                                        >
+                                            <Text className={`text-gray-800 ${gstTypeValue === type.key ? 'font-bold text-teal-700' : ''}`}>
+                                                {type.title}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                                <TouchableOpacity onPress={() => setShowGSTTypeDropdown(false)} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
                     </Modal>
 
                     {/* Country Dropdown Modal */}
                     <Modal
                         visible={showCountryDropdown || showShippingCountryDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => {
                             setShowCountryDropdown(false);
                             setShowShippingCountryDropdown(false);
                         }}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => {
-                                setShowCountryDropdown(false);
-                                setShowShippingCountryDropdown(false);
-                            }}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select Country</Text>
+                                        <TouchableOpacity onPress={() => {
+                                            setShowCountryDropdown(false);
+                                            setShowShippingCountryDropdown(false);
+                                        }}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {countries
                                         .filter(c => c.name.toLowerCase() === 'india' || c.id === 'India')
                                         .map((country) => (
                                             <TouchableOpacity
                                                 key={country.id}
-                                                className="p-3 border-b border-gray-100"
+                                                className="p-4 border-b border-gray-100"
                                                 onPress={() => {
                                                     if (showCountryDropdown) {
                                                         handleCountryChange(country.id, 'billing');
@@ -2155,54 +2435,49 @@ export default function CustomerDetailsScreen() {
                                                     }
                                                 }}
                                             >
-                                                <Text className="text-gray-900 text-sm">{country.name}</Text>
+                                                <Text className={`text-gray-800 ${(showCountryDropdown ? billingCountryId : shippingCountryId) === country.id ? 'font-bold text-teal-700' : ''}`}>
+                                                    {country.name}
+                                                </Text>
                                             </TouchableOpacity>
                                         ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => {
+                                    setShowCountryDropdown(false);
+                                    setShowShippingCountryDropdown(false);
+                                }} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* State Dropdown Modal */}
                     <Modal
                         visible={showStateDropdown || showShippingStateDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => {
                             setShowStateDropdown(false);
                             setShowShippingStateDropdown(false);
                         }}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => {
-                                setShowStateDropdown(false);
-                                setShowShippingStateDropdown(false);
-                            }}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select State</Text>
+                                        <TouchableOpacity onPress={() => {
+                                            setShowStateDropdown(false);
+                                            setShowShippingStateDropdown(false);
+                                        }}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {states.map((state) => (
                                         <TouchableOpacity
                                             key={state.id}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => {
                                                 if (showStateDropdown) {
                                                     handleStateChange(state.id, 'billing');
@@ -2213,54 +2488,49 @@ export default function CustomerDetailsScreen() {
                                                 }
                                             }}
                                         >
-                                            <Text className="text-gray-900 text-sm">{state.name}</Text>
+                                            <Text className={`text-gray-800 ${(showStateDropdown ? billingStateId : shippingStateId) === state.id ? 'font-bold text-teal-700' : ''}`}>
+                                                {state.name}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => {
+                                    setShowStateDropdown(false);
+                                    setShowShippingStateDropdown(false);
+                                }} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
 
                     {/* City Dropdown Modal */}
                     <Modal
                         visible={showCityDropdown || showShippingCityDropdown}
-                        transparent={true}
-                        animationType="none"
+                        transparent animationType="fade"
                         onRequestClose={() => {
                             setShowCityDropdown(false);
                             setShowShippingCityDropdown(false);
                         }}
                     >
-                        <TouchableOpacity
-                            style={{ flex: 1 }}
-                            activeOpacity={1}
-                            onPress={() => {
-                                setShowCityDropdown(false);
-                                setShowShippingCityDropdown(false);
-                            }}
-                        >
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: dropdownLayout ? dropdownLayout.y + dropdownLayout.height : 100,
-                                    left: dropdownLayout ? dropdownLayout.x : 20,
-                                    width: dropdownLayout ? dropdownLayout.width : '90%',
-                                    backgroundColor: 'white',
-                                    borderRadius: 8,
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.25,
-                                    shadowRadius: 3.84,
-                                    elevation: 5,
-                                    zIndex: 1000,
-                                    maxHeight: 200,
-                                }}
-                            >
+                        <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                            <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                                <View className="p-4 border-b border-gray-200">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-lg font-semibold text-gray-800">Select City</Text>
+                                        <TouchableOpacity onPress={() => {
+                                            setShowCityDropdown(false);
+                                            setShowShippingCityDropdown(false);
+                                        }}>
+                                            <X size={20} color={COLORS.gray[600]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <ScrollView>
                                     {districts.map((city) => (
                                         <TouchableOpacity
                                             key={city.id}
-                                            className="p-3 border-b border-gray-100"
+                                            className="p-4 border-b border-gray-100"
                                             onPress={() => {
                                                 if (showCityDropdown) {
                                                     setBillingDistrictId(city.id);
@@ -2271,12 +2541,20 @@ export default function CustomerDetailsScreen() {
                                                 }
                                             }}
                                         >
-                                            <Text className="text-gray-900 text-sm">{city.name}</Text>
+                                            <Text className={`text-gray-800 ${(showCityDropdown ? billingDistrictId : shippingDistrictId) === city.id ? 'font-bold text-teal-700' : ''}`}>
+                                                {city.name}
+                                            </Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                                <TouchableOpacity onPress={() => {
+                                    setShowCityDropdown(false);
+                                    setShowShippingCityDropdown(false);
+                                }} className="p-3 border-t border-gray-200">
+                                    <Text className="text-center text-gray-600 font-medium">Cancel</Text>
+                                </TouchableOpacity>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     </Modal>
                 </View>
 
@@ -2558,62 +2836,75 @@ export default function CustomerDetailsScreen() {
     const renderQuotationsTab = () => {
         console.log('📊 Rendering Quotations tab - count:', quotations.length);
 
-        if (loadingQuotations) {
+        try {
+            if (loadingQuotations) {
+                return (
+                    <View className="flex-1 bg-[#f5f5f5] items-center justify-center">
+                        <ActivityIndicator size="large" color={COLORS.primary} />
+                        <Text className="text-gray-500 mt-2">Loading quotations...</Text>
+                    </View>
+                );
+            }
+
+        return (
+                <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
+                    <View className="bg-white rounded-lg border border-gray-200 overflow-hidden mt-2 shadow-sm">
+                        <View className="bg-gray-700 px-3 py-3">
+                            <View className="flex-row">
+                                <Text className="text-white text-[10px] font-bold flex-1">Date</Text>
+                                <Text className="text-white text-[10px] font-bold flex-1">Quotation ID</Text>
+                                <Text className="text-white text-[10px] font-bold flex-1">Model Code</Text>
+                                <Text className="text-white text-[10px] font-bold flex-1">Model Name</Text>
+                                <Text className="text-white text-[10px] font-bold w-12 text-center">Action</Text>
+                            </View>
+                        </View>
+                        {quotations.length === 0 ? (
+                            <View className="p-8 items-center bg-white">
+                                <Text className="text-gray-400 text-center">No quotations found for this customer</Text>
+                                <Text className="text-gray-300 text-xs text-center mt-2">Create a new quotation to get started</Text>
+                            </View>
+                        ) : quotations.map((quotation, index) => (
+                            <View
+                                key={quotation.id || index}
+                                className={`px-3 py-3 border-b border-gray-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                            >
+                                <View className="flex-row items-center">
+                                    <Text className="text-[10px] text-gray-600 flex-1">
+                                        {quotation.createdAt ? new Date(quotation.createdAt).toLocaleDateString('en-GB') : (quotation.date || 'N/A')}
+                                    </Text>
+                                    <Text className="text-[10px] text-teal-600 font-bold flex-1">
+                                        {quotation.quotationId || quotation.id || 'N/A'}
+                                    </Text>
+                                    <Text className="text-[10px] text-gray-800 flex-1">
+                                        {quotation.vehicle?.[0]?.vehicleDetail?.modelCode || quotation.modelCode || 'N/A'}
+                                    </Text>
+                                    <Text className="text-[10px] text-gray-800 flex-1" numberOfLines={1}>
+                                        {getVehicleNames(quotation).join(', ') || quotation.modelName || 'N/A'}
+                                    </Text>
+                                    <TouchableOpacity
+                                        className="w-12 items-center"
+                                        onPress={() => {
+                                            console.log('🔍 Quotation View button pressed:', { quotationId: quotation.id });
+                                            safeNavigate('QuotationView' as any, { id: quotation.id });
+                                        }}
+                                    >
+                                        <Text className="text-teal-600 text-[10px] font-medium">View</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
+                </ScrollView>
+            );
+        } catch (error) {
+            console.error('❌ Error in renderQuotationsTab:', error);
             return (
-                <View className="flex-1 bg-[#f5f5f5] items-center justify-center">
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                    <Text className="text-gray-500 mt-2">Loading quotations...</Text>
+                <View className="flex-1 bg-[#f5f5f5] items-center justify-center p-4">
+                    <Text className="text-red-600 text-center">Error loading quotations tab</Text>
+                    <Text className="text-gray-500 text-xs text-center mt-2">Please try again</Text>
                 </View>
             );
         }
-
-        return (
-            <ScrollView className="flex-1 bg-[#f5f5f5] px-4 pb-4">
-                <View className="bg-white rounded-lg border border-gray-200 overflow-hidden mt-2 shadow-sm">
-                    <View className="bg-gray-700 px-3 py-3">
-                        <View className="flex-row">
-                            <Text className="text-white text-[10px] font-bold flex-1">Date</Text>
-                            <Text className="text-white text-[10px] font-bold flex-1">Quotation ID</Text>
-                            <Text className="text-white text-[10px] font-bold flex-1">Model Code</Text>
-                            <Text className="text-white text-[10px] font-bold flex-1">Model Name</Text>
-                            <Text className="text-white text-[10px] font-bold w-12 text-center">Action</Text>
-                        </View>
-                    </View>
-                    {quotations.length === 0 ? (
-                        <View className="p-8 items-center bg-white">
-                            <Text className="text-gray-400 text-center">No quotations found for this customer</Text>
-                            <Text className="text-gray-300 text-xs text-center mt-2">Create a new quotation to get started</Text>
-                        </View>
-                    ) : quotations.map((quotation, index) => (
-                        <View
-                            key={quotation.id || index}
-                            className={`px-3 py-3 border-b border-gray-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-                        >
-                            <View className="flex-row items-center">
-                                <Text className="text-[10px] text-gray-600 flex-1">
-                                    {quotation.createdAt ? new Date(quotation.createdAt).toLocaleDateString('en-GB') : (quotation.date || 'N/A')}
-                                </Text>
-                                <Text className="text-[10px] text-teal-600 font-bold flex-1">
-                                    {quotation.quotationId || quotation.id || 'N/A'}
-                                </Text>
-                                <Text className="text-[10px] text-gray-800 flex-1">
-                                    {quotation.vehicle?.[0]?.vehicleDetail?.modelCode || quotation.modelCode || 'N/A'}
-                                </Text>
-                                <Text className="text-[10px] text-gray-800 flex-1" numberOfLines={1}>
-                                    {getVehicleNames(quotation).join(', ') || quotation.modelName || 'N/A'}
-                                </Text>
-                                <TouchableOpacity
-                                    className="w-12 items-center"
-                                    onPress={() => safeNavigate('QuotationView', { id: quotation.id })}
-                                >
-                                    <Text className="text-teal-600 text-[10px] font-medium">View</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    ))}
-                </View>
-            </ScrollView>
-        );
     };
 
     const renderAssociatedVehiclesTab = () => {
@@ -2651,13 +2942,7 @@ export default function CustomerDetailsScreen() {
                         </View>
                         <TouchableOpacity
                             className="mt-4 border border-teal-600 rounded-lg py-2 items-center"
-                            onPress={() => {
-                                if (navigation && navigation.navigate) {
-                                    navigation.navigate('VehicleDetails' as any, { vehicle });
-                                } else {
-                                    console.error('❌ Navigation not available');
-                                }
-                            }}
+                            onPress={() => safeNavigate('VehicleDetails' as any, { vehicle })}
                         >
                             <Text className="text-teal-600 text-xs font-bold">View Vehicle Details</Text>
                         </TouchableOpacity>
@@ -2676,21 +2961,13 @@ export default function CustomerDetailsScreen() {
                         <TouchableOpacity
                             className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
                             onPress={() => {
-                                try {
-                                    if (navigation && navigation.navigate) {
-                                        const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
-                                        navigation.navigate('BookingConfirmActivity' as any, { 
-                                            customerId, 
-                                            customerName, 
-                                            customerPhone,
-                                            isConfirmBooking: true 
-                                        });
-                                    } else {
-                                        console.error('❌ Navigation or navigate method not available');
-                                    }
-                                } catch (error) {
-                                    console.error('❌ ConfirmBooking navigation error:', error);
-                                }
+                                const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
+                                safeNavigate('BookingConfirmActivity' as any, { 
+                                    customerId, 
+                                    customerName, 
+                                    customerPhone,
+                                    isConfirmBooking: true 
+                                });
                             }}
                         >
                             <Text className="text-white font-medium text-sm">Add Confirm Booking</Text>
@@ -2698,21 +2975,13 @@ export default function CustomerDetailsScreen() {
                         <TouchableOpacity
                             className="flex-1 bg-teal-600 rounded-lg py-3 items-center justify-center"
                             onPress={() => {
-                                try {
-                                    if (navigation && navigation.navigate) {
-                                        const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
-                                        navigation.navigate('BookingActivity' as any, {
-                                            customerId,
-                                            customerName,
-                                            customerPhone,
-                                            isAdvancedBooking: true
-                                        });
-                                    } else {
-                                        console.error('❌ Navigation or navigate method not available');
-                                    }
-                                } catch (error) {
-                                    console.error('❌ BookingActivity navigation error:', error);
-                                }
+                                const customerPhone = phoneNumbers && phoneNumbers.length > 0 ? phoneNumbers[0].number : '';
+                                safeNavigate('BookingActivity' as any, {
+                                    customerId,
+                                    customerName,
+                                    customerPhone,
+                                    isAdvancedBooking: true
+                                });
                             }}
                         >
                             <Text className="text-white font-medium text-sm">Add Advanced Booking</Text>
@@ -2946,6 +3215,13 @@ export default function CustomerDetailsScreen() {
     };
 
     const renderTabContent = () => {
+        console.log('🎯 renderTabContent called:', {
+            activeTab,
+            hasNavigation: !!navigation,
+            hasNavigate: !!(navigation && navigation.navigate),
+            navigationType: typeof navigation
+        });
+
         switch (activeTab) {
             case 'customer-details':
                 return renderCustomerDetailsTab();
@@ -2979,7 +3255,16 @@ export default function CustomerDetailsScreen() {
             {/* Header */}
             <HeaderWithBack
                 title="Customer Details"
-                onBackPress={() => safeNavigate('Main' as any)}
+                onBackPress={() => {
+                    const target = getBackNavigationTarget();
+                    console.log(`🔍 Closing CustomerDetails, navigating to ${target.screen}`);
+                    
+                    if (target.useGoBack) {
+                        navigation.goBack();
+                    } else {
+                        safeNavigate(target.screen as any);
+                    }
+                }}
             />
 
             {/* Tabs */}
@@ -3016,15 +3301,39 @@ export default function CustomerDetailsScreen() {
                 />
             )}
 
-            {/* DOB Date Picker */}
-            {showDobDatePicker && (
-                <DateTimePicker
-                    value={new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={handleDobDateChange}
-                />
-            )}
+            {/* DOB Calendar Modal */}
+            <Modal visible={showDobCalendarModal} transparent animationType="fade" onRequestClose={() => setShowDobCalendarModal(false)}>
+                <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                    <View className="bg-white rounded-2xl p-4 w-full max-w-md">
+                        <Text className="text-gray-900 font-bold mb-3">Select Date of Birth</Text>
+                        <RNCalendar
+                            current={dob ? moment(dob, 'DD/MM/YYYY').format('YYYY-MM-DD') : new Date().toISOString().split('T')[0]}
+                            onDayPress={handleDobDateSelect}
+                            theme={{
+                                todayTextColor: COLORS.primary,
+                                selectedDayBackgroundColor: COLORS.primary,
+                                selectedDayTextColor: '#fff',
+                                arrowColor: COLORS.primary,
+                            }}
+                            markedDates={
+                                dob
+                                    ? {
+                                        [moment(dob, 'DD/MM/YYYY').format('YYYY-MM-DD')]: {
+                                            selected: true,
+                                            selectedColor: COLORS.primary,
+                                        },
+                                    }
+                                    : undefined
+                            }
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity onPress={() => setShowDobCalendarModal(false)} className="px-4 py-2 rounded-lg bg-teal-600">
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Time Picker Modal */}
             <Modal visible={timeDropdownOpen} transparent animationType="fade" onRequestClose={() => setTimeDropdownOpen(false)}>
@@ -3113,11 +3422,23 @@ export default function CustomerDetailsScreen() {
                     onPress={handleClose}
                 />
                 <Button
-                    title="Save"
+                    title={isSaving ? "Saving..." : "Save"}
                     className="flex-1 ml-2"
                     onPress={handleSave}
+                    disabled={isSaving}
                 />
             </View>
         </SafeAreaView>
     );
 }
+
+// Custom comparison function for React.memo
+const areEqual = (prevProps: any, nextProps: any) => {
+    // If the route params (customerId) haven't changed, don't re-render
+    return prevProps?.route?.params?.customerId === nextProps?.route?.params?.customerId;
+};
+
+// Wrap with React.memo to prevent unnecessary re-renders
+const CustomerDetailsScreen = React.memo(CustomerDetailsScreenComponent, areEqual);
+
+export default CustomerDetailsScreen;

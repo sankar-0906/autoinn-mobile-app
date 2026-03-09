@@ -194,7 +194,6 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
             // Update active filters count
             setActiveFiltersCount(getActiveFiltersCount(storedFilters));
 
-            console.log('Applied filters:', storedFilters);
 
             if (Array.isArray(sanitizedFilters.category)) {
                 sanitizedFilters.category = sanitizedFilters.category

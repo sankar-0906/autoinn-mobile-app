@@ -104,12 +104,22 @@ export default function BookingActivityScreen({
 
     // Determine the back navigation target based on how we got here
     const getBackNavigationTarget = () => {
+        // Check if we came from FollowUpDetail by looking at navigation state
+        const state = navigation.getState();
+        const previousRoute = state?.routes?.[state.index - 1];
+        
         if (isAdvancedBooking && customerId) {
             // If we came from Advanced Booking, go back to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId } };
+            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: false };
+        } else if (previousRoute?.name === 'CustomerDetails') {
+            // If we came from Customer Details, go back to Customer Details
+            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: false };
+        } else if (previousRoute?.name === 'FollowUpDetail') {
+            // If we came from FollowUpDetail, use goBack() to preserve exact state
+            return { screen: 'FollowUpDetail' as const, useGoBack: true };
         }
         // Otherwise, go to FollowUps (default behavior)
-        return { screen: 'FollowUps' as const, params: undefined };
+        return { screen: 'FollowUps' as const, params: undefined, useGoBack: false };
     };
 
     // Use the custom back button hook
@@ -117,7 +127,10 @@ export default function BookingActivityScreen({
         onBackPress: () => {
             const target = getBackNavigationTarget();
             console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-            if (target.params) {
+            
+            if (target.useGoBack) {
+                navigation.goBack();
+            } else if (target.params) {
                 navigation.navigate(target.screen, target.params);
             } else {
                 navigation.navigate(target.screen);
@@ -1082,11 +1095,14 @@ export default function BookingActivityScreen({
                     state:    currentState   ? { name: currentState }   : null,
                     city:     currentCity    ? { name: currentCity }    : null,
                 },
+                refferedBy: currentReferred || null,
             } : null,
 
             customerId:         displayCustomerId,
             customerName:       currentName,
             customerFatherName: currentFather || '',
+            customerAddress: null,
+            customerLine1:      currentAddr,
             customerLine2:      currentAddr2,
             customerLine3:      currentAddr3,
             customerPhone:      currentPhone,
@@ -1209,7 +1225,7 @@ export default function BookingActivityScreen({
                 }
                 return currentExpDel;
             })() : null,
-            refferedBy:      currentReferred,
+            refferedBy:      currentReferred || null,
             confirmBookingId: null,
         };
 
@@ -1262,10 +1278,10 @@ export default function BookingActivityScreen({
                     console.log('⚠️ No quotation ID found in booking response');
                 }
                 
-                // Reset navigation stack and navigate to FollowUpDetail to prevent going back to booking payment page
+                // Reset navigation stack and navigate to Quotations tab after successful booking
                 const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
                 if (customerPhone) {
-                    console.log('🔍 Resetting navigation and going to FollowUpDetail with customerPhone:', customerPhone);
+                    console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
                     
                     setTimeout(() => {
                         if (quotationId) {
@@ -1275,26 +1291,25 @@ export default function BookingActivityScreen({
                                 routes: [
                                     { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
                                     { name: 'QuotationView', params: { id: quotationId } },
-                                    { name: 'FollowUpDetail', params: { id: customerPhone } }
+                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
                                 ]
                             });
                         } else {
-                            console.log('🔍 No quotation found, using standard navigation');
+                            console.log('🔍 No quotation found, using standard navigation to Quotations tab');
                             navigation.reset({
-                                index: 1,
+                                index: 0,
                                 routes: [
-                                    { name: 'FollowUps' },
-                                    { name: 'FollowUpDetail', params: { id: customerPhone } }
+                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
                                 ]
                             });
                         }
                     }, 1500);
                 } else {
-                    console.log('🔍 No customerPhone found, resetting navigation to FollowUps');
+                    console.log('🔍 No customerPhone found, resetting navigation to Quotations');
                     setTimeout(() => {
                         navigation.reset({
                             index: 0,
-                            routes: [{ name: 'FollowUps' }]
+                            routes: [{ name: 'Main', state: { routes: [{ name: 'Quotations' }] } }]
                         });
                     }, 1500);
                 }
@@ -1328,7 +1343,10 @@ export default function BookingActivityScreen({
     const handleClose = () => {
         const target = getBackNavigationTarget();
         console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-        if (target.params) {
+        
+        if (target.useGoBack) {
+            navigation.goBack();
+        } else if (target.params) {
             navigation.navigate(target.screen, target.params);
         } else {
             navigation.navigate(target.screen);
@@ -1447,7 +1465,10 @@ export default function BookingActivityScreen({
                 onBackPress={() => {
                     const target = getBackNavigationTarget();
                     console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-                    if (target.params) {
+                    
+                    if (target.useGoBack) {
+                        navigation.goBack();
+                    } else if (target.params) {
                         navigation.navigate(target.screen, target.params);
                     } else {
                         navigation.navigate(target.screen);
