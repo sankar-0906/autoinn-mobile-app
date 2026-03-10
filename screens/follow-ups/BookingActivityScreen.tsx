@@ -95,7 +95,16 @@ export default function BookingActivityScreen({
     navigation: BookingActivityNavigationProp;
     route: BookingActivityRouteProp;
 }) {
-    const { isAdvancedBooking, customerId, customerName, customerPhone } = route.params || {};
+    const { isAdvancedBooking = false, isConfirmBooking = false, customerId, customerName, customerPhone } = route.params || {};
+
+    // Safe mode detection - preserves current behavior as default
+    const getBookingMode = () => {
+        if (isConfirmBooking) return 'ConfirmBooking';
+        if (isAdvancedBooking) return 'AdvancedBooking';  
+        return 'NormalBooking'; // Default - preserves current behavior
+    };
+
+    const bookingMode = getBookingMode();
 
     const toast = useToast();
     const insets = useSafeAreaInsets();
@@ -108,8 +117,8 @@ export default function BookingActivityScreen({
         const state = navigation.getState();
         const previousRoute = state?.routes?.[state.index - 1];
         
-        if (isAdvancedBooking && customerId) {
-            // If we came from Advanced Booking, go back to Customer Details
+        if ((isAdvancedBooking || isConfirmBooking) && customerId) {
+            // If we came from Advanced/Confirm Booking, go back to Customer Details
             return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: false };
         } else if (previousRoute?.name === 'CustomerDetails') {
             // If we came from Customer Details, go back to Customer Details
@@ -177,7 +186,7 @@ export default function BookingActivityScreen({
     const [dataLoaded, setDataLoaded]                               = useState(false);
     const [isVehicleSelectionInProgress, setIsVehicleSelectionInProgress] = useState(false);
     const [hasEverSelectedVehicle, setHasEverSelectedVehicle]       = useState(false);
-    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment'>('customer');
+    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
 
     // ── Customer fields ────────────────────────────────────────────────────
     const [branch, setBranch]                     = useState('');
@@ -588,6 +597,11 @@ export default function BookingActivityScreen({
     const autoFillCustomerFields = (customer: any) => {
         console.log('🔍 autoFillCustomerFields — filling fields');
         console.log('👤 Customer data structure:', JSON.stringify(customer, null, 2));
+        
+        // Auto-fill summary log
+        console.log('🎯 AUTO-FILL SUMMARY - Checking all fields:');
+        let fieldsFilled = 0;
+        let fieldsSkipped = 0;
         // Use REFS for checks (always fresh, even after restore from route params)
         console.log('📊 Current ref state:', {
             customerFullName: customerFullNameRef.current,
@@ -612,14 +626,22 @@ export default function BookingActivityScreen({
         console.log('👤 Name check:', { customerName: customer.name, currentName: customerFullNameRef.current });
         if (customer.name && (!customerFullNameRef.current || customerFullNameRef.current === 'Unknown')) {
             setCustomerFullNameSync(String(customer.name));
-            console.log('✅ Customer name set to:', customer.name);
+            console.log('✅ Customer name SET to:', customer.name);
+            fieldsFilled++;
+        } else {
+            console.log('⏭️ Customer name SKIPPED - already filled:', customerFullNameRef.current);
+            fieldsSkipped++;
         }
 
         // 3. Locality — only set if current locality is empty
         console.log('📍 Locality check:', { customerLocality: customer.address?.locality, currentLocality: localityRef.current });
         if (customer.address?.locality && !localityRef.current) {
             setLocalitySync(String(customer.address.locality));
-            console.log('✅ Locality set to:', customer.address.locality);
+            console.log('✅ Locality SET to:', customer.address.locality);
+            fieldsFilled++;
+        } else {
+            console.log('⏭️ Locality SKIPPED - already filled or missing:', localityRef.current || 'missing in customer data');
+            fieldsSkipped++;
         }
 
         // 4. Associated Quotations — only set if current quotations is empty
@@ -631,7 +653,11 @@ export default function BookingActivityScreen({
             // Prefer quotationId (like QDE/24-25/889) over internal ID
             const quotationIds = customer.quotation.map((q: any) => q.quotationId || q.id).join(', ');
             setQuotationsSync(quotationIds);
-            console.log('✅ Quotations set to:', quotationIds);
+            console.log('✅ Quotations SET to:', quotationIds);
+            fieldsFilled++;
+        } else {
+            console.log('⏭️ Quotations SKIPPED - already filled or missing:', quotationsRef.current || 'missing in customer data');
+            fieldsSkipped++;
         }
 
         // 5. Gender — only set if current gender is empty or default
@@ -715,6 +741,13 @@ export default function BookingActivityScreen({
             setReferredBySync(referredByData);
             console.log('✅ Referred By set to:', referredByData);
         }
+        
+        // Final Auto-fill Summary
+        console.log('🎯 AUTO-FILL SUMMARY COMPLETE:');
+        console.log(`📊 Fields Filled: ${fieldsFilled}`);
+        console.log(`⏭️ Fields Skipped: ${fieldsSkipped}`);
+        console.log(`📈 Success Rate: ${fieldsFilled > 0 ? 'SUCCESS' : 'NO DATA FILLED'}`);
+        console.log('🔍 Check above logs for individual field details');
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -745,12 +778,20 @@ export default function BookingActivityScreen({
 
             const customerRes = await getCustomerByPhoneNo(phoneToUse);
             const customers = (customerRes.data?.response?.data?.customers as any[]) || [];
+            
+            console.log('🔍 Customer API response:', {
+                phoneToUse,
+                customersFound: customers.length,
+                customerData: customers[0] || 'No customer found'
+            });
 
             if (customers.length > 0) {
                 const customer = customers[0];
                 setGeneratedCustomerId(customer.customerId || customer.id);
+                console.log('🔍 Calling autoFillCustomerFields with customer data');
                 autoFillCustomerFields(customer);
             } else {
+                console.log('🔍 No customer found for phone:', phoneToUse);
                 customerFetchedRef.current = true; // mark as fetched even when no customer found
                 generateNewCustomerId();
             }
@@ -765,12 +806,6 @@ export default function BookingActivityScreen({
     // handlePhoneChange — pass value directly to avoid stale state
     // ─────────────────────────────────────────────────────────────────────
     const handlePhoneChange = (value: string) => {
-        console.log('🔍 handlePhoneChange called with:', {
-            value,
-            phoneRef: phoneRef.current,
-            customerFetchedRef: customerFetchedRef.current,
-            isSameAsCurrent: value === phoneRef.current
-        });
         
         setPhoneSync(value);
         
@@ -818,6 +853,18 @@ export default function BookingActivityScreen({
             console.log('🔍 Mount effect — skipping fetch, customer already loaded for:', customerPhone);
         }
     }, []);
+
+    // Handle customerPhone from route params (for Confirm/Advanced booking auto-fill)
+    useEffect(() => {
+        if (customerPhone && String(customerPhone).length === 10 && !customerFetchedRef.current && !customerDataRef.current) {
+            console.log('🔍 CustomerPhone effect — updating phone state and fetching customer:', customerPhone);
+            setPhone(String(customerPhone));
+            fetchCustomerData(String(customerPhone));
+        } else if (customerPhone && customerFetchedRef.current) {
+            console.log('🔍 CustomerPhone effect — customer already loaded for:', customerPhone);
+            setPhone(String(customerPhone));
+        }
+    }, [customerPhone]);
 
     // Restore saved form data from route params (when returning from vehicle selection)
     useEffect(() => {
@@ -952,7 +999,7 @@ export default function BookingActivityScreen({
     // ─────────────────────────────────────────────────────────────────────
     // Validation
     // ─────────────────────────────────────────────────────────────────────
-    const validateForm = (): 'customer' | 'vehicle' | 'payment' | null => {
+    const validateForm = (): 'customer' | 'vehicle' | 'payment' | 'auth' | null => {
         setNameError(''); setPhoneError(''); setSalesOfficerError('');
         setAddressError(''); setLocalityError(''); setPincodeError(''); setModelError('');
 
@@ -1145,10 +1192,11 @@ export default function BookingActivityScreen({
         const displayCustomerId = generatedCustomerId || snap?.customerId || null;
 
         const payload: any = {
-            isAdvanceBooking: false,
+            // Booking type flags based on mode (matching web app pattern)
+            isAdvanceBooking: isConfirmBooking ? false : true,
             bookingId,
             eReceiptId,
-            bookingStatus: 'PENDING',
+            bookingStatus: isConfirmBooking ? 'PENDING' : 'ADVANCE',
 
             // Customer object — always use ref values for addresses (user may have edited)
             customer: snap ? {
@@ -1298,11 +1346,27 @@ export default function BookingActivityScreen({
             })() : null,
             refferedBy:      currentReferred && currentReferred.id ? { id: currentReferred.id } : null,
             confirmBookingId: null,
+            
+            // Authentication data for Confirm Booking (matching web app pattern)
+            ...(isConfirmBooking && {
+                authentication: {
+                    verifiedAt: null, // Will be set when customer is verified
+                    beforeVerification: null, // Document URLs
+                    afterVerification: null, // Document URLs
+                    status: 'PENDING_VERIFICATION'
+                }
+            }),
         };
 
         // Remove undefined keys
         Object.keys(payload).forEach(k => { if (payload[k] === undefined) delete payload[k]; });
+        
+        // Debug: Show booking mode and key payload fields
+        console.log(`🎯 Booking Mode: ${bookingMode}`);
+        console.log(`📊 Booking Flags: isAdvanceBooking=${payload.isAdvanceBooking}, bookingStatus=${payload.bookingStatus}`);
+        console.log('🔐 Authentication:', payload.authentication ? 'Included' : 'Not included');
         console.log('📦 Final payload:', JSON.stringify(payload, null, 2));
+        
         return payload;
     };
 
@@ -1504,10 +1568,10 @@ export default function BookingActivityScreen({
             setLocalityError(''); setPincodeError(''); setSalesOfficerError('');
             let err = false;
             if (!customerFullName.trim()) { setNameError('Required'); err = true; }
-            if (!phone.trim())            { setPhoneError('Required'); err = true; }
-            if (!address.trim())          { setAddressError('Required'); err = true; }
-            if (!locality.trim())         { setLocalityError('Required'); err = true; }
-            if (!pincode.trim())          { setPincodeError('Required'); err = true; }
+            if (!phone.trim() || phone.length !== 10) { setPhoneError('Required (10 digits)'); err = true; }
+            if (!address.trim()) { setAddressError('Required'); err = true; }
+            if (!locality.trim()) { setLocalityError('Required'); err = true; }
+            if (!pincode.trim() || pincode.length !== 6) { setPincodeError('Required (6 digits)'); err = true; }
             if (!salesOfficer.trim())     { setSalesOfficerError('Required'); err = true; }
             if (!age.trim())              { toast.error('Age is required'); err = true; }
             if (!customerGender.trim())   { toast.error('Gender is required'); err = true; }
@@ -1516,12 +1580,22 @@ export default function BookingActivityScreen({
             if (!model) { toast.error('Please select a vehicle model'); return; }
             if (!expectedDelivery || expectedDelivery.trim() === '' || expectedDelivery === 'DD/MM/YYYY') { toast.error('Expected Delivery Date is required'); return; }
             setActiveTab('payment');
+        } else if (activeTab === 'payment') {
+            // For Confirm Booking, go to auth step; for others, stay on payment (final step)
+            if (isConfirmBooking) {
+                setActiveTab('auth');
+            }
         }
     };
 
     const handleBack = () => {
-        if (activeTab === 'payment') setActiveTab('vehicle');
-        else if (activeTab === 'vehicle') setActiveTab('customer');
+        if (activeTab === 'payment') {
+            setActiveTab('vehicle');
+        } else if (activeTab === 'auth') {
+            setActiveTab('payment');
+        } else if (activeTab === 'vehicle') {
+            setActiveTab('customer');
+        }
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1532,7 +1606,11 @@ export default function BookingActivityScreen({
             {/* Header */}
             <HeaderWithBack
                 title="Booking Register"
-                subtitle={isAdvancedBooking ? "Advanced Booking" : undefined}
+                subtitle={
+    isConfirmBooking ? "Confirm Booking" : 
+    isAdvancedBooking ? "Advanced Booking" : 
+    undefined
+}
                 onBackPress={() => {
                     const target = getBackNavigationTarget();
                     console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
@@ -1562,7 +1640,7 @@ export default function BookingActivityScreen({
             {/* Tabs */}
             <View className="w-[340px] self-center bg-white border-b border-gray-100">
                 <View className="flex-row items-center px-4">
-                    {(['customer', 'vehicle', 'payment'] as const).map((tab, idx, arr) => (
+                    {(['customer', 'vehicle', 'payment', ...(isConfirmBooking ? ['auth'] : [])] as Array<'customer' | 'vehicle' | 'payment' | 'auth'>).map((tab, idx, arr) => (
                         <React.Fragment key={tab}>
                             <TouchableOpacity
                                 onPress={() => setActiveTab(tab)}
@@ -2263,6 +2341,94 @@ export default function BookingActivityScreen({
                                 </View>
                             </View>
                         )}
+
+                        {/* ── AUTH TAB ──────────────────────────────────── */}
+                        {activeTab === 'auth' && (
+                            <View>
+                                <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
+                                    Customer Authentication
+                                </Text>
+
+                                {/* Authentication Status */}
+                                <View className="mb-4">
+                                    <FormLabel label="Authentication Status" />
+                                    <View className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                                        <View className="flex-row items-center justify-between">
+                                            <Text className="text-gray-700">Customer Verification</Text>
+                                            <View className="px-3 py-1 bg-yellow-100 rounded-full">
+                                                <Text className="text-yellow-800 text-sm font-medium">Pending</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                {/* Verification Documents */}
+                                <View className="mb-4">
+                                    <FormLabel label="Verification Documents" />
+                                    <View className="space-y-3">
+                                        <View className="bg-white border border-gray-300 rounded-lg p-3">
+                                            <View className="flex-row items-center justify-between">
+                                                <View className="flex-row items-center gap-3">
+                                                    <View className="w-10 h-10 bg-blue-50 rounded-lg items-center justify-center">
+                                                        <Text className="text-blue-600 text-sm">ID</Text>
+                                                    </View>
+                                                    <View>
+                                                        <Text className="text-gray-900 font-medium">Identity Proof</Text>
+                                                        <Text className="text-gray-500 text-xs">Aadhaar Card / Passport</Text>
+                                                    </View>
+                                                </View>
+                                                <TouchableOpacity className="px-3 py-1 bg-green-50 rounded-lg">
+                                                    <Text className="text-green-700 text-sm">Upload</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+
+                                        <View className="bg-white border border-gray-300 rounded-lg p-3">
+                                            <View className="flex-row items-center justify-between">
+                                                <View className="flex-row items-center gap-3">
+                                                    <View className="w-10 h-10 bg-purple-50 rounded-lg items-center justify-center">
+                                                        <Text className="text-purple-600 text-sm">AD</Text>
+                                                    </View>
+                                                    <View>
+                                                        <Text className="text-gray-900 font-medium">Address Proof</Text>
+                                                        <Text className="text-gray-500 text-xs">Utility Bill / Rental Agreement</Text>
+                                                    </View>
+                                                </View>
+                                                <TouchableOpacity className="px-3 py-1 bg-green-50 rounded-lg">
+                                                    <Text className="text-green-700 text-sm">Upload</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                {/* Verification Notes */}
+                                <View className="mb-4">
+                                    <FormLabel label="Verification Notes" />
+                                    <TextInput 
+                                        multiline 
+                                        numberOfLines={3} 
+                                        textAlignVertical="top" 
+                                        placeholder="Add any verification notes or comments..." 
+                                        className="h-20 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800" 
+                                    />
+                                </View>
+
+                                {/* Verification Checkbox */}
+                                <View className="mb-4">
+                                    <View className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                        <View className="flex-row gap-3">
+                                            <TouchableOpacity className="w-5 h-5 border-2 border-yellow-400 rounded items-center justify-center">
+                                                <Text className="text-yellow-600 text-xs">✓</Text>
+                                            </TouchableOpacity>
+                                            <View className="flex-1">
+                                                <Text className="text-gray-800 text-sm">I confirm that all provided documents are valid and authentic.</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -2275,6 +2441,11 @@ export default function BookingActivityScreen({
                         <Button title="Next" className="flex-1" onPress={handleNext} />
                     </>
                 ) : activeTab === 'vehicle' ? (
+                    <>
+                        <Button title="Back" variant="outline" className="flex-1" onPress={handleBack} />
+                        <Button title="Next" className="flex-1" onPress={handleNext} />
+                    </>
+                ) : activeTab === 'auth' ? (
                     <>
                         <Button title="Back" variant="outline" className="flex-1" onPress={handleBack} />
                         <Button title="Next" className="flex-1" onPress={handleNext} />

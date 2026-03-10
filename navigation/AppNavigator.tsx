@@ -15,7 +15,7 @@ import FollowUpDetailScreen from '../screens/follow-ups/FollowUpDetailScreen';
 import FollowUpFiltersScreen from '../screens/follow-ups/FollowUpFiltersScreen';
 import FollowUpsScreen from '../screens/follow-ups/FollowUpsScreen';
 import BookingRegisterScreen from '../screens/booking/BookingRegisterScreen';
-import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
+import CustomerDetailsScreen from '../screens/cunstomerNew/CustomerDetailsScreen';
 import BookingActivityScreen from '../screens/follow-ups/BookingActivityScreen';
 import BookingConfirmActivityScreen from '../screens/follow-ups/BookingConfirmActivityScreen';
 import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
@@ -24,6 +24,7 @@ import ActivityViewEditScreen from '../screens/follow-ups/ActivityViewEditScreen
 import SelectVehicleForBookingScreen from '../screens/vehicle-selection/SelectVehicleForBookingScreen';
 import VehicleDetailsScreen from '../screens/customer/VehicleDetailsScreen';
 import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
+import ConfirmBookingScreen from '../screens/customer/ConfirmBookingScreen';
 import { RootStackParamList } from './types';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -49,6 +50,7 @@ export default function AppNavigator() {
             <Stack.Screen name="FollowUpFilters" component={FollowUpFiltersScreen} />
             <Stack.Screen name="BookingRegister" component={BookingRegisterScreen} />
             <Stack.Screen name="CustomerDetails" component={CustomerDetailsScreen} />
+            <Stack.Screen name="ConfirmBooking" component={ConfirmBookingScreen} />
             <Stack.Screen name="BookingActivity" component={BookingActivityScreen} />
             <Stack.Screen name="BookingConfirmActivity" component={BookingConfirmActivityScreen} />
             <Stack.Screen name="WalkInActivity" component={WalkInActivityScreen} />

@@ -17,6 +17,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
+import { getCustomerByPhoneNo } from '../../src/api';
 
 type AdvancedBookingNavigationProp = StackNavigationProp<RootStackParamList, 'AdvancedBooking'>;
 
@@ -206,6 +207,7 @@ export default function AdvancedBookingScreen() {
                 { id: '3', name: 'South Branch' },
             ];
             setBranches(mockBranches);
+            setBranch((prev) => prev || mockBranches[0]?.name || '');
         } catch (error) {
             console.error('Error fetching branches:', error);
         }
@@ -362,39 +364,47 @@ export default function AdvancedBookingScreen() {
         }
     };
 
+    const applyCustomerToForm = (customer: any) => {
+        if (!customer) return;
+
+        if (!phone && customer.contacts?.[0]?.phone) {
+            setPhone(String(customer.contacts[0].phone));
+        }
+        if (!customerFullName && customer.name) {
+            setCustomerFullName(String(customer.name));
+        }
+        if (!locality && customer.address?.locality) {
+            setLocality(String(customer.address.locality));
+        }
+        if (!quotationsAssociated && Array.isArray(customer.quotation) && customer.quotation.length > 0) {
+            const quotationIds = customer.quotation.map((q: any) => q.quotationId || q.id).join(', ');
+            setQuotationsAssociated(quotationIds);
+        }
+
+        if (!fatherName && customer.fatherName) setFatherName(String(customer.fatherName));
+        if (!address1 && customer.address?.line1) setAddress1(String(customer.address.line1));
+        if (!address2 && customer.address?.line2) setAddress2(String(customer.address.line2));
+        if (!address3 && customer.address?.line3) setAddress3(String(customer.address.line3));
+        if (!pincode && customer.address?.pincode) setPincode(String(customer.address.pincode));
+        if (!email && customer.email) setEmail(String(customer.email));
+        if (!dob && customer.dateOfBirth) setDob(String(customer.dateOfBirth));
+    };
+
     const searchCustomer = async (phoneNumber: string) => {
         try {
             if (phoneNumber.length === 10) {
-                const mockCustomers = [
-                    {
-                        id: '1',
-                        name: 'Rahul Sharma',
-                        contacts: [{ phone: phoneNumber }],
-                        address: {
-                            line1: '123 Main St',
-                            locality: 'Central Area',
-                            pincode: '600001',
-                            country: { name: 'India' },
-                            state: { name: 'Tamil Nadu' },
-                            district: { name: 'Chennai' },
-                        },
-                        fatherName: 'Sharma',
-                        email: 'rahul@example.com',
-                        dateOfBirth: '1990-01-01',
-                        gender: 'Male',
-                    },
-                ];
-                setCustomers(mockCustomers);
-                setCustomerAvailable(true);
-                setCustomerDetails(mockCustomers[0]);
-                // Auto-fill customer data
-                setCustomerFullName(mockCustomers[0].name);
-                setFatherName(mockCustomers[0].fatherName);
-                setAddress1(mockCustomers[0].address.line1);
-                setLocality(mockCustomers[0].address.locality);
-                setPincode(mockCustomers[0].address.pincode);
-                setEmail(mockCustomers[0].email);
-                setDob(mockCustomers[0].dateOfBirth);
+                const customerRes = await getCustomerByPhoneNo(phoneNumber);
+                const customersList = (customerRes.data?.response?.data?.customers as any[]) || [];
+                if (customersList.length > 0) {
+                    const customer = customersList[0];
+                    setCustomers(customersList);
+                    setCustomerAvailable(true);
+                    setCustomerDetails(customer);
+                    applyCustomerToForm(customer);
+                } else {
+                    setCustomers([]);
+                    setCustomerAvailable(false);
+                }
             }
         } catch (error) {
             console.error('Error searching customer:', error);
@@ -929,7 +939,7 @@ export default function AdvancedBookingScreen() {
                             editable={false}
                         />
                         <TouchableOpacity
-                            onPress={() => setShowAccessoriesModal(true)}
+                            onPress={() => setShowAccessoryModal(true)}
                             className="px-4 py-2 bg-teal-600 rounded-lg ml-3"
                         >
                             <Text className="text-sm font-medium text-white">Select</Text>
@@ -1172,15 +1182,15 @@ export default function AdvancedBookingScreen() {
 
             {/* Accessories Modal */}
             <Modal
-                visible={showAccessoriesModal}
+                visible={showAccessoryModal}
                 transparent={true}
                 animationType="fade"
-                onRequestClose={() => setShowAccessoriesModal(false)}
+                onRequestClose={() => setShowAccessoryModal(false)}
             >
                 <TouchableOpacity
                     className="flex-1 bg-black bg-opacity-50 items-center justify-center"
                     activeOpacity={1}
-                    onPress={() => setShowAccessoriesModal(false)}
+                    onPress={() => setShowAccessoryModal(false)}
                 >
                     <View className="bg-white rounded-xl p-6 mx-4 max-w-sm w-full max-h-96">
                         <Text className="text-lg font-semibold text-gray-900 mb-4 text-center">Select Accessories</Text>
@@ -1224,7 +1234,7 @@ export default function AdvancedBookingScreen() {
                             </View>
                         </ScrollView>
                         <TouchableOpacity
-                            onPress={() => setShowAccessoriesModal(false)}
+                            onPress={() => setShowAccessoryModal(false)}
                             className="p-3 bg-teal-600 rounded-lg"
                         >
                             <Text className="text-white font-medium text-center">Done</Text>
