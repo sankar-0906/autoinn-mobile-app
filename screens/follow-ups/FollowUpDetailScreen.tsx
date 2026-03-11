@@ -620,8 +620,14 @@ export default function FollowUpDetailScreen() {
                                 <Text className="text-xs text-gray-700 w-20">
                                     {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
                                 </Text>
-                                <TouchableOpacity className="w-16 items-center">
-                                    <Eye size={14} color={COLORS.primary} />
+                                <TouchableOpacity 
+                                    className="w-16 items-center"
+                                    onPress={() => navigation.navigate('VehicleDetails', { 
+                                        vehicle: vehicle, 
+                                        mode: 'edit' 
+                                    })}
+                                >
+                                    <Edit size={14} color={COLORS.primary} />
                                 </TouchableOpacity>
                             </View>
                         ))

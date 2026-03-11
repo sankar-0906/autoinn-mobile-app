@@ -43,18 +43,23 @@ import { BackButton, HeaderWithBack, useBackButton } from '../../components/ui/B
 import { Button } from '../../components/ui/Button';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import moment from 'moment';
-import {
-    getVehicleById,
-    getVehicleManufacturers,
-    getVehicleModelsByManufacturer,
-    getVehicleModelsByManufacturerId,
-    getVehicleColor,
-    getVehicleFiles,
-    getVehicleServices,
-    getVehicleCustomers,
-    searchCustomers,
-    updateVehicle,
-} from '../../src/api';
+    // API imports for validation
+    import {
+        getVehicleById,
+        getVehicleManufacturers,
+        getVehicleModelsByManufacturer,
+        getVehicleModelsByManufacturerId,
+        getVehicleColor,
+        getVehicleFiles,
+        getVehicleServices,
+        getVehicleCustomers,
+        searchCustomers,
+        updateVehicle,
+        validateChassisNumber,
+        validateEngineNumber,
+        validateRegistrationNumber,
+        fetchMarketInfo,
+    } from '../../src/api';
 
 type VehicleDetailsRouteProp = RouteProp<any, 'VehicleDetails'>;
 type VehicleDetailsNavigationProp = StackNavigationProp<any, 'VehicleDetails'>;
@@ -129,9 +134,14 @@ const VehicleDetailsScreen: React.FC = () => {
     const [showAddCustomerForm, setShowAddCustomerForm] = useState(false);
     const [newCustomerName, setNewCustomerName] = useState("");
     const [newCustomerPhone, setNewCustomerPhone] = useState("");
-    const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+    // Customer dropdown state
+    const [customerDropdownVisible, setCustomerDropdownVisible] = useState(false);
+    const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+    const [customerDropdownData, setCustomerDropdownData] = useState<any[]>([]);
+    const [selectedCustomerValue, setSelectedCustomerValue] = useState(''); // For display in input field
     const [vehicleServices, setVehicleServices] = useState<any[]>([]);
     const [vehicleFiles, setVehicleFiles] = useState<any[]>([]);
+    const [vehicleColors, setVehicleColors] = useState<any[]>([]);
 
     // Form states - initialize with empty values for real data fetching
     const [manufacturerName, setManufacturerName] = useState("");
@@ -151,6 +161,12 @@ const VehicleDetailsScreen: React.FC = () => {
     const [insuranceType, setInsuranceType] = useState("");
     const [validFrom, setValidFrom] = useState('');
     const [validTo, setValidTo] = useState('');
+    
+    // Validation and error states
+    const [validationErrors, setValidationErrors] = useState<{[key: string]: string}>({});
+    const [isValidatingChassis, setIsValidatingChassis] = useState(false);
+    const [marketInfoLoading, setMarketInfoLoading] = useState(false);
+    const [disableForm, setDisableForm] = useState(false);
 
     // Calendar state for date fields
     const [showValidFromCalendar, setShowValidFromCalendar] = useState(false);
@@ -186,8 +202,13 @@ const VehicleDetailsScreen: React.FC = () => {
         try {
             setLoading(true);
             const response = await getVehicleById(vehicleId);
+            console.log('Vehicle API Response:', response); // Debug log
+            
             if (response.data.code === 200 && response.data.response.code === 200) {
                 const data = response.data.response.data;
+                console.log('Vehicle Data:', data); // Debug log
+                console.log('MFG Data from API:', data.mfg, data.mfgDate); // Debug log
+                
                 setVehicleDetails(data);
                 populateFormFields(data);
                 
@@ -205,29 +226,32 @@ const VehicleDetailsScreen: React.FC = () => {
     // Fetch related data (colors, services, files)
     const fetchRelatedData = async (vehicleId: string) => {
         try {
-            // Fetch colors
-            const colorResponse = await getVehicleColor(vehicleId);
+            console.log('Fetching related data for vehicle:', vehicleId);
+            
+            // Fetch vehicle customers (this will set both customers and customerDropdownData)
+            await fetchVehicleCustomers(vehicleId);
+            
+            // Fetch other related data
+            const [colorResponse, servicesResponse, filesResponse] = await Promise.all([
+                getVehicleColor(vehicleId),
+                getVehicleServices(vehicleId),
+                getVehicleFiles(vehicleId)
+            ]);
+            
             if (colorResponse.data.code === 200) {
-                const colors = colorResponse.data.response?.data || [];
-                // Set selected color if available
-                if (colors.length > 0 && vehicleDetails) {
-                    const vehicleColor = colors.find((c: any) => c.color === vehicleDetails.color);
-                    if (vehicleColor) {
-                        setSelectedColor(vehicleColor.color);
-                    }
+                const colorData = colorResponse.data.response.data;
+                setVehicleColors(colorData);
+                if (colorData.length > 0) {
+                    setSelectedColor(colorData[0].color);
                 }
             }
-
-            // Fetch vehicle files
-            const filesResponse = await getVehicleFiles(vehicleId);
-            if (filesResponse.data.code === 200) {
-                setVehicleFiles(filesResponse.data.response?.data || []);
-            }
-
-            // Fetch vehicle services
-            const servicesResponse = await getVehicleServices(vehicleId);
+            
             if (servicesResponse.data.code === 200) {
-                setVehicleServices(servicesResponse.data.response?.data || []);
+                setVehicleServices(servicesResponse.data.response.data.services || []);
+            }
+            
+            if (filesResponse.data.code === 200) {
+                setVehicleFiles(filesResponse.data.response.data.vehicle || []);
             }
         } catch (error) {
             console.error('Error fetching related data:', error);
@@ -269,6 +293,8 @@ const VehicleDetailsScreen: React.FC = () => {
 
     // Populate form fields with API data
     const populateFormFields = (data: any) => {
+        console.log('Populating form fields with data:', data); // Debug log
+        
         // Set model in modelCode - modelName format like web app
         if (data.vehicle?.modelCode && data.vehicle?.modelName) {
             setModel(`${data.vehicle.modelCode} - ${data.vehicle.modelName}`);
@@ -279,34 +305,90 @@ const VehicleDetailsScreen: React.FC = () => {
         if (data.vehicle?.category) setCategory(data.vehicle.category);
         if (data.chassisNumber || data.chassisNo) setChassisNumber(data.chassisNumber || data.chassisNo);
         
-        // Handle MFG date - match web project approach
-        if (data.mfg) {
+        // Handle MFG date - improved parsing
+        if (data.mfg || data.mfgDate) {
+            const mfgData = data.mfg || data.mfgDate;
             let mfgDateString = '';
-            if (typeof data.mfg === 'string') {
-                mfgDateString = data.mfg;
-            } else if (data.mfg.date || data.mfg.$date) {
-                mfgDateString = data.mfg.date || data.mfg.$date;
+            
+            if (typeof mfgData === 'string') {
+                mfgDateString = mfgData;
+            } else if (mfgData.date || mfgData.$date) {
+                mfgDateString = mfgData.date || mfgData.$date;
+            } else if (mfgData instanceof Date) {
+                mfgDateString = mfgData.toISOString();
             }
             
-            // Web project uses moment(new Date()) approach
+            console.log('MFG date string:', mfgDateString); // Debug log
+            
             if (mfgDateString && mfgDateString.trim() !== '') {
-                try {
-                    const dateObj = new Date(mfgDateString);
-                    if (!isNaN(dateObj.getTime())) {
-                        const formattedDate = moment(dateObj).format('MMM-YYYY');
-                        setMfgDate(formattedDate);
-                    } else {
-                        setMfgDate('');
+                // Check if it's already in the correct format (MMM-YYYY)
+                const monthYearPattern = /^[A-Za-z]{3}\s\d{4}$/;
+                if (monthYearPattern.test(mfgDateString)) {
+                    // Already in correct format, use as-is
+                    console.log('MFG already in correct format:', mfgDateString);
+                    setMfgDate(mfgDateString);
+                } else {
+                    // Try to parse as date and format
+                    try {
+                        const dateObj = new Date(mfgDateString);
+                        if (!isNaN(dateObj.getTime())) {
+                            const formattedDate = moment(dateObj).format('MMM-YYYY');
+                            console.log('Setting MFG date:', formattedDate);
+                            setMfgDate(formattedDate);
+                        } else {
+                            console.log('Invalid date object, using raw string');
+                            setMfgDate(mfgDateString);
+                        }
+                    } catch (error) {
+                        console.warn('Date parsing error:', error);
+                        setMfgDate(mfgDateString);
                     }
-                } catch (error) {
-                    console.warn('Date parsing error:', error);
-                    setMfgDate('');
                 }
             } else {
+                console.log('Empty MFG date string');
                 setMfgDate('');
             }
         } else {
+            console.log('No MFG date data found');
             setMfgDate('');
+        }
+        
+        // Set vehicle activate status
+        if (data.active !== undefined) {
+            console.log('Setting vehicle activate:', data.active); // Debug log
+            setVehicleActivate(data.active ? 'Active' : 'Inactive');
+        }
+        
+        // Set customers from vehicle data directly
+        if (data.customer && Array.isArray(data.customer)) {
+            console.log('Setting customers from vehicle data:', data.customer); // Debug log
+            
+            // Extract customer objects from the vehicle data
+            const vehicleCustomers = data.customer.map((c: any) => c.customer).filter((customer: any) => customer);
+            console.log('Extracted customers:', vehicleCustomers); // Debug log
+            
+            if (vehicleCustomers.length > 0) {
+                setCustomers(vehicleCustomers);
+                setCustomerDropdownData(vehicleCustomers);
+                setSelectedCustomers(vehicleCustomers);
+                
+                // Set display value for first customer
+                const firstCustomer = vehicleCustomers[0];
+                let phoneDisplay = '';
+                if (firstCustomer.contacts && Array.isArray(firstCustomer.contacts)) {
+                    if (firstCustomer.contacts.length > 0) {
+                        const firstContact = firstCustomer.contacts[0];
+                        if (Array.isArray(firstContact) && firstContact.length > 0) {
+                            phoneDisplay = firstContact[0].phone ? firstContact[0].phone : '';
+                        } else if (firstContact.phone) {
+                            phoneDisplay = firstContact.phone;
+                        }
+                    }
+                }
+                const displayValue = phoneDisplay ? `${firstCustomer.name} - ${phoneDisplay}` : firstCustomer.name;
+                setSelectedCustomerValue(displayValue);
+                console.log('Set customer display value:', displayValue); // Debug log
+            }
         }
         if (data.engineNo) setEngineNumber(data.engineNo);
         
@@ -418,7 +500,183 @@ const VehicleDetailsScreen: React.FC = () => {
         }
     };
 
-    // Add new customer function
+    // Chassis number validation with pymidol market info integration
+    const handleChassisNumberChange = async (value: string) => {
+        setChassisNumber(value.toUpperCase());
+        
+        // Clear previous errors
+        if (validationErrors.chassis) {
+            setValidationErrors(prev => ({ ...prev, chassis: '' }));
+        }
+        
+        // Validate chassis number when it reaches 17 characters
+        if (value.length === 17 && manufacturers.length > 0) {
+            await validateChassisNumberWithAPI(value);
+        }
+    };
+    
+    const validateChassisNumberWithAPI = async (chassisNo: string) => {
+        try {
+            setIsValidatingChassis(true);
+            
+            // Get selected manufacturer ID
+            const selectedManufacturer = manufacturers.find(m => m.name === manufacturerName);
+            const manufacturerId = selectedManufacturer?.id || '';
+            
+            if (!manufacturerId) {
+                setValidationErrors(prev => ({ ...prev, chassis: 'Please select manufacturer first' }));
+                return;
+            }
+            
+            // Call chassis validation API (matching web project)
+            const response = await validateChassisNumber({
+                chassisNo,
+                manufacturer: manufacturerId,
+                id: vehicleDetails?.id || null,
+                checkType: true // Enable market info fetching
+            });
+            
+            if (response.data.code === 200) {
+                const responseData = response.data.response;
+                
+                if (responseData.code === 200) {
+                    // Valid chassis number - set MFG date
+                    const mfgData = responseData.data;
+                    if (mfgData) {
+                        const dateObj = new Date(mfgData);
+                        const formattedDate = moment(dateObj).format('MMM-YYYY');
+                        setMfgDate(formattedDate);
+                        
+                        // Fetch market info if available
+                        if (responseData.otherValues) {
+                            await fetchAndApplyMarketInfo(chassisNo);
+                        }
+                    }
+                    
+                    // Clear any chassis errors
+                    setValidationErrors(prev => ({ ...prev, chassis: '' }));
+                    
+                } else if (responseData.code === 401) {
+                    // Chassis exists but belongs to another vehicle
+                    const mfgData = responseData.data;
+                    if (mfgData) {
+                        const dateObj = new Date(mfgData);
+                        const formattedDate = moment(dateObj).format('MMM-YYYY');
+                        setMfgDate(formattedDate);
+                    }
+                    
+                    setValidationErrors(prev => ({ 
+                        ...prev, 
+                        chassis: 'Chassis Number already exists' 
+                    }));
+                    
+                } else if (responseData.code === 400) {
+                    // Invalid chassis number
+                    setValidationErrors(prev => ({ 
+                        ...prev, 
+                        chassis: 'Enter Valid Chassis Number' 
+                    }));
+                    setMfgDate('');
+                }
+            }
+        } catch (error) {
+            console.error('Chassis validation error:', error);
+            setValidationErrors(prev => ({ 
+                ...prev, 
+                chassis: 'Validation failed. Please try again.' 
+            }));
+        } finally {
+            setIsValidatingChassis(false);
+        }
+    };
+    
+    const fetchAndApplyMarketInfo = async (chassisNo: string) => {
+        try {
+            setMarketInfoLoading(true);
+            setDisableForm(true);
+            
+            Alert.alert(
+                'Market Info',
+                'Fetching vehicle data from pymidol. This may take some time...',
+                [{ text: 'OK' }]
+            );
+            
+            // Call pymidol market info API (matching web project)
+            const response = await fetchMarketInfo({ chassisNo });
+            
+            if (response.data?.responseCode === 200 && response.data?.data) {
+                const marketData = response.data.data;
+                
+                // Apply market data to form (matching web project logic)
+                await applyMarketDataToForm(marketData);
+                
+                Alert.alert(
+                    'Success',
+                    'Vehicle data fetched successfully from pymidol!',
+                    [{ text: 'OK' }]
+                );
+            }
+        } catch (error) {
+            console.error('Market info fetch error:', error);
+            Alert.alert(
+                'Error',
+                'Failed to fetch market info. Please enter details manually.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setMarketInfoLoading(false);
+            setDisableForm(false);
+        }
+    };
+    
+    const applyMarketDataToForm = async (marketData: any) => {
+        try {
+            // Apply model data (matching web project)
+            if (marketData.modelCd) {
+                const normalizedModelCode = marketData.modelCd?.toString().trim().toUpperCase();
+                const matchedVehicle = vehicleModels.find(
+                    vehicle => vehicle.modelCode?.toString().trim().toUpperCase() === normalizedModelCode
+                );
+                
+                if (matchedVehicle) {
+                    setModel(`${matchedVehicle.modelCode} - ${matchedVehicle.modelName}`);
+                    setCategory(matchedVehicle.category || '');
+                    
+                    // Apply color data
+                    if (marketData.color && Array.isArray(matchedVehicle.image)) {
+                        const normalizedColorCode = (marketPrefill?.color || marketData.color)?.toString().trim().toUpperCase();
+                        const matchedColor = matchedVehicle.image.find(
+                            color => color.code?.toString().trim().toUpperCase() === normalizedColorCode
+                        );
+                        
+                        if (matchedColor) {
+                            setSelectedColor(matchedColor.color);
+                        }
+                    }
+                }
+            }
+            
+            // Apply engine number
+            if (marketData.engineNo) {
+                setEngineNumber(marketData.engineNo.toString().trim());
+            }
+            
+            // Apply date of sale
+            if (marketData.retailDate) {
+                const retailMoment = moment(
+                    marketData.retailDate,
+                    ["DD/MM/YYYY", "DD-MM-YYYY", "YYYY/MM/DD", "YYYY-MM-DD", "YYYYMMDD"],
+                    true
+                );
+                
+                if (retailMoment.isValid()) {
+                    setDateOfSale(retailMoment.format('DD/MM/YYYY'));
+                }
+            }
+        } catch (error) {
+            console.error('Error applying market data:', error);
+        }
+    };
     const handleAddCustomer = () => {
         if (newCustomerName.trim()) {
             const newCustomer = {
@@ -459,28 +717,118 @@ const VehicleDetailsScreen: React.FC = () => {
         );
     };
 
-    // Real-time customer search using API (like web project)
-    const handleCustomerSearch = async (searchString: string) => {
-        setCustomerSearchQuery(searchString);
-        
-        if (searchString.trim()) {
-            try {
-                const response = await searchCustomers(searchString);
-                if (response.data.code === 200 && response.data.response.code === 200) {
-                    const searchResults = response.data.response.data || [];
-                    // Merge with existing customers, avoiding duplicates
-                    const mergedCustomers = [...customers];
-                    searchResults.forEach((searchCustomer: any) => {
-                        if (!customers.some((existing: any) => existing.id === searchCustomer.id)) {
-                            mergedCustomers.push(searchCustomer);
+    // Fetch vehicle customers associated with this vehicle
+    const fetchVehicleCustomers = async (vehicleId: string) => {
+        try {
+            console.log('Fetching vehicle customers for:', vehicleId); // Debug log
+            console.log('Vehicle details customer structure:', vehicleDetails?.customer); // Debug log
+            
+            // Check the actual structure of customer data
+            if (vehicleDetails?.customer && Array.isArray(vehicleDetails.customer)) {
+                console.log('Customer array found:', vehicleDetails.customer); // Debug log
+                
+                // Extract customer IDs - the structure might be different
+                const customerIds = vehicleDetails.customer
+                    .map((c: any) => {
+                        console.log('Processing customer item:', c); // Debug log
+                        // Handle different possible structures
+                        if (c.customer?.id) {
+                            return c.customer.id;
+                        } else if (c.id) {
+                            return c.id;
+                        } else {
+                            console.log('No customer ID found in:', c);
+                            return null;
                         }
-                    });
-                    setCustomers(mergedCustomers);
+                    })
+                    .filter((id: string | null) => id); // Filter out null/undefined
+                
+                console.log('Customer IDs to fetch:', customerIds); // Debug log
+                
+                if (customerIds.length > 0) {
+                    const response = await getVehicleCustomers(customerIds);
+                    console.log('Vehicle customers response:', response); // Debug log
+                    
+                    if (response.data.code === 200 && response.data.response.code === 200) {
+                        const customerData = response.data.response.data || [];
+                        console.log('Setting customers:', customerData); // Debug log
+                        setCustomers(customerData);
+                        setCustomerDropdownData(customerData);
+                        
+                        // Set selected customers if any
+                        if (customerData.length > 0) {
+                            setSelectedCustomers(customerData);
+                            // Set display value for first customer
+                            const firstCustomer = customerData[0];
+                            let phoneDisplay = '';
+                            if (firstCustomer.contacts && Array.isArray(firstCustomer.contacts)) {
+                                if (firstCustomer.contacts.length > 0) {
+                                    const firstContact = firstCustomer.contacts[0];
+                                    if (Array.isArray(firstContact) && firstContact.length > 0) {
+                                        phoneDisplay = firstContact[0].phone ? firstContact[0].phone : '';
+                                    } else if (firstContact.phone) {
+                                        phoneDisplay = firstContact.phone;
+                                    }
+                                }
+                            }
+                            const displayValue = phoneDisplay ? `${firstCustomer.name} - ${phoneDisplay}` : firstCustomer.name;
+                            setSelectedCustomerValue(displayValue);
+                        }
+                    }
+                } else {
+                    console.log('No customer IDs found in vehicle data');
                 }
-            } catch (error) {
-                console.error('Error searching customers:', error);
+            } else {
+                console.log('No customer data in vehicle details');
             }
+        } catch (error) {
+            console.error('Error fetching vehicle customers:', error);
         }
+    };
+    
+    // Customer search function for dropdown (matching web project exactly)
+    const handleCustomerDropdownSearch = async (searchString: string) => {
+        setCustomerSearchQuery(searchString);
+        console.log('Searching customers with:', searchString); // Debug log
+        
+        try {
+            // Use the exact same API as web project
+            const response = await searchCustomers(searchString, 50);
+            
+            console.log('Customer search response:', response); // Debug log
+            
+            if (response.data && response.data.response) {
+                const customerData = response.data.response || [];
+                console.log('Setting customer dropdown data:', customerData); // Debug log
+                setCustomerDropdownData(customerData);
+            } else {
+                console.log('No customer data in response');
+                setCustomerDropdownData([]);
+            }
+        } catch (error) {
+            console.error('Error searching customers:', error);
+            setCustomerDropdownData([]);
+        }
+    };
+    // Handle customer selection from dropdown (multi-select)
+    const handleCustomerSelection = (customer: any) => {
+        const isSelected = selectedCustomers.some((selected: any) => selected.id === customer.id);
+        
+        if (isSelected) {
+            // Remove customer
+            setSelectedCustomers(selectedCustomers.filter((selected: any) => selected.id !== customer.id));
+            console.log('Removed customer:', customer.name); // Debug log
+        } else {
+            // Add customer
+            setSelectedCustomers([...selectedCustomers, customer]);
+            console.log('Added customer:', customer.name); // Debug log
+        }
+        
+        console.log('Total selected customers:', selectedCustomers.length + (isSelected ? -1 : 1)); // Debug log
+        
+        // Don't close dropdown - allow multiple selections
+        // setCustomerDropdownVisible(false);
+        // setCustomerSearchQuery('');
     };
 
     useEffect(() => {
@@ -1183,7 +1531,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 {mode === 'edit' ? (
                     <TouchableOpacity
                         onPress={() => setShowModelModal(true)}
-                        className="h-12 bg-gray-50 border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
+                        className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
                     >
                         <Text className="text-gray-800 flex-1">{model}</Text>
                         <ChevronRight size={16} color={COLORS.gray[400]} />
@@ -1199,12 +1547,9 @@ const VehicleDetailsScreen: React.FC = () => {
             <View className="mb-4">
                 <FormLabel label="Category" />
                 {mode === 'edit' ? (
-                    <TouchableOpacity
-                        className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
-                    >
-                        <Text className="text-gray-800 flex-1">{category}</Text>
-                        <ChevronRight size={16} color={COLORS.gray[400]} />
-                    </TouchableOpacity>
+                    <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
+                        <Text className="text-gray-800">{category || 'Select Model First'}</Text>
+                    </View>
                 ) : (
                     <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
                         <Text className="text-gray-800">{category || '-'}</Text>
@@ -1242,12 +1587,31 @@ const VehicleDetailsScreen: React.FC = () => {
             <View className="mb-4">
                 <FormLabel label="Chassis Number" required />
                 {mode === 'edit' ? (
-                    <TextInput
-                        value={chassisNumber}
-                        onChangeText={setChassisNumber}
-                        editable={true}
-                        className="h-12 bg-white border-gray-400 border rounded-lg px-3 text-gray-800"
-                    />
+                    <View>
+                        <TextInput
+                            value={chassisNumber}
+                            onChangeText={handleChassisNumberChange}
+                            editable={!disableForm}
+                            maxLength={17}
+                            placeholder="Enter 17-character Chassis Number"
+                            className={`h-12 border rounded-lg px-3 text-gray-800 ${
+                                validationErrors.chassis 
+                                    ? 'border-red-500 bg-red-50' 
+                                    : isValidatingChassis 
+                                    ? 'border-blue-500 bg-blue-50'
+                                    : 'border-gray-400 bg-white'
+                            }`}
+                        />
+                        {validationErrors.chassis && (
+                            <Text className="text-xs text-red-500 mt-1">{validationErrors.chassis}</Text>
+                        )}
+                        {isValidatingChassis && (
+                            <View className="flex-row items-center mt-1">
+                                <ActivityIndicator size="small" color={COLORS.primary} />
+                                <Text className="text-xs text-blue-600 ml-2">Validating chassis number...</Text>
+                            </View>
+                        )}
+                    </View>
                 ) : (
                     <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
                         <Text className="text-gray-800">{chassisNumber || '-'}</Text>
@@ -1372,41 +1736,72 @@ const VehicleDetailsScreen: React.FC = () => {
             {/* Vehicle Activate */}
             <View className="mb-4">
                 <FormLabel label="Vehicle Activate" />
-                <TextInput
-                    value={vehicleActivate}
-                    editable={false}
-                    className="h-12 bg-gray-100 border border-gray-200 rounded-lg px-3 text-gray-800"
-                />
+                <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
+                    <Text className="text-gray-800">
+                        {vehicleDetails?.active !== undefined 
+                            ? (vehicleDetails.active ? 'Yes' : 'No')
+                            : (vehicleActivate === 'Active' ? 'Yes' : 'No')
+                        }
+                    </Text>
+                </View>
             </View>
 
             {/* Customer Information Section */}
-            <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100 mt-6">
+            {/* <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100 mt-6">
                 Customer Information
-            </Text>
+            </Text> */}
 
             {/* Customer Associated */}
             <View className="mb-4">
                 <FormLabel label="Customer Associated" />
                 {mode === 'edit' ? (
-                    <TouchableOpacity 
-                        onPress={() => setShowCustomerModal(true)}
-                        className="flex-1 h-12 bg-gray-100 border border-gray-200 rounded-lg px-3 justify-center"
+                    <TouchableOpacity
+                        onPress={() => {
+                            console.log('Opening customer dropdown'); // Debug log
+                            setCustomerDropdownVisible(true);
+                            
+                            // Always load ALL customers for dropdown (not just vehicle customers)
+                            console.log('Loading all customers for dropdown'); // Debug log
+                            // Use search API with empty string to get all customers
+                            handleCustomerDropdownSearch('');
+                        }}
+                        className={`bg-white border border-gray-300 rounded-lg px-3 flex-row items-start justify-between ${
+                            selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
+                        }`}
                     >
-                        <Text className="text-gray-800">
-                            {customerAssociated || 'Select Customers'}
-                        </Text>
+                        <View className="flex-1">
+                            {selectedCustomers.length > 0 ? (
+                                <View className="flex-row flex-wrap gap-1">
+                                    {selectedCustomers.map((customer: any, index: number) => (
+                                        <View key={customer.id || index} className="bg-blue-100 px-2 py-1 rounded">
+                                            <Text className="text-xs text-blue-800">
+                                                {customer.name || 'Unknown'}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            ) : (
+                                <Text className="text-gray-400">Select Customers</Text>
+                            )}
+                        </View>
+                        <ChevronRight size={16} color={COLORS.gray[400]} />
                     </TouchableOpacity>
                 ) : (
-                    <View className="flex-row gap-2 flex-wrap">
-                        {customerAssociated ? (
-                            <View className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg">
-                                <Text className="text-sm text-gray-800">{customerAssociated}</Text>
-                            </View>
-                        ) : (
-                            <View className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-                                <Text className="text-sm text-gray-500">No Customer Associated</Text>
-                            </View>
-                        )}
+                    <View className={`bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center ${
+                        selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
+                    }`}>
+                        <View className="flex-row flex-wrap gap-1">
+                            {selectedCustomers.map((customer: any, index: number) => (
+                                <View key={customer.id || index} className="bg-blue-100 px-2 py-1 rounded">
+                                    <Text className="text-xs text-blue-800">
+                                        {customer.name || 'Unknown'}
+                                    </Text>
+                                </View>
+                            ))}
+                            {selectedCustomers.length === 0 && (
+                                <Text className="text-gray-800">-</Text>
+                            )}
+                        </View>
                     </View>
                 )}
             </View>
@@ -1663,14 +2058,254 @@ const VehicleDetailsScreen: React.FC = () => {
     );
 
     const renderServiceScheduleTab = () => (
-        <View className="p-4">
-            <Text className="text-center text-gray-400 mt-12">Service Schedule Content</Text>
+        <View>
+            {/* Service Schedule Table */}
+            <View className="mb-4">
+                <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
+                    <View style={{ minWidth: 600 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                        <View className="bg-gray-600 text-white p-3">
+                            <View className="flex-row" style={{ minWidth: 600 }}>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service No</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Kms</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Service Date</Text>
+                            </View>
+                        </View>
+                        {vehicleServices && vehicleServices.length > 0 ? (
+                            <View>
+                                {vehicleServices.map((service: any, index: number) => (
+                                    <View key={service.id || index} className="p-3 border-b border-gray-100">
+                                        <View className="flex-row" style={{ minWidth: 600 }}>
+                                            <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                {service.serviceNo || '-'}
+                                            </Text>
+                                            <View style={{ width: 100 }}>
+                                                <View className={`px-2 py-1 rounded text-xs text-center ${
+                                                    service.serviceType === 'FREE' ? 'bg-green-100 text-green-800' :
+                                                    service.serviceType === 'PAID' ? 'bg-orange-100 text-orange-800' :
+                                                    'bg-blue-100 text-blue-800'
+                                                }`}>
+                                                    <Text className="font-medium">
+                                                        {service.serviceType || '-'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                {service.serviceKms || '-'}
+                                            </Text>
+                                            <Text className="text-sm text-gray-800" style={{ width: 120 }}>
+                                                {service.serviceDate ? moment(new Date(service.serviceDate)).format('DD/MM/YYYY') : '-'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        ) : (
+                            <View className="p-12 items-center" style={{ minWidth: 600 }}>
+                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                <Text className="text-sm text-gray-400 mt-2">No Service Schedule Available</Text>
+                            </View>
+                        )}
+                    </View>
+                </ScrollView>
+            </View>
+
+            {/* QR Code and Re-Generate Buttons */}
+            <View className="flex-row justify-end gap-3 mb-6">
+                <TouchableOpacity 
+                    className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg"
+                    onPress={() => {
+                        Alert.alert('QR Code', 'QR Code generation feature will be available in the next update.');
+                    }}
+                >
+                    <Hash size={16} color={COLORS.gray[600]} />
+                    <Text className="text-sm text-gray-700">QR Code</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    className="flex-row items-center gap-2 px-4 py-2 bg-teal-600 rounded-lg"
+                    onPress={async () => {
+                        try {
+                            setLoading(true);
+                            Alert.alert('Re-Generate', 'Regenerating service dates...');
+                            // Call API to regenerate service dates
+                            if (vehicleDetails?.id) {
+                                const response = await getVehicleServices(vehicleDetails.id);
+                                if (response.data.code === 200) {
+                                    setVehicleServices(response.data.response?.data || []);
+                                    Alert.alert('Success', 'Service schedule regenerated successfully');
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error regenerating service schedule:', error);
+                            Alert.alert('Error', 'Failed to regenerate service schedule');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }}
+                >
+                    <Text className="text-sm text-white font-medium">Re-Generate</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* QR Code Display Area */}
+            <View className="bg-gray-50 border border-gray-200 rounded-lg p-4 items-center">
+                <Text className="text-sm text-gray-500 mb-2">QR Code will appear here</Text>
+                <View className="w-32 h-32 bg-gray-200 rounded-lg items-center justify-center">
+                    <Hash size={48} color={COLORS.gray[400]} />
+                </View>
+            </View>
         </View>
     );
 
     const renderJobOrderHistoryTab = () => (
-        <View className="p-4">
-            <Text className="text-center text-gray-400 mt-12">Job Order History Content</Text>
+        <View>
+            {/* Job Order History Table */}
+            <View className="mb-4">
+                <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
+                    <View style={{ minWidth: 1000 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                        <View className="bg-gray-600 text-white p-3">
+                            <View className="flex-row" style={{ minWidth: 1000 }}>
+                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Job No</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Reg. No</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Customer</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Model</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Mechanic</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Supervisor</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Kms</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Date</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Status</Text>
+                                <Text className="text-sm font-medium text-white text-right" style={{ width: 80 }}>Actions</Text>
+                            </View>
+                        </View>
+                        
+                        {/* Sample Job Order Data - Replace with actual API data */}
+                        {[].length > 0 ? (
+                            <View>
+                                {[].map((job: any, index: number) => (
+                                    <View key={job.id || index} className="border-b border-gray-100">
+                                        {/* Main Job Order Row */}
+                                        <View className="p-3">
+                                            <View className="flex-row" style={{ minWidth: 1000 }}>
+                                                <Text className="text-sm text-gray-800" style={{ width: 80 }}>
+                                                    {job.jobNo || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.vehicle?.registerNo || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 120 }}>
+                                                    {job.customer?.name || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.vehicle?.vehicle?.modelName || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.serviceType || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.mechanic?.profile?.employeeName || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.supervisor?.name || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 80 }}>
+                                                    {job.kms || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : '-'}
+                                                </Text>
+                                                <View style={{ width: 80 }}>
+                                                    <View className={`px-2 py-1 rounded text-xs text-center ${
+                                                        job.jobStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                                        job.jobStatus === 'INPROGRESS' ? 'bg-orange-100 text-orange-800' :
+                                                        job.jobStatus === 'PENDING' ? 'bg-red-100 text-red-800' :
+                                                        'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        <Text className="font-medium">
+                                                            {job.jobStatus || '-'}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                                <View style={{ width: 80 }} className="items-end">
+                                                    <TouchableOpacity 
+                                                        className="p-1"
+                                                        onPress={() => {
+                                                            Alert.alert('PDF Download', 'PDF download feature will be available in the next update.');
+                                                        }}
+                                                    >
+                                                        <FileText size={16} color={COLORS.blue[600]} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        </View>
+                                        
+                                        {/* Expandable Details Section */}
+                                        <View className="bg-gray-50 px-3 pb-3">
+                                            <View className="flex-row justify-between items-center mb-2">
+                                                <Text className="text-sm font-medium text-gray-700">Total Invoice: </Text>
+                                                <Text className="text-sm font-bold text-gray-900">₹{job.totalInvoice || '0'}/-</Text>
+                                            </View>
+                                            
+                                            {/* Parts and Labour Details */}
+                                            <View className="bg-white border border-gray-200 rounded-lg p-2">
+                                                <View className="flex-row border-b border-gray-200 pb-1 mb-2">
+                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 200 }}>Details</Text>
+                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 70 }}>Quantity</Text>
+                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 80 }}>Unit Rate</Text>
+                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 100 }}>Amount</Text>
+                                                </View>
+                                                
+                                                {/* Sample Parts Data */}
+                                                {(job.parts || []).map((part: any, partIndex: number) => (
+                                                    <View key={partIndex} className="flex-row py-1 border-b border-gray-100">
+                                                        <Text className="text-xs text-gray-700" style={{ width: 200 }}>
+                                                            {part.partNumber?.partNumber} - {part.partNumber?.partName}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 70 }}>
+                                                            {part.quantity}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 80 }}>
+                                                            ₹{part.unitRate}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 100 }}>
+                                                            ₹{part.rate}
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                                
+                                                {/* Sample Labour Data */}
+                                                {(job.labour || []).map((labour: any, labourIndex: number) => (
+                                                    <View key={labourIndex} className="flex-row py-1 border-b border-gray-100">
+                                                        <Text className="text-xs text-gray-700" style={{ width: 200 }}>
+                                                            {labour.jobCode?.code}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 70 }}>
+                                                            {labour.quantity}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 80 }}>
+                                                            ₹{labour.unitRate}
+                                                        </Text>
+                                                        <Text className="text-xs text-gray-700" style={{ width: 100 }}>
+                                                            ₹{labour.rate}
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        ) : (
+                            <View className="p-12 items-center" style={{ minWidth: 1000 }}>
+                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                <Text className="text-sm text-gray-400 mt-2">No Job Order History Available</Text>
+                                <Text className="text-xs text-gray-400 mt-1">Job orders will appear here once service is completed</Text>
+                            </View>
+                        )}
+                    </View>
+                </ScrollView>
+            </View>
         </View>
     );
 
@@ -1734,11 +2369,21 @@ const VehicleDetailsScreen: React.FC = () => {
                                 <TouchableOpacity 
                                     key={item.id} 
                                     onPress={() => { 
+                                        const modelDisplay = item.modelCode && item.modelName 
+                                            ? `${item.modelCode} - ${item.modelName}`
+                                            : item.modelName || item.name || '';
+                                        
                                         setModel(modelDisplay); 
                                         setShowModelModal(false);
-                                        // Set category if available
+                                        
+                                        // Auto-set category based on selected model
                                         if (item.category) {
                                             setCategory(item.category);
+                                        }
+                                        
+                                        // Auto-set color if available
+                                        if (item.image && item.image.length > 0) {
+                                            setSelectedColor(item.image[0].color);
                                         }
                                     }} 
                                     className="p-4 border-b border-gray-100"
@@ -1761,32 +2406,103 @@ const VehicleDetailsScreen: React.FC = () => {
     const renderColorModal = () => (
         <Modal visible={showColorModal} transparent animationType="fade" onRequestClose={() => setShowColorModal(false)}>
             <View className="flex-1 bg-black/40 items-center justify-center px-4">
-                <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '60%' }}>
+                <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '70%' }}>
                     <View className="p-4 border-b border-gray-200">
                         <View className="flex-row justify-between items-center">
-                            <Text className="text-lg font-semibold text-white">Select Color</Text>
+                            <Text className="text-lg font-semibold text-gray-800">Select Color</Text>
                             <TouchableOpacity onPress={() => setShowColorModal(false)}>
                                 <X size={20} color={COLORS.gray[600]} />
                             </TouchableOpacity>
                         </View>
                     </View>
                     <ScrollView>
-                        {[
-                            { id: '1', name: 'Metallic Black', code: 'SMX' },
-                            { id: '2', name: 'Blue', code: 'BLU' },
-                            { id: '3', name: 'Red', code: 'RED' },
-                            { id: '4', name: 'Gray', code: 'GRY' },
+                        {vehicleModels.length > 0 && vehicleModels.find(v => 
+                            v.modelCode && model.includes(v.modelCode)
+                        )?.image?.length > 0 ? (
+                            // Show actual colors from vehicle model
+                            vehicleModels
+                                .find(v => v.modelCode && model.includes(v.modelCode))
+                                ?.image?.map((color: any, index: number) => (
+                                    <TouchableOpacity 
+                                        key={color.id || index} 
+                                        onPress={() => { 
+                                            setSelectedColor(color.color); 
+                                            setShowColorModal(false);
+                                        }} 
+                                        className="p-4 border-b border-gray-100"
+                                    >
+                                        <View className="flex-row items-center justify-between">
+                                            <View className="flex-row items-center flex-1">
+                                                {color.url && (
+                                                    <Image 
+                                                        source={{ uri: color.url }} 
+                                                        className="w-8 h-8 rounded-full mr-3"
+                                                        style={{ width: 32, height: 32 }}
+                                                    />
+                                                )}
+                                                <View>
+                                                    <Text className={`text-gray-800 ${
+                                                        selectedColor === color.color ? 'font-bold text-teal-700' : ''
+                                                    }`}>
+                                                        {color.color}
+                                                    </Text>
+                                            {color.code && (
+                                                <Text className="text-xs text-gray-500">
+                                                    Code: {color.code}
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                    <View className={`w-5 h-5 rounded-full border-2 ${
+                                        selectedColor === color.color 
+                                            ? 'bg-teal-600 border-teal-600' 
+                                            : 'border-gray-300'
+                                    }`}>
+                                        {selectedColor === color.color && (
+                                            <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
+                                        )}
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+                        ))
+                    ) : (
+                        // Fallback to default colors
+                        [
+                            { id: '1', name: 'Metallic Black', code: 'SMX', color: 'black' },
+                            { id: '2', name: 'Blue', code: 'BLU', color: 'blue' },
+                            { id: '3', name: 'Red', code: 'RED', color: 'red' },
+                            { id: '4', name: 'Gray', code: 'GRY', color: 'gray' },
                         ].map((item) => (
                             <TouchableOpacity 
                                 key={item.id} 
                                 onPress={() => { setSelectedColor(item.name); setShowColorModal(false); }} 
                                 className="p-4 border-b border-gray-100"
                             >
-                                <Text className={`text-gray-800 ${selectedColor === item.name ? 'font-bold text-teal-700' : ''}`}>
-                                    {item.name} ({item.code})
-                                </Text>
+                                <View className="flex-row items-center justify-between">
+                                    <View className="flex-row items-center flex-1">
+                                        <View className={`w-8 h-8 rounded-full mr-3 bg-${item.color}-500`} />
+                                        <View>
+                                            <Text className={`text-gray-800 ${
+                                                selectedColor === item.name ? 'font-bold text-teal-700' : ''
+                                            }`}>
+                                                {item.name}
+                                            </Text>
+                                            <Text className="text-xs text-gray-500">{item.code}</Text>
+                                        </View>
+                                    </View>
+                                    <View className={`w-5 h-5 rounded-full border-2 ${
+                                        selectedColor === item.name 
+                                            ? 'bg-teal-600 border-teal-600' 
+                                            : 'border-gray-300'
+                                    }`}>
+                                        {selectedColor === item.name && (
+                                            <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
+                                        )}
+                                    </View>
+                                </View>
                             </TouchableOpacity>
-                        ))}
+                        ))
+                    )}
                     </ScrollView>
                     <TouchableOpacity onPress={() => setShowColorModal(false)} className="p-3 border-t border-gray-200">
                         <Text className="text-center text-gray-600 font-medium">Cancel</Text>
@@ -1848,7 +2564,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                 className="flex-1 ml-2 text-gray-800"
                                 placeholder="Search customers..."
                                 value={customerSearchQuery}
-                                onChangeText={handleCustomerSearch}
+                                onChangeText={handleCustomerDropdownSearch}
                             />
                         </View>
                     </View>
@@ -1915,15 +2631,16 @@ const VehicleDetailsScreen: React.FC = () => {
                     <View className="p-3 border-t border-gray-200 flex-row gap-2">
                         <TouchableOpacity 
                             onPress={() => {
-                                // Update customerAssociated with selected customers
-                                const customerNames = selectedCustomers.map((customer: any) => {
-                                    let displayName = customer.name || '';
-                                    if (customer.contacts && customer.contacts[0] && customer.contacts[0].phone) {
-                                        displayName += ` - ${customer.contacts[0].phone}`;
-                                    }
-                                    return displayName;
-                                });
-                                setCustomerAssociated(customerNames.join(', '));
+                                // Update display with selected customers count
+                                const customerCount = selectedCustomers.length;
+                                if (customerCount > 0) {
+                                    const displayText = customerCount === 1 
+                                        ? `${selectedCustomers[0].name} selected`
+                                        : `${customerCount} customers selected`;
+                                    setCustomerAssociated(displayText);
+                                } else {
+                                    setCustomerAssociated('');
+                                }
                                 setShowCustomerModal(false);
                             }} 
                             className="flex-1 bg-blue-600 p-3 rounded-lg"
@@ -2404,6 +3121,118 @@ const VehicleDetailsScreen: React.FC = () => {
             {renderCalendarModal()}
             {renderValidFromCalendarModal()}
             {renderValidToCalendarModal()}
+            {/* Customer Dropdown Modal */}
+            {customerDropdownVisible && (
+                <Modal 
+                    visible={customerDropdownVisible} 
+                    transparent 
+                    animationType="fade" 
+                    onRequestClose={() => setCustomerDropdownVisible(false)}
+                >
+                    <View className="flex-1 bg-black/40 items-center justify-center px-4">
+                        <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '80%' }}>
+                            <View className="p-4 border-b border-gray-200">
+                                <View className="flex-row justify-between items-center mb-3">
+                                    <Text className="text-lg font-semibold text-gray-800">Select Customer</Text>
+                                    <TouchableOpacity onPress={() => setCustomerDropdownVisible(false)}>
+                                        <X size={20} color={COLORS.gray[600]} />
+                                    </TouchableOpacity>
+                                </View>
+                                
+                                {/* Search Input */}
+                                <View className="flex-row items-center bg-gray-100 rounded-lg px-3 py-2">
+                                    <Search size={16} color={COLORS.gray[400]} />
+                                    <TextInput
+                                        className="flex-1 ml-2 text-gray-800"
+                                        placeholder="Search customers..."
+                                        value={customerSearchQuery}
+                                        onChangeText={handleCustomerDropdownSearch}
+                                        autoFocus={true}
+                                    />
+                                </View>
+                            </View>
+                            
+                            <ScrollView>
+                                {/* Customer List with checkboxes */}
+                                {customerDropdownData.map((customer: any) => {
+                                    // Format display value as "customername - mobilenumber"
+                                    let phoneDisplay = '';
+                                    if (customer.contacts && Array.isArray(customer.contacts)) {
+                                        if (customer.contacts.length > 0) {
+                                            const firstContact = customer.contacts[0];
+                                            // Handle case where contacts is an array of arrays
+                                            if (Array.isArray(firstContact) && firstContact.length > 0) {
+                                                phoneDisplay = firstContact[0].phone ? firstContact[0].phone : '';
+                                            } else if (firstContact.phone) {
+                                                phoneDisplay = firstContact.phone;
+                                            }
+                                        }
+                                    }
+                                    
+                                    const displayValue = phoneDisplay ? `${customer.name} - ${phoneDisplay}` : customer.name;
+                                    const isSelected = selectedCustomers.some((selected: any) => selected.id === customer.id);
+                                    
+                                    return (
+                                        <TouchableOpacity 
+                                            key={customer.id} 
+                                            onPress={() => handleCustomerSelection(customer)}
+                                            className="p-4 border-b border-gray-100 flex-row items-center"
+                                        >
+                                            <View className="flex-1">
+                                                <Text className={`text-gray-800 ${isSelected ? 'font-bold text-blue-700' : ''}`}>
+                                                    {displayValue}
+                                                </Text>
+                                            </View>
+                                            <View className={`w-5 h-5 rounded-full border-2 ${
+                                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                                            }`}>
+                                                {isSelected && (
+                                                    <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
+                                                )}
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                
+                                {customerDropdownData.length === 0 && (
+                                    <View className="p-8 items-center">
+                                        <Text className="text-gray-500 text-center">
+                                            {customerSearchQuery.trim() ? 'No customers found' : 'No customers available'}
+                                        </Text>
+                                    </View>
+                                )}
+                            </ScrollView>
+                            
+                            {/* Add Customer Button */}
+                            <TouchableOpacity 
+                                onPress={() => {
+                                    setCustomerDropdownVisible(false);
+                                    setShowAddCustomerForm(true);
+                                }}
+                                className="p-4 border-t border-gray-200 bg-blue-50"
+                            >
+                                <View className="flex-row items-center justify-center">
+                                    <Plus size={20} color={COLORS.primary} />
+                                    <Text className="ml-2 text-blue-600 font-medium">Add New Customer</Text>
+                                </View>
+                            </TouchableOpacity>
+                            
+                            {/* Done Button */}
+                            <View className="p-3 border-t border-gray-200">
+                                <TouchableOpacity 
+                                    onPress={() => {
+                                        setCustomerDropdownVisible(false);
+                                        setCustomerSearchQuery('');
+                                    }} 
+                                    className="bg-blue-600 p-3 rounded-lg"
+                                >
+                                    <Text className="text-center text-white font-medium">Done ({selectedCustomers.length})</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+            )}
         </SafeAreaView>
     );
 };

@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
 
-const DEFAULT_ENDPOINT = 'http://172.30.195.33:4000/';
+const DEFAULT_ENDPOINT = 'http://192.168.1.20:4000/';
 // const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
 
 // const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';

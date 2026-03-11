@@ -41,6 +41,9 @@ export default function ConfirmBookingScreen() {
     const [showColorModal, setShowColorModal] = useState(false);
     const [selectedColor, setSelectedColor] = useState<any>(null);
     const [paymentMode, setPaymentMode] = useState('Cash');
+    const [registeredPhone, setRegisteredPhone] = useState('');
+    const [otp, setOtp] = useState('');
+    const [authStatus, setAuthStatus] = useState('Pending');
 
     const steps = [
         { id: 1, label: 'Customer Data', icon: 'person-outline' },
@@ -880,57 +883,84 @@ export default function ConfirmBookingScreen() {
     );
 
     const renderCustomerAuthentication = () => (
-        <View className="space-y-4">
-            <View className="space-y-4">
-                <View className="mb-4">
-                    <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
-                        <Text className="text-red-500">*</Text> Identity Proof Type
-                    </Text>
-                    <TextInput
-                        placeholder="Select Identity Proof"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
+        <ScrollView className="flex-1">
+            <View className="space-y-8">
+                {/* Digital Authentication */}
+                <View>
+                    <Text className="text-base font-medium text-gray-700 mb-4">Digital Authentication</Text>
+                    
+                    <View className="space-y-4">
+                        <View>
+                            <Text className="text-sm text-gray-600 mb-1">Registered Phone Number</Text>
+                            <TextInput
+                                value={registeredPhone}
+                                onChangeText={setRegisteredPhone}
+                                placeholder="Registered Phone Number"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </View>
+
+                        <View className="flex-row justify-start">
+                            <TouchableOpacity 
+                                onPress={() => setAuthStatus('Sent')}
+                                className="px-6 py-2 bg-teal-600 rounded-lg items-center"
+                            >
+                                <Text className="text-white font-medium">Generate OTP and Link</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View>
+                            <Text className="text-sm text-gray-600 mb-1">Enter OTP</Text>
+                            <TextInput
+                                value={otp}
+                                onChangeText={setOtp}
+                                placeholder="Enter OTP"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </View>
+
+                        <View className="flex-row justify-start">
+                            <TouchableOpacity 
+                                onPress={() => setAuthStatus('Verified')}
+                                className="px-6 py-2 bg-teal-600 rounded-lg items-center"
+                            >
+                                <Text className="text-white font-medium">Verify</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View className="flex justify-end mt-4">
+                            <View className="flex-row items-center">
+                                <Text className="text-sm text-gray-600">Authentication Status: </Text>
+                                <Text className="text-sm font-medium text-gray-700">{authStatus}</Text>
+                            </View>
+                        </View>
+                    </View>
                 </View>
 
-                <View className="mb-4">
-                    <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
-                        <Text className="text-red-500">*</Text> Identity Proof Number
-                    </Text>
-                    <TextInput
-                        placeholder="Enter Identity Proof Number"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                </View>
+                {/* Manual Authentication */}
+                <View className="border-t border-gray-200 pt-8">
+                    <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
+                    
+                    <View className="space-y-6">
+                        <View>
+                            <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
+                            <TouchableOpacity className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg">
+                                <Ionicons name="download-outline" size={16} color="#6B7280" />
+                                <Text className="text-sm text-gray-700">Click to download</Text>
+                            </TouchableOpacity>
+                        </View>
 
-                <View className="mb-4">
-                    <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
-                        Customer Photo
-                    </Text>
-                    <TouchableOpacity className="border-2 border-dashed border-gray-300 rounded-lg p-6 items-center justify-center bg-gray-50">
-                        <Ionicons name="camera-outline" size={24} color="#9CA3AF" />
-                        <Text className="text-gray-500 mt-2">Take Photo</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View className="mb-4">
-                    <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
-                        Identity Proof Document
-                    </Text>
-                    <TouchableOpacity className="border-2 border-dashed border-gray-300 rounded-lg p-6 items-center justify-center bg-gray-50">
-                        <Ionicons name="document-outline" size={24} color="#9CA3AF" />
-                        <Text className="text-gray-500 mt-2">Upload Document</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View className="mb-4">
-                    <View className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                        <Text className="text-yellow-800 text-sm">
-                            Please verify all customer details before completing the booking.
-                        </Text>
+                        <View>
+                            <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
+                            <TouchableOpacity className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg">
+                                <Ionicons name="cloud-upload-outline" size={16} color="#6B7280" />
+                                <Text className="text-sm text-gray-700">Upload Booking Form</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </View>
-        </View>
+        </ScrollView>
     );
 
     const renderCurrentStep = () => {

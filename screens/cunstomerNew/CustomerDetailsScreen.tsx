@@ -12,6 +12,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     FlatList,
+    Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -239,15 +240,8 @@ const CustomerDetailsScreen: React.FC = () => {
 
     // Dynamic data for other tabs
     const [quotations, setQuotations] = useState<Quotation[]>([]);
-    const [bookings] = useState<Booking[]>([
-        {
-            id: '1',
-            bookingId: 'DCE25-26/20',
-            vehicle: 'Fascino 125 Fi Hybrid DLX Disc - BORGRG',
-            createdOn: '24/03/2025',
-            status: 'Confirmed'
-        }
-    ]);
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [purchasedVehicles, setPurchasedVehicles] = useState<any[]>([]);
     const [documents] = useState<Document[]>([
         {
             id: '1',
@@ -265,7 +259,7 @@ const CustomerDetailsScreen: React.FC = () => {
 
     const tabs = [
         { id: 'customer-details', label: 'Customer Details' },
-        { id: 'associated-documents', label: 'Associated Documents' },
+        { id: 'associated-vehicles', label: 'Associated Vehicles' },
         { id: 'bookings', label: 'Bookings' },
         { id: 'quotations', label: 'Quotations' }
     ];
@@ -409,10 +403,30 @@ const CustomerDetailsScreen: React.FC = () => {
                             id: quot.id,
                             quotationId: quot.quotationId,
                             vehicle: quot.vehicle?.[0]?.vehicleDetail?.modelName || 'N/A',
+                            modelCode: quot.vehicle?.[0]?.vehicleDetail?.modelCode || 'N/A',
                             createdOn: quot.createdAt ? moment(quot.createdAt).format('DD/MM/YYYY') : 'N/A',
-                            status: 'Active'
+                            status: quot.quotationStatus || 'Active'
                         }));
                         setQuotations(quotationData);
+                    }
+                    
+                    // Set purchased vehicles
+                    if (customer.purchasedVehicle && customer.purchasedVehicle.length > 0) {
+                        setPurchasedVehicles(customer.purchasedVehicle);
+                    }
+                    
+                    // Set bookings
+                    if (customer.booking && customer.booking.length > 0) {
+                        const bookingData = customer.booking.map((booking: any) => ({
+                            id: booking.id,
+                            bookingId: booking.bookingId,
+                            vehicle: booking.vehicle?.modelName || 'N/A',
+                            createdOn: booking.createdAt ? moment(booking.createdAt).format('DD/MM/YYYY') : 'N/A',
+                            status: booking.bookingStatus || 'Pending',
+                            color: booking.color,
+                            registerNo: booking.registerNo || booking.registrationNumber || 'N/A'
+                        }));
+                        setBookings(bookingData);
                     }
                     
                     setForceUpdate(prev => prev + 1);
@@ -624,7 +638,7 @@ const CustomerDetailsScreen: React.FC = () => {
                 formattedDobForApi = dob;
             }
             
-            // Prepare address with proper format (backend expects direct IDs, not nested objects)
+            // Prepare address with proper format (backend expects direct IDs to avoid 500 errors)
         const billingAddressObj = {
             line1: billingAddress.address1 || null,
             line2: billingAddress.address2 || null,
@@ -670,6 +684,12 @@ const CustomerDetailsScreen: React.FC = () => {
 
             console.log('💾 === PAYLOAD TO SAVE ===');
             console.log('💾 Full payload:', JSON.stringify(customerDataToSave, null, 2));
+            
+            // Detailed shipping address request logs
+            console.log('💾 === SHIPPING ADDRESS REQUEST DETAILS ===');
+            console.log('💾 Shipping Address Object:', JSON.stringify(shippingAddressObj, null, 2));
+            console.log('💾 sameAsBilling Value:', sameAsBilling);
+            console.log('💾 Billing Address Source:', JSON.stringify(billingAddressObj, null, 2));
 
             const response = await updateCustomer(customerData.id, customerDataToSave);
             
@@ -683,6 +703,16 @@ const CustomerDetailsScreen: React.FC = () => {
                 console.log('💾 === ADDRESS RESPONSE DETAILS ===');
                 console.log('💾 Billing Address:', JSON.stringify(responseData.address, null, 2));
                 console.log('💾 Shipping Address:', JSON.stringify(responseData.shippingAddress, null, 2));
+                
+                // Additional shipping address debug info
+                console.log('💾 === SHIPPING ADDRESS RESPONSE DEBUG ===');
+                console.log('💾 Shipping Address Type:', typeof responseData.shippingAddress);
+                console.log('💾 Shipping Address Keys:', responseData.shippingAddress ? Object.keys(responseData.shippingAddress) : 'NULL');
+                console.log('💾 Shipping Address Line1:', responseData.shippingAddress?.line1);
+                console.log('💾 Shipping Address Country:', responseData.shippingAddress?.country);
+                console.log('💾 Shipping Address State:', responseData.shippingAddress?.state);
+                console.log('💾 Shipping Address City:', responseData.shippingAddress?.city);
+                console.log('💾 Shipping Address District:', responseData.shippingAddress?.district);
             }
             
             if (response.data?.code === 200) {
@@ -1896,39 +1926,82 @@ const CustomerDetailsScreen: React.FC = () => {
         </View>
     );
 
-    const renderAssociatedDocuments = () => (
-        <ScrollView className="flex-1 bg-gray-50">
-            <View className="p-4">
-                <View className="bg-white rounded-lg border border-gray-200">
-                    {documents.length === 0 ? (
-                        <View className="p-8 items-center">
-                            <FileText size={48} color="#9ca3af" />
-                            <Text className="mt-4 text-gray-500 text-center">No documents found</Text>
-                        </View>
-                    ) : (
-                        <View className="divide-y divide-gray-200">
-                            {documents.map((doc) => (
-                                <View key={doc.id} className="p-4 flex-row justify-between items-center">
-                                    <View className="flex-1">
-                                        <Text className="font-medium text-gray-900">{doc.name}</Text>
-                                        <Text className="text-sm text-gray-500">{doc.type} • Uploaded on {doc.uploadedOn}</Text>
-                                    </View>
-                                    <TouchableOpacity className="p-2">
-                                        <Eye size={20} color="#6b7280" />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </View>
-                    )}
+    const renderAssociatedVehicles = () => (
+        <View>
+            {purchasedVehicles.length === 0 ? (
+                <View className="rounded-lg border border-gray-200 p-8 items-center bg-gray-50">
+                    <Car size={48} color="#9ca3af" />
+                    <Text className="mt-4 text-gray-500 text-center">No vehicles found</Text>
                 </View>
-            </View>
-        </ScrollView>
+            ) : (
+                <View className="space-y-2">
+                    {purchasedVehicles.map((vehicle, index) => (
+                        <View key={vehicle.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                            {/* Vehicle Image and Color */}
+                            <View className="p-3">
+                                {vehicle.color?.url ? (
+                                    <View className="items-center">
+                                        <Image 
+                                            source={{ uri: vehicle.color.url }} 
+                                            className="w-full h-32 rounded-lg"
+                                            resizeMode="cover"
+                                        />
+                                        <View className="mt-2 flex-row items-center justify-center gap-2">
+                                            <Text className="font-bold text-gray-900">{vehicle.color.code}</Text>
+                                            <Text className="text-gray-600">-</Text>
+                                            <Text className="font-bold text-gray-900">{vehicle.color.color}</Text>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <View className="w-full h-32 bg-gray-100 rounded-lg items-center justify-center">
+                                        <Car size={40} color="#9ca3af" />
+                                        <Text className="mt-2 text-gray-500">No Image</Text>
+                                    </View>
+                                )}
+                            </View>
+                            
+                            {/* Vehicle Details */}
+                            <View className="px-3 pb-3 space-y-2">
+                                <View className="flex-row justify-between items-start">
+                                    <View className="flex-1">
+                                        <Text className="font-bold text-lg text-gray-900">
+                                            {vehicle.vehicle?.modelCode} - {vehicle.vehicle?.modelName}
+                                        </Text>
+                                    </View>
+                                </View>
+                                
+                                <View className="space-y-1">
+                                    <View className="flex-row">
+                                        <Text className="text-gray-600 w-20 text-sm">Reg No:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">{vehicle.registerNo || vehicle.regNo || vehicle.registrationNumber || 'N/A'}</Text>
+                                    </View>
+                                    <View className="flex-row">
+                                        <Text className="text-gray-600 w-20 text-sm">Chassis No:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">{vehicle.chassisNo || 'N/A'}</Text>
+                                    </View>
+                                    <View className="flex-row">
+                                        <Text className="text-gray-600 w-20 text-sm">Date of Sale:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">
+                                            {vehicle.dateOfSale ? moment(vehicle.dateOfSale).format('DD-MM-YYYY') : 'N/A'}
+                                        </Text>
+                                    </View>
+                                </View>
+                                
+                                <TouchableOpacity className="mt-2 bg-teal-600 py-2 px-4 rounded-lg items-center">
+                                    <Text className="text-white font-medium">View Vehicle</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            )}
+        </View>
     );
 
     const renderBookings = () => (
-        <View className="space-y-4">
+        <View>
             {/* Booking Buttons */}
-            <View className="flex-row gap-3">
+            <View className="flex-row gap-3 mb-4">
                 <TouchableOpacity 
                     className="flex-1 h-12 bg-teal-600 rounded-lg items-center justify-center"
                     onPress={() => {
@@ -1974,43 +2047,127 @@ const CustomerDetailsScreen: React.FC = () => {
                     <Text className="text-white text-sm font-medium">Add Advanced Booking</Text>
                 </TouchableOpacity>
             </View>
+            
+            {/* Bookings List */}
+            {bookings.length === 0 ? (
+                <View className="rounded-lg border border-gray-200 p-8 items-center bg-gray-50">
+                    <FileText size={48} color="#9ca3af" />
+                    <Text className="mt-4 text-gray-500 text-center">No bookings found</Text>
+                </View>
+            ) : (
+                <View className="space-y-2">
+                    {bookings.map((booking) => (
+                        <View key={booking.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm mb-2">
+                            {/* Vehicle Image and Color */}
+                            <View className="p-3">
+                                {booking.color?.url ? (
+                                    <View className="items-center">
+                                        <Image 
+                                            source={{ uri: booking.color.url }} 
+                                            className="w-full h-32 rounded-lg"
+                                            resizeMode="cover"
+                                        />
+                                        <View className="mt-2">
+                                            <Text className="font-bold text-center text-gray-900">{booking.color.color}</Text>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <View className="w-full h-32 bg-gray-100 rounded-lg items-center justify-center">
+                                        <Car size={40} color="#9ca3af" />
+                                        <Text className="mt-2 text-gray-500">No Image</Text>
+                                    </View>
+                                )}
+                            </View>
+                            
+                            {/* Booking Details */}
+                            <View className="px-3 pb-3 space-y-2">
+                                <View className="flex-row justify-between items-start">
+                                    <View className="flex-1">
+                                        <Text className="font-bold text-lg text-teal-600">{booking.bookingId}</Text>
+                                        <Text className="text-gray-800 mt-1">{booking.vehicle}</Text>
+                                    </View>
+                                </View>
+                                
+                                <View className="flex-row justify-between items-center">
+                                    <View className="flex-row items-center">
+                                        <Text className="text-gray-600 text-sm">Status: </Text>
+                                        <Text className="font-medium text-gray-900 text-sm">{booking.status}</Text>
+                                    </View>
+                                    <Text className="text-sm text-gray-500">{booking.createdOn}</Text>
+                                </View>
+                                
+                                <TouchableOpacity className="mt-2 bg-teal-600 py-2 px-4 rounded-lg items-center">
+                                    <Text className="text-white font-medium">View Booking</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            )}
         </View>
     );
 
     const renderQuotations = () => (
-        <ScrollView className="flex-1 bg-gray-50">
-            <View className="p-4">
-                <View className="bg-white rounded-lg border border-gray-200">
-                    {quotations.length === 0 ? (
-                        <View className="p-8 items-center">
-                            <FileText size={48} color="#9ca3af" />
-                            <Text className="mt-4 text-gray-500 text-center">No quotations found</Text>
-                        </View>
-                    ) : (
-                        <View className="divide-y divide-gray-200">
-                            {quotations.map((quotation) => (
-                                <View key={quotation.id} className="p-4">
-                                    <View className="flex-row justify-between items-start mb-2">
-                                        <Text className="font-medium text-teal-600">{quotation.quotationId}</Text>
-                                        <Text className="text-sm text-gray-500">{quotation.createdOn}</Text>
+        <View>
+            <View>
+                {quotations.length === 0 ? (
+                    <View className="rounded-lg border border-gray-200 p-8 items-center bg-gray-50">
+                        <FileText size={48} color="#9ca3af" />
+                        <Text className="mt-4 text-gray-500 text-center">No quotations found</Text>
+                    </View>
+                ) : (
+                    <View className="space-y-2">
+                        {quotations.map((quotation) => (
+                            <TouchableOpacity 
+                                key={quotation.id} 
+                                className="bg-white rounded-lg border border-gray-200 p-4 mb-2"
+                                onPress={() => navigation.navigate('QuotationView' as any, { id: quotation.id })}
+                            >
+                                <View className="flex-row justify-between items-start mb-2">
+                                    <View className="flex-1">
+                                        <Text className="font-bold text-teal-600">{quotation.quotationId}</Text>
+                                        <Text className="text-gray-800 mt-1">{quotation.vehicle}</Text>
+                                        {quotation.modelCode && quotation.modelCode !== 'N/A' && (
+                                            <Text className="text-sm text-gray-500 mt-1">Model Code: {quotation.modelCode}</Text>
+                                        )}
                                     </View>
-                                    <Text className="text-gray-800">{quotation.vehicle}</Text>
-                                    <Text className="text-sm text-gray-500 mt-1">Status: {quotation.status}</Text>
+                                    <View className="items-end">
+                                        <Text className="text-sm text-gray-500">{quotation.createdOn}</Text>
+                                        <View className="mt-2">
+                                            <Text className={`text-xs px-2 py-1 rounded-full ${
+                                                quotation.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {quotation.status}
+                                            </Text>
+                                        </View>
+                                    </View>
                                 </View>
-                            ))}
-                        </View>
-                    )}
-                </View>
+                                <View className="flex-row justify-between items-center mt-2">
+                                    <TouchableOpacity 
+                                        className="flex-row items-center"
+                                        onPress={(e) => {
+                                            e.stopPropagation();
+                                            navigation.navigate('QuotationView' as any, { id: quotation.id });
+                                        }}
+                                    >
+                                        <Eye size={16} color="#6b7280" />
+                                        <Text className="ml-1 text-sm text-teal-600 font-medium">View Quotation</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
             </View>
-        </ScrollView>
+        </View>
     );
 
     const renderContent = () => {
         switch (activeTab) {
             case 'customer-details':
                 return renderCustomerDetails();
-            case 'associated-documents':
-                return renderAssociatedDocuments();
+            case 'associated-vehicles':
+                return renderAssociatedVehicles();
             case 'bookings':
                 return renderBookings();
             case 'quotations':

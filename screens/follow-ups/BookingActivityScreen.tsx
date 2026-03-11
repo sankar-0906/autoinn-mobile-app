@@ -117,15 +117,22 @@ export default function BookingActivityScreen({
         const state = navigation.getState();
         const previousRoute = state?.routes?.[state.index - 1];
         
-        if ((isAdvancedBooking || isConfirmBooking) && customerId) {
-            // If we came from Advanced/Confirm Booking, go back to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: false };
-        } else if (previousRoute?.name === 'CustomerDetails') {
-            // If we came from Customer Details, go back to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: false };
-        } else if (previousRoute?.name === 'FollowUpDetail') {
-            // If we came from FollowUpDetail, use goBack() to preserve exact state
+        // Check the navigation stack to see if we came from FollowUpDetail → CustomerDetails → BookingActivity
+        // We need to look at the route before the previous one
+        const routeBeforePrevious = state?.routes?.[state.index - 2];
+        
+        if (previousRoute?.name === 'FollowUpDetail') {
+            // If we came directly from FollowUpDetail, use goBack() to preserve exact state
             return { screen: 'FollowUpDetail' as const, useGoBack: true };
+        } else if (previousRoute?.name === 'CustomerDetails' && routeBeforePrevious?.name === 'FollowUpDetail') {
+            // If we came from FollowUpDetail → CustomerDetails → BookingActivity, use goBack() to CustomerDetails first
+            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
+        } else if ((isAdvancedBooking || isConfirmBooking) && customerId) {
+            // If we came from Advanced/Confirm Booking (but not from FollowUpDetail flow), use goBack() to Customer Details
+            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
+        } else if (previousRoute?.name === 'CustomerDetails') {
+            // If we came from Customer Details, use goBack() to Customer Details
+            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
         }
         // Otherwise, go to FollowUps (default behavior)
         return { screen: 'FollowUps' as const, params: undefined, useGoBack: false };
@@ -187,6 +194,9 @@ export default function BookingActivityScreen({
     const [isVehicleSelectionInProgress, setIsVehicleSelectionInProgress] = useState(false);
     const [hasEverSelectedVehicle, setHasEverSelectedVehicle]       = useState(false);
     const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
+    const [registeredPhone, setRegisteredPhone] = useState('');
+    const [otp, setOtp] = useState('');
+    const [authStatus, setAuthStatus] = useState('Pending');
 
     // ── Customer fields ────────────────────────────────────────────────────
     const [branch, setBranch]                     = useState('');
@@ -2345,84 +2355,85 @@ export default function BookingActivityScreen({
                         {/* ── AUTH TAB ──────────────────────────────────── */}
                         {activeTab === 'auth' && (
                             <View>
-                                <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
-                                    Customer Authentication
-                                </Text>
 
-                                {/* Authentication Status */}
-                                <View className="mb-4">
-                                    <FormLabel label="Authentication Status" />
-                                    <View className="bg-gray-50 border border-gray-300 rounded-lg p-4">
-                                        <View className="flex-row items-center justify-between">
-                                            <Text className="text-gray-700">Customer Verification</Text>
-                                            <View className="px-3 py-1 bg-yellow-100 rounded-full">
-                                                <Text className="text-yellow-800 text-sm font-medium">Pending</Text>
+                                <View className="space-y-8">
+                                    {/* Digital Authentication */}
+                                    <View>
+                                        <Text className="text-base font-medium text-gray-700 mb-4">Digital Authentication</Text>
+                                        
+                                        <View className="space-y-4">
+                                            <View className="mb-4">
+                                                <Text className="text-sm text-gray-600 mb-2">Registered Phone Number</Text>
+                                                <TextInput
+                                                    value={registeredPhone}
+                                                    onChangeText={setRegisteredPhone}
+                                                    placeholder="Registered Phone Number"
+                                                    className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
+                                                />
+                                            </View>
+
+                                            <View className="mb-4">
+                                                <TouchableOpacity 
+                                                    onPress={() => setAuthStatus('Sent')}
+                                                    className="h-12 bg-teal-600 rounded-lg items-center justify-center"
+                                                >
+                                                    <Text className="text-white font-medium">Generate OTP and Link</Text>
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <View className="mb-4">
+                                                <Text className="text-sm text-gray-600 mb-2">Enter OTP</Text>
+                                                <TextInput
+                                                    value={otp}
+                                                    onChangeText={setOtp}
+                                                    placeholder="Enter OTP"
+                                                    className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
+                                                />
+                                            </View>
+
+                                            <View className="mb-4">
+                                                <TouchableOpacity 
+                                                    onPress={() => setAuthStatus('Verified')}
+                                                    className="h-12 bg-teal-600 rounded-lg items-center justify-center"
+                                                >
+                                                    <Text className="text-white font-medium">Verify</Text>
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <View className="flex justify-end">
+                                                <View className="flex-row items-center mb-4">
+                                                    <Text className="text-sm text-gray-600">Authentication Status: </Text>
+                                                    <Text className="text-sm font-medium text-gray-700">{authStatus}</Text>
+                                                </View>
                                             </View>
                                         </View>
                                     </View>
-                                </View>
 
-                                {/* Verification Documents */}
-                                <View className="mb-4">
-                                    <FormLabel label="Verification Documents" />
-                                    <View className="space-y-3">
-                                        <View className="bg-white border border-gray-300 rounded-lg p-3">
-                                            <View className="flex-row items-center justify-between">
-                                                <View className="flex-row items-center gap-3">
-                                                    <View className="w-10 h-10 bg-blue-50 rounded-lg items-center justify-center">
-                                                        <Text className="text-blue-600 text-sm">ID</Text>
+                                    {/* Manual Authentication */}
+                                    <View className="border-t border-gray-200 pt-8">
+                                        <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
+                                        
+                                        <View className="space-y-4">
+                                            <View className="mb-4">
+                                                <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
+                                                <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
+                                                    <View className="flex-row items-center gap-2">
+                                                        <Ionicons name="download-outline" size={16} color="#6B7280" />
+                                                        <Text className="text-sm text-gray-700">Click to download</Text>
                                                     </View>
-                                                    <View>
-                                                        <Text className="text-gray-900 font-medium">Identity Proof</Text>
-                                                        <Text className="text-gray-500 text-xs">Aadhaar Card / Passport</Text>
-                                                    </View>
-                                                </View>
-                                                <TouchableOpacity className="px-3 py-1 bg-green-50 rounded-lg">
-                                                    <Text className="text-green-700 text-sm">Upload</Text>
+                                                    <ChevronRight size={16} color={COLORS.gray[400]} />
                                                 </TouchableOpacity>
                                             </View>
-                                        </View>
 
-                                        <View className="bg-white border border-gray-300 rounded-lg p-3">
-                                            <View className="flex-row items-center justify-between">
-                                                <View className="flex-row items-center gap-3">
-                                                    <View className="w-10 h-10 bg-purple-50 rounded-lg items-center justify-center">
-                                                        <Text className="text-purple-600 text-sm">AD</Text>
+                                            <View className="mb-4">
+                                                <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
+                                                <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
+                                                    <View className="flex-row items-center gap-2">
+                                                        <Ionicons name="cloud-upload-outline" size={16} color="#6B7280" />
+                                                        <Text className="text-sm text-gray-700">Upload Booking Form</Text>
                                                     </View>
-                                                    <View>
-                                                        <Text className="text-gray-900 font-medium">Address Proof</Text>
-                                                        <Text className="text-gray-500 text-xs">Utility Bill / Rental Agreement</Text>
-                                                    </View>
-                                                </View>
-                                                <TouchableOpacity className="px-3 py-1 bg-green-50 rounded-lg">
-                                                    <Text className="text-green-700 text-sm">Upload</Text>
+                                                    <ChevronRight size={16} color={COLORS.gray[400]} />
                                                 </TouchableOpacity>
-                                            </View>
-                                        </View>
-                                    </View>
-                                </View>
-
-                                {/* Verification Notes */}
-                                <View className="mb-4">
-                                    <FormLabel label="Verification Notes" />
-                                    <TextInput 
-                                        multiline 
-                                        numberOfLines={3} 
-                                        textAlignVertical="top" 
-                                        placeholder="Add any verification notes or comments..." 
-                                        className="h-20 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800" 
-                                    />
-                                </View>
-
-                                {/* Verification Checkbox */}
-                                <View className="mb-4">
-                                    <View className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                                        <View className="flex-row gap-3">
-                                            <TouchableOpacity className="w-5 h-5 border-2 border-yellow-400 rounded items-center justify-center">
-                                                <Text className="text-yellow-600 text-xs">✓</Text>
-                                            </TouchableOpacity>
-                                            <View className="flex-1">
-                                                <Text className="text-gray-800 text-sm">I confirm that all provided documents are valid and authentic.</Text>
                                             </View>
                                         </View>
                                     </View>

@@ -60,7 +60,12 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     const [activeFiltersCount, setActiveFiltersCount] = useState(0);
     const toast = useToast();
 
-    const totalPages = Math.max(1, Math.ceil(count / itemsPerPage));
+    const totalPages = useMemo(() => {
+        if (searchQuery) {
+            return 1; // Disable pagination when searching
+        }
+        return Math.max(1, Math.ceil(count / itemsPerPage));
+    }, [count, itemsPerPage, searchQuery]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -206,8 +211,8 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 if (!sanitizedFilters.model.length) delete sanitizedFilters.model;
             }
             const body: any = {
-                page: currentPage,
-                size: itemsPerPage,
+                page: searchQuery ? 1 : currentPage,
+                size: searchQuery ? 1000 : itemsPerPage,
                 filter: sanitizedFilters || {},
                 status: tabToStatus(activeTab),
                 searchString: searchQuery ? searchQuery : undefined,
@@ -393,7 +398,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     );
 
     const renderPaginationFooter = () => {
-        if (count === 0) return null;
+        if (count === 0 || searchQuery) return null;
 
         return (
             <View className="mx-4 mt-1 mb-4">
