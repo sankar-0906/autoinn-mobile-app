@@ -22,6 +22,7 @@ import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
 import CallActivityScreen from '../screens/follow-ups/CallActivityScreen';
 import ActivityViewEditScreen from '../screens/follow-ups/ActivityViewEditScreen';
 import SelectVehicleForBookingScreen from '../screens/vehicle-selection/SelectVehicleForBookingScreen';
+import SelectVehicleColorScreen from '../screens/vehicle-selection/SelectVehicleColorScreen';
 import VehicleDetailsScreen from '../screens/customer/VehicleDetailsScreen';
 import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
 import ConfirmBookingScreen from '../screens/customer/ConfirmBookingScreen';
@@ -57,6 +58,7 @@ export default function AppNavigator() {
             <Stack.Screen name="CallActivity" component={CallActivityScreen} />
             <Stack.Screen name="ActivityViewEdit" component={ActivityViewEditScreen} />
             <Stack.Screen name="SelectVehicleForBooking" component={SelectVehicleForBookingScreen} />
+            <Stack.Screen name="SelectVehicleColor" component={SelectVehicleColorScreen} />
             <Stack.Screen name="VehicleDetails" component={VehicleDetailsScreen} />
             <Stack.Screen name="AdvancedBooking" component={AdvancedBookingScreen} />
             <Stack.Screen name="FollowUps" component={FollowUpsScreen} />

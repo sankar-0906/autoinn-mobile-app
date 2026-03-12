@@ -1002,8 +1002,10 @@ export default function FollowUpDetailScreen() {
                 </View>
 
                 {mergedPurchasedVehicle.length > 0 && (
-                    <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
-                        <View className="bg-gray-100 px-3 py-3 flex-row items-center justify-between">
+                    <>
+                        <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Vehicle Info</Text>
+                        <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+                            <View className="bg-gray-100 px-3 py-3 flex-row items-center justify-between">
 
                             <View className="flex-row items-center gap-2">
                                 <Car size={20} color={COLORS.primary} />
@@ -1041,6 +1043,7 @@ export default function FollowUpDetailScreen() {
                             </View>
                         ))}
                     </View>
+                    </>
                 )}
 
                 <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Activity</Text>

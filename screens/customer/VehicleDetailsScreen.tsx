@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -12,10 +12,14 @@ import {
     Platform,
     Image,
     PermissionsAndroid,
+    Linking,
+    DeviceEventEmitter
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../navigation/types';
 import {
     ChevronLeft,
     ChevronRight,
@@ -37,12 +41,14 @@ import {
     Search,
     Plus,
 } from 'lucide-react-native';
-import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { BackButton, HeaderWithBack, useBackButton } from '../../components/ui/BackButton';
 import { Button } from '../../components/ui/Button';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import moment from 'moment';
+import * as ImagePicker from 'expo-image-picker';
+import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
     // API imports for validation
     import {
         getVehicleById,
@@ -61,8 +67,8 @@ import moment from 'moment';
         fetchMarketInfo,
     } from '../../src/api';
 
-type VehicleDetailsRouteProp = RouteProp<any, 'VehicleDetails'>;
-type VehicleDetailsNavigationProp = StackNavigationProp<any, 'VehicleDetails'>;
+type VehicleDetailsRouteProp = RouteProp<RootStackParamList, 'VehicleDetails'>;
+type VehicleDetailsNavigationProp = StackNavigationProp<RootStackParamList, 'VehicleDetails'>;
 
 interface Vehicle {
     id: string;
@@ -70,6 +76,7 @@ interface Vehicle {
         id: string;
         modelName: string;
         modelCode: string;
+        category?: string;
         manufacturer?: {
             name: string;
         };
@@ -89,6 +96,8 @@ interface Vehicle {
         email?: string;
         address?: string;
     };
+    engineNo?: string;
+    vehicleType?: string;
     documents?: Array<{
         name: string;
         type: string;
@@ -107,6 +116,25 @@ const VehicleDetailsScreen: React.FC = () => {
     const route = useRoute<VehicleDetailsRouteProp>();
     const navigation = useNavigation<VehicleDetailsNavigationProp>();
     const { vehicle, mode = 'view' } = route.params as { vehicle: Vehicle; mode?: 'view' | 'edit' };
+
+    // Handle color selection from SelectVehicleColor screen
+    useFocusEffect(
+        useCallback(() => {
+            const unsubscribe = DeviceEventEmitter.addListener('colorSelected', (colorData) => {
+                if (colorData) {
+                    console.log('🎨 Received color data:', colorData); // Debug log
+                    setSelectedColor(colorData.name || 'No Color Chosen');
+                    // Update the selectedColor state with full color data
+                    if (colorData.id) {
+                        // You might want to store the full color object
+                        setSelectedColor(colorData);
+                    }
+                }
+            });
+
+            return () => unsubscribe.remove();
+        }, [])
+    );
 
     // Use the custom back button hook
     useBackButton({
@@ -182,7 +210,7 @@ const VehicleDetailsScreen: React.FC = () => {
         { id: 'service', name: 'Service' },
         { id: 'test_ride', name: 'Test Ride' },
     ];
-    const [uploadedFiles, setUploadedFiles] = useState<{[key: string]: {name: string, uri: string} | null}>({
+    const [uploadedFiles, setUploadedFiles] = useState<{[key: string]: {name: string | null, uri: string, size?: number, mimeType?: string, type?: string} | null}>({
         consent: null,
         insurance: null,
         registration: null,
@@ -195,6 +223,12 @@ const VehicleDetailsScreen: React.FC = () => {
             fetchVehicleDetails(vehicle.id);
         }
         fetchManufacturers();
+        loadSavedFiles(); // Load saved files
+        
+        // Debug permissions on component mount
+        checkPermissions().then(result => {
+            console.log('Initial permission check result:', result);
+        });
     }, [vehicle?.id]);
 
     // Fetch vehicle details from API
@@ -840,11 +874,12 @@ const VehicleDetailsScreen: React.FC = () => {
                 setDateOfSale(moment(vehicle.dateOfSale).format('DD/MM/YYYY'));
             }
             if (vehicle.vehicle?.modelName) {
-                setModel(vehicle.vehicle.modelCode + " - " + vehicle.vehicle.modelName);
-                // Set category from the vehicle model
-                if (vehicle.vehicle?.category) {
-                    setCategory(vehicle.vehicle.category);
-                }
+                const modelDisplay = vehicle.vehicle.modelCode + " - " + vehicle.vehicle.modelName;
+                setModel(modelDisplay);
+                // Set category from the vehicle model or use fallback
+                const categoryValue = vehicle.vehicle?.category || getCategoryFromModel(vehicle.vehicle.modelName, vehicle.vehicle.modelCode);
+                setCategory(categoryValue);
+                console.log('Category set:', categoryValue, 'from vehicle category:', vehicle.vehicle?.category);
             }
             // Handle color properly - ensure it's a string
             if (vehicle.color) {
@@ -958,29 +993,58 @@ const VehicleDetailsScreen: React.FC = () => {
 
     const handleFileUpload = async (documentType: string) => {
         try {
-            // For Web platform - use native file input
-            if (Platform.OS === 'web') {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
-                input.onchange = (event) => {
-                    const file = (event.target as HTMLInputElement).files?.[0];
-                    if (file) {
-                        const uploadedFile = {
-                            name: file.name,
-                            uri: URL.createObjectURL(file)
-                        };
-                        setUploadedFiles(prev => ({
-                            ...prev,
-                            [documentType]: uploadedFile
-                        }));
-                    }
-                };
-                input.click();
-            } else {
-                // For Native platform - implement multiple file picker approaches
-                await openMobileFilePicker(documentType);
+            console.log('Starting file upload for:', documentType);
+            
+            // Use your improved permission request function
+            const hasPermission = await requestStoragePermission();
+            
+            if (!hasPermission) {
+                console.log('Permission denied');
+                Alert.alert(
+                    'Permission Required',
+                    'Storage permission is needed to upload documents. Please enable it in app settings.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                            text: 'Open Settings', 
+                            onPress: () => {
+                                if (Platform.OS === 'android') {
+                                    Linking.openSettings();
+                                } else {
+                                    Linking.openURL('app-settings:');
+                                }
+                            }
+                        }
+                    ]
+                );
+                return;
             }
+
+            console.log('Permission granted, showing options');
+            
+            // Show file selection options
+            Alert.alert(
+                'Select File Source',
+                'Choose how you want to select your file:',
+                [
+                    {
+                        text: '📷 Camera',
+                        onPress: () => openCamera(documentType)
+                    },
+                    {
+                        text: '🖼️ Gallery',
+                        onPress: () => openGallery(documentType)
+                    },
+                    {
+                        text: '📄 Documents',
+                        onPress: () => openDocumentPicker(documentType)
+                    },
+                    {
+                        text: 'Cancel',
+                        style: 'cancel'
+                    }
+                ]
+            );
         } catch (error) {
             console.error('File upload error:', error);
             Alert.alert('Error', 'Failed to select file. Please try again.');
@@ -1022,108 +1086,327 @@ const VehicleDetailsScreen: React.FC = () => {
         }
     };
 
+    // Check if permissions are actually granted
+    const checkPermissions = async () => {
+        if (Platform.OS === 'android') {
+            // Android 13+
+            if (Platform.Version >= 33) {
+                const cameraPerm = await PermissionsAndroid.check(
+                    PermissionsAndroid.PERMISSIONS.CAMERA
+                );
+                const imagesPerm = await PermissionsAndroid.check(
+                    PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                );
+                const videoPerm = await PermissionsAndroid.check(
+                    PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO
+                );
+                
+                console.log('Camera permission:', cameraPerm);
+                console.log('Read media images:', imagesPerm);
+                console.log('Read media video:', videoPerm);
+                
+                return imagesPerm;
+            } else {
+                // For older Android
+                const readPerm = await PermissionsAndroid.check(
+                    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+                );
+                const writePerm = await PermissionsAndroid.check(
+                    PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE
+                );
+                
+                console.log('Read storage:', readPerm);
+                console.log('Write storage:', writePerm);
+                
+                return readPerm && writePerm;
+            }
+        } else {
+            // iOS
+            const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+            console.log('iOS media library permission:', status);
+            return status === 'granted';
+        }
+    };
+
+    // Fixed permission request function with debugging
+    const requestStoragePermission = async (): Promise<boolean> => {
+        try {
+            console.log('📱 Requesting storage permission...');
+            console.log('Platform:', Platform.OS, 'Version:', Platform.Version);
+            
+            if (Platform.OS === 'android') {
+                // Android 13+ (API 33+)
+                if (Platform.Version >= 33) {
+                    console.log('Android 13+ detected, requesting READ_MEDIA_IMAGES/VIDEO');
+                    
+                    const permissions = [
+                        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+                        PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+                    ];
+                    
+                    // Check current status
+                    const checkResults = await Promise.all(
+                        permissions.map(async (perm) => {
+                            const result = await PermissionsAndroid.check(perm);
+                            console.log(`Permission ${perm}:`, result);
+                            return result;
+                        })
+                    );
+                    
+                    if (checkResults.every(result => result === true)) {
+                        console.log('✅ All permissions already granted');
+                        return true;
+                    }
+                    
+                    console.log('⚠️ Requesting permissions...');
+                    const statuses = await PermissionsAndroid.requestMultiple(permissions);
+                    console.log('Permission request results:', statuses);
+                    
+                    const allGranted = Object.values(statuses).every(
+                        status => status === PermissionsAndroid.RESULTS.GRANTED
+                    );
+                    
+                    console.log('All permissions granted:', allGranted);
+                    return allGranted;
+                } 
+                // Android 12 and below
+                else {
+                    console.log('Android 12 or below, requesting READ_EXTERNAL_STORAGE');
+                    
+                    const checkRead = await PermissionsAndroid.check(
+                        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+                    );
+                    console.log('Read external storage already granted:', checkRead);
+                    
+                    if (checkRead) {
+                        return true;
+                    }
+                    
+                    const status = await PermissionsAndroid.request(
+                        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+                        {
+                            title: 'Storage Permission',
+                            message: 'This app needs access to your storage to upload documents.',
+                            buttonNeutral: 'Ask Me Later',
+                            buttonNegative: 'Cancel',
+                            buttonPositive: 'OK',
+                        }
+                    );
+                    
+                    console.log('Permission request result:', status);
+                    return status === PermissionsAndroid.RESULTS.GRANTED;
+                }
+            } else {
+                // iOS
+                console.log('iOS, requesting media library permission');
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                console.log('iOS permission status:', status);
+                return status === 'granted';
+            }
+        } catch (err) {
+            console.error('❌ Permission error:', err);
+            return false;
+        }
+    };
+
+    const requestCameraPermission = async () => {
+        try {
+            if (Platform.OS === 'android') {
+                const granted = await PermissionsAndroid.request(
+                    PermissionsAndroid.PERMISSIONS.CAMERA,
+                    {
+                        title: 'Camera Permission',
+                        message: 'This app needs access to camera to take photos for document uploads.',
+                        buttonNeutral: 'Ask Me Later',
+                        buttonNegative: 'Cancel',
+                        buttonPositive: 'OK',
+                    }
+                );
+                return granted === PermissionsAndroid.RESULTS.GRANTED;
+            } else {
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                return status === 'granted';
+            }
+        } catch (err) {
+            console.warn('Camera permission error:', err);
+            return false;
+        }
+    };
+
+    // Test function to isolate the issue
+    const testDirectUpload = async (documentType: string) => {
+        try {
+            console.log('🧪 TEST: Direct upload attempt');
+            
+            // Try using only expo-image-picker (no manual permission request)
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            console.log('Expo-image-picker permission status:', status);
+            
+            if (status !== 'granted') {
+                console.log('Permission not granted, trying manual request...');
+                const manualResult = await requestStoragePermission();
+                console.log('Manual permission result:', manualResult);
+                
+                if (!manualResult) {
+                    Alert.alert('Permission Denied', 'Cannot proceed without permission');
+                    return;
+                }
+            }
+            
+            // Try launching image picker
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                quality: 0.8,
+            });
+            
+            console.log('Image picker result:', result);
+            
+            if (!result.canceled) {
+                Alert.alert('Success', 'File selected successfully!');
+            }
+        } catch (error) {
+            console.error('Test error:', error);
+            Alert.alert('Error', (error as Error).message);
+        }
+    };
+
+    // Save file info to AsyncStorage for persistence
+    const saveFileToStorage = async (documentType: string, fileInfo: any) => {
+        try {
+            const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
+            const existingFiles = await AsyncStorage.getItem(storageKey);
+            const files = existingFiles ? JSON.parse(existingFiles) : {};
+            
+            files[documentType] = fileInfo;
+            await AsyncStorage.setItem(storageKey, JSON.stringify(files));
+        } catch (error) {
+            console.error('Error saving file to storage:', error);
+        }
+    };
+
+    // Load saved files from AsyncStorage
+    const loadSavedFiles = async () => {
+        try {
+            const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
+            const savedFiles = await AsyncStorage.getItem(storageKey);
+            
+            if (savedFiles) {
+                setUploadedFiles(JSON.parse(savedFiles));
+            }
+        } catch (error) {
+            console.error('Error loading saved files:', error);
+        }
+    };
+
+    // Remove file from storage
+    const removeFileFromStorage = async (documentType: string) => {
+        try {
+            const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
+            const existingFiles = await AsyncStorage.getItem(storageKey);
+            const files = existingFiles ? JSON.parse(existingFiles) : {};
+            
+            delete files[documentType];
+            await AsyncStorage.setItem(storageKey, JSON.stringify(files));
+        } catch (error) {
+            console.error('Error removing file from storage:', error);
+        }
+    };
+
     const openCamera = async (documentType: string) => {
         try {
-            // Use Web API for camera (works on both web and some native environments)
-            if (typeof document !== 'undefined') {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*';
-                input.capture = 'environment';
-                input.onchange = (event) => {
-                    const file = (event.target as HTMLInputElement).files?.[0];
-                    if (file) {
-                        const uploadedFile = {
-                            name: file.name,
-                            uri: URL.createObjectURL(file),
-                            size: file.size,
-                            mimeType: file.type
-                        };
-                        setUploadedFiles(prev => ({
-                            ...prev,
-                            [documentType]: uploadedFile
-                        }));
-                        
-                        Alert.alert(
-                            'Photo Captured Successfully',
-                            `Photo "${file.name}" has been captured and uploaded.`,
-                            [{ text: 'OK', style: 'default' }]
-                        );
-                    }
-                };
-                input.click();
-            } else {
-                // Native fallback - create a simple file selection
-                Alert.alert(
-                    'Camera',
-                    'Camera functionality will be available when the app is built with proper permissions.\n\nFor now, you can select files from your device storage.',
-                    [
-                        {
-                            text: 'Select from Storage',
-                            onPress: () => openFileBrowser(documentType)
-                        },
-                        {
-                            text: 'Cancel',
-                            style: 'cancel'
-                        }
-                    ]
-                );
+            const hasPermission = await requestCameraPermission();
+            if (!hasPermission) {
+                Alert.alert('Permission Denied', 'Camera permission is required to take photos.');
+                return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                quality: 0.8,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                
+                if (asset.uri) {
+                    const fileInfo = {
+                        uri: asset.uri,
+                        name: asset.fileName || `camera_${Date.now()}.jpg`,
+                        size: asset.fileSize || 0,
+                        mimeType: asset.mimeType || 'image/jpeg',
+                        type: 'camera'
+                    };
+
+                    setUploadedFiles(prev => ({
+                        ...prev,
+                        [documentType]: fileInfo
+                    }));
+
+                    await saveFileToStorage(documentType, fileInfo);
+
+                    Alert.alert(
+                        'Photo Captured Successfully',
+                        `Photo "${fileInfo.name}" has been uploaded.`,
+                        [{ text: 'OK', style: 'default' }]
+                    );
+                }
             }
         } catch (error) {
             console.error('Camera error:', error);
-            Alert.alert('Error', 'Failed to open camera');
+            Alert.alert('Error', 'Failed to open camera.');
         }
     };
 
     const openGallery = async (documentType: string) => {
         try {
-            // Use Web API for file selection (works on both web and some native environments)
-            if (typeof document !== 'undefined') {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*,video/*,.pdf,.doc,.docx,.txt';
-                input.onchange = (event) => {
-                    const file = (event.target as HTMLInputElement).files?.[0];
-                    if (file) {
-                        const uploadedFile = {
-                            name: file.name,
-                            uri: URL.createObjectURL(file),
-                            size: file.size,
-                            mimeType: file.type
-                        };
-                        setUploadedFiles(prev => ({
-                            ...prev,
-                            [documentType]: uploadedFile
-                        }));
-                        
-                        Alert.alert(
-                            'File Selected Successfully',
-                            `File "${file.name}" has been selected from your device.`,
-                            [{ text: 'OK', style: 'default' }]
-                        );
-                    }
-                };
-                input.click();
+            console.log('Opening gallery for:', documentType);
+            
+            // Permission already checked in handleFileUpload, so we can proceed directly
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 0.8,
+                allowsEditing: false,
+                selectionLimit: 1,
+            });
+
+            console.log('Image picker result:', result);
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                
+                if (asset.uri) {
+                    console.log('Selected asset:', asset);
+                    
+                    const fileInfo = {
+                        uri: asset.uri,
+                        name: asset.fileName || `gallery_${Date.now()}.jpg`,
+                        size: asset.fileSize || 0,
+                        mimeType: asset.mimeType || 'image/jpeg',
+                        type: 'gallery'
+                    };
+
+                    console.log('File info created:', fileInfo);
+
+                    setUploadedFiles(prev => ({
+                        ...prev,
+                        [documentType]: fileInfo
+                    }));
+
+                    await saveFileToStorage(documentType, fileInfo);
+
+                    Alert.alert(
+                        'File Selected Successfully',
+                        `File "${fileInfo.name}" has been selected.`,
+                        [{ text: 'OK', style: 'default' }]
+                    );
+                }
             } else {
-                // Native fallback - create a simple file selection
-                Alert.alert(
-                    'Gallery',
-                    'Gallery functionality will be available when the app is built with proper permissions.\n\nFor now, you can select files from your device storage.',
-                    [
-                        {
-                            text: 'Select from Storage',
-                            onPress: () => openFileBrowser(documentType)
-                        },
-                        {
-                            text: 'Cancel',
-                            style: 'cancel'
-                        }
-                    ]
-                );
+                console.log('User cancelled or no asset selected');
             }
         } catch (error) {
             console.error('Gallery error:', error);
-            Alert.alert('Error', 'Failed to open gallery');
+            Alert.alert('Error', 'Failed to open gallery: ' + (error as Error).message);
         }
     };
 
@@ -1193,65 +1476,53 @@ const VehicleDetailsScreen: React.FC = () => {
 
     const openDocumentPicker = async (documentType: string) => {
         try {
-            // Use Web API for document selection (works on both web and some native environments)
-            if (typeof document !== 'undefined') {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.pdf,.doc,.docx,.txt,.xlsx,.pptx,.csv';
-                input.onchange = (event) => {
-                    const file = (event.target as HTMLInputElement).files?.[0];
-                    if (file) {
-                        const uploadedFile = {
-                            name: file.name,
-                            uri: URL.createObjectURL(file),
-                            size: file.size,
-                            mimeType: file.type
-                        };
-                        setUploadedFiles(prev => ({
-                            ...prev,
-                            [documentType]: uploadedFile
-                        }));
-                        
-                        Alert.alert(
-                            'Document Selected Successfully',
-                            `Document "${file.name}" has been selected from your device.`,
-                            [{ text: 'OK', style: 'default' }]
-                        );
-                    }
-                };
-                input.click();
+            console.log('Opening document picker for:', documentType);
+            
+            // Permission already checked in handleFileUpload
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 1.0,
+                allowsEditing: false,
+                selectionLimit: 1,
+            });
+
+            console.log('Document picker result:', result);
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                
+                if (asset.uri) {
+                    console.log('Selected document asset:', asset);
+                    
+                    const fileInfo = {
+                        uri: asset.uri,
+                        name: asset.fileName || `document_${Date.now()}`,
+                        size: asset.fileSize || 0,
+                        mimeType: asset.mimeType || 'application/octet-stream',
+                        type: 'document'
+                    };
+
+                    console.log('Document file info created:', fileInfo);
+
+                    setUploadedFiles(prev => ({
+                        ...prev,
+                        [documentType]: fileInfo
+                    }));
+
+                    await saveFileToStorage(documentType, fileInfo);
+
+                    Alert.alert(
+                        'Document Selected Successfully',
+                        `Document "${fileInfo.name}" has been selected.`,
+                        [{ text: 'OK', style: 'default' }]
+                    );
+                }
             } else {
-                // Native fallback - create a simple document selection simulation
-                Alert.alert(
-                    'Select Document Type',
-                    'Choose the type of document you want to upload:',
-                    [
-                        {
-                            text: '📄 PDF Document',
-                            onPress: () => simulateFileSelection(documentType, 'pdf')
-                        },
-                        {
-                            text: '📝 Word Document',
-                            onPress: () => simulateFileSelection(documentType, 'doc')
-                        },
-                        {
-                            text: '📊 Excel Document',
-                            onPress: () => simulateFileSelection(documentType, 'excel')
-                        },
-                        {
-                            text: '📋 Text Document',
-                            onPress: () => simulateFileSelection(documentType, 'text')
-                        },
-                        {
-                            text: 'Cancel',
-                            style: 'cancel'
-                        }
-                    ]
-                );
+                console.log('User cancelled document selection or no asset selected');
             }
         } catch (error) {
             console.error('Document picker error:', error);
-            Alert.alert('Error', 'Failed to open document picker');
+            Alert.alert('Error', 'Failed to open document picker: ' + (error as Error).message);
         }
     };
 
@@ -1449,20 +1720,55 @@ const VehicleDetailsScreen: React.FC = () => {
         );
     };
 
-    const handleRemoveFile = (documentType: string) => {
-        setUploadedFiles(prev => ({
-            ...prev,
-            [documentType]: null
-        }));
+    // Helper function to determine category based on model name
+    const getCategoryFromModel = (modelName: string, modelCode: string): string => {
+        const name = modelName.toLowerCase();
+        const code = modelCode.toLowerCase();
+        
+        // Determine category based on common patterns
+        if (name.includes('scooter') || code.includes('scooter') || name.includes('activa') || name.includes('access') || name.includes('dio')) {
+            return 'SCOOTER';
+        } else if (name.includes('motorcycle') || name.includes('bike') || name.includes('sport') || name.includes('naked') || name.includes('cruiser') || name.includes('tourer')) {
+            return 'MOTORCYCLE';
+        } else if (name.includes('yamaha') || name.includes('rx') || name.includes('fz') || name.includes('mt') || name.includes('r15') || name.includes('ray')) {
+            return 'MOTORCYCLE';
+        } else {
+            return 'MOTORCYCLE'; // Default fallback
+        }
+    };
+
+    const handleRemoveFile = async (documentType: string) => {
+        try {
+            // Remove from state
+            setUploadedFiles(prev => ({
+                ...prev,
+                [documentType]: null
+            }));
+            
+            // Remove from storage
+            await removeFileFromStorage(documentType);
+            
+            Alert.alert(
+                'File Removed',
+                'File has been removed successfully.',
+                [{ text: 'OK', style: 'default' }]
+            );
+        } catch (error) {
+            console.error('Error removing file:', error);
+            Alert.alert('Error', 'Failed to remove file.');
+        }
     };
 
     
     const renderHeader = () => (
-        <HeaderWithBack
-            title="Vehicle Details"
-            subtitle={mode === 'edit' ? 'Edit Mode' : 'View Mode'}
-            onBackPress={() => navigation.goBack()}
-        />
+        <View className="bg-white border-b border-gray-100 px-4 py-3">
+            <Text className="text-lg font-bold text-gray-900">
+                Vehicle Details
+            </Text>
+            <Text className="text-sm text-gray-500">
+                {mode === 'edit' ? 'Edit Mode' : 'View Mode'}
+            </Text>
+        </View>
     );
 
     const renderTabNavigation = () => (
@@ -1569,7 +1875,12 @@ const VehicleDetailsScreen: React.FC = () => {
                                 className="flex-1 h-12 bg-gray-100 border border-gray-200 rounded-lg px-3 text-gray-800"
                             />
                             <TouchableOpacity
-                                onPress={() => setShowColorModal(true)}
+                                onPress={() => {
+                                    console.log('Opening SelectVehicleColor screen'); // Debug log
+                                    navigation.navigate('SelectVehicleColor', {
+                                        modelName: model
+                                    });
+                                }}
                                 className="px-4 py-2 rounded-lg h-12 justify-center bg-teal-600"
                             >
                                 <Text className="text-sm text-white">Select Color</Text>
@@ -2774,14 +3085,7 @@ const VehicleDetailsScreen: React.FC = () => {
                         className="px-6 py-2"
                     />
                 </>
-            ) : (
-                <TouchableOpacity
-                    onPress={() => navigation.goBack()}
-                    className="px-6 py-2 border border-gray-300 rounded-lg"
-                >
-                    <Text className="text-sm text-gray-800">Back</Text>
-                </TouchableOpacity>
-            )}
+            ) : null}
         </View>
     );
 

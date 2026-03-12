@@ -1936,58 +1936,43 @@ const CustomerDetailsScreen: React.FC = () => {
             ) : (
                 <View className="space-y-2">
                     {purchasedVehicles.map((vehicle, index) => (
-                        <View key={vehicle.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
-                            {/* Vehicle Image and Color */}
-                            <View className="p-3">
-                                {vehicle.color?.url ? (
-                                    <View className="items-center">
-                                        <Image 
-                                            source={{ uri: vehicle.color.url }} 
-                                            className="w-full h-32 rounded-lg"
-                                            resizeMode="cover"
-                                        />
-                                        <View className="mt-2 flex-row items-center justify-center gap-2">
-                                            <Text className="font-bold text-gray-900">{vehicle.color.code}</Text>
-                                            <Text className="text-gray-600">-</Text>
-                                            <Text className="font-bold text-gray-900">{vehicle.color.color}</Text>
-                                        </View>
-                                    </View>
-                                ) : (
-                                    <View className="w-full h-32 bg-gray-100 rounded-lg items-center justify-center">
-                                        <Car size={40} color="#9ca3af" />
-                                        <Text className="mt-2 text-gray-500">No Image</Text>
-                                    </View>
-                                )}
-                            </View>
-                            
+                        <View key={vehicle.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm p-4">
                             {/* Vehicle Details */}
-                            <View className="px-3 pb-3 space-y-2">
-                                <View className="flex-row justify-between items-start">
-                                    <View className="flex-1">
-                                        <Text className="font-bold text-lg text-gray-900">
-                                            {vehicle.vehicle?.modelCode} - {vehicle.vehicle?.modelName}
-                                        </Text>
-                                    </View>
-                                </View>
+                            <View className="space-y-2 mb-2">
+                                <Text className="font-bold text-lg text-gray-900 mb-2">
+                                    {vehicle.vehicle?.modelCode} - {vehicle.vehicle?.modelName}
+                                </Text>
                                 
                                 <View className="space-y-1">
-                                    <View className="flex-row">
-                                        <Text className="text-gray-600 w-20 text-sm">Reg No:</Text>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Reg No:</Text>
                                         <Text className="text-gray-900 font-medium text-sm">{vehicle.registerNo || vehicle.regNo || vehicle.registrationNumber || 'N/A'}</Text>
                                     </View>
-                                    <View className="flex-row">
-                                        <Text className="text-gray-600 w-20 text-sm">Chassis No:</Text>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Chassis No:</Text>
                                         <Text className="text-gray-900 font-medium text-sm">{vehicle.chassisNo || 'N/A'}</Text>
                                     </View>
-                                    <View className="flex-row">
-                                        <Text className="text-gray-600 w-20 text-sm">Date of Sale:</Text>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Date of Sale:</Text>
                                         <Text className="text-gray-900 font-medium text-sm">
                                             {vehicle.dateOfSale ? moment(vehicle.dateOfSale).format('DD-MM-YYYY') : 'N/A'}
                                         </Text>
                                     </View>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Vehicle color:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">
+                                            {vehicle.color?.code} - {vehicle.color?.color || 'N/A'}
+                                        </Text>
+                                    </View>
                                 </View>
                                 
-                                <TouchableOpacity className="mt-2 bg-teal-600 py-2 px-4 rounded-lg items-center">
+                                <TouchableOpacity 
+                                    className="mt-3 bg-teal-600 py-2 px-4 rounded-lg items-center"
+                                    onPress={() => navigation.navigate('VehicleDetails', { 
+                                        vehicle: vehicle, 
+                                        mode: 'view' 
+                                    })}
+                                >
                                     <Text className="text-white font-medium">View Vehicle</Text>
                                 </TouchableOpacity>
                             </View>

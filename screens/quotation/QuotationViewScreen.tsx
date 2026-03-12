@@ -15,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
-import { ENDPOINT, getQuotationById } from '../../src/api';
+import { ENDPOINT, getQuotationById, getCustomerDetails, getQuotations } from '../../src/api';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../src/ToastContext';
 
@@ -127,10 +127,37 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
     const fetchQuotationData = async () => {
         setLoading(true);
         try {
-            const response = await getQuotationById(id);
-            const data = response.data?.response?.data;
+            // Use the list API approach like the web version to get complete data
+            const listResponse = await getQuotations({
+                page: 1,
+                size: 10,
+                searchString: id, // Search by quotation ID
+                branch: [], // Empty branch array to get all
+                filter: {},
+                status: null
+            });
+            
+            let data = null;
+            if (listResponse.data?.code === 200 && listResponse.data?.response?.code === 200) {
+                const quotations = listResponse.data.response.data.Quotation || [];
+                const foundQuotation = quotations.find((q: any) => q.id === id || q.quotationId === id);
+                data = foundQuotation;
+            }
+
+            // Fallback to detail API if list approach doesn't work
+            if (!data) {
+                const detailResponse = await getQuotationById(id);
+                data = detailResponse.data?.response?.data;
+            }
 
             if (data) {
+                console.log("=== QUOTATION DATA DEBUG ===");
+                console.log("Fetched quotation data:", data);
+                console.log("Customer data:", data.customer);
+                console.log("Customer purchased vehicles:", data.customer?.purchasedVehicle);
+                console.log("Customer purchased vehicles length:", data.customer?.purchasedVehicle?.length || 0);
+                console.log("==========================");
+                
                 // Extract vehicle information
                 // data.vehicle is an array of junction records: { id, vehicleDetail: { id, modelName, ... }, price: {...}, ... }
                 const vehicleJunction = Array.isArray(data.vehicle) && data.vehicle.length > 0
@@ -157,6 +184,20 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                 const vehicleImage = Array.isArray(vehicleDetail.image)
                     ? vehicleDetail.image[0]?.url
                     : (typeof vehicleDetail.image === 'object' ? vehicleDetail.image?.url : vehicleDetail.image);
+
+                // Fetch complete customer details to get purchased vehicles
+                let completeCustomerData = null;
+                if (data.customer?.id) {
+                    try {
+                        const customerResponse = await getCustomerDetails(data.customer.id);
+                        if (customerResponse.data?.code === 200) {
+                            completeCustomerData = customerResponse.data?.response?.data;
+                            console.log('Complete customer data fetched:', completeCustomerData?.purchasedVehicle?.length || 0, 'purchased vehicles found');
+                        }
+                    } catch (customerError) {
+                        console.warn('Failed to fetch complete customer details:', customerError);
+                    }
+                }
 
                 const quotationData: QuotationData = {
                     id: data.id || id,
@@ -226,19 +267,14 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                     tcs: tcs,
                 };
 
-                // Extract all vehicles - both from vehicle array and associated vehicles
-                const allVehicles: AssociatedVehicle[] = [
-                    // Vehicles from the main vehicle array (junction records)
-                    ...(Array.isArray(data.vehicle) ? data.vehicle.map((v: any) => ({
-                        regNo: v.registrationNo || v.regNo || '-',
-                        modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
-                        vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
-                        vehicleName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
-                        id: v.vehicleDetail?.id || v.id
-                    })) : []),
-                    // Vehicles from customer.purchasedVehicle (different structure)
-                    ...(Array.isArray(data.customer?.purchasedVehicle) ? data.customer.purchasedVehicle.map((v: any) => ({
-                        regNo: v.registerNo || v.registrationNo || '-',
+                // Extract associated vehicles - include both purchased vehicles AND quotation vehicles (like web version)
+                let allVehicles: AssociatedVehicle[] = [];
+                const vehicleIds = new Set(); // Track vehicle IDs to prevent duplicates
+                
+                // 1. Use complete customer data first (has full purchasedVehicle info)
+                if (completeCustomerData && Array.isArray(completeCustomerData.customer?.purchasedVehicle)) {
+                    const purchasedVehicles = completeCustomerData.customer.purchasedVehicle.map((v: any) => ({
+                        regNo: v.registerNo || v.registrationNo || v.regNo || v.vehicleRegNo || v.registration_number || '-', // Fixed: registerNo first
                         modelName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
                         vehicleModel: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
                         vehicleName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
@@ -246,10 +282,80 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         dateOfSale: v.dateOfSale,
                         engineNo: v.engineNo,
                         vehicleType: v.vehicleType
-                    })) : []),
-                    // Other associated vehicles
-                    ...(Array.isArray(data.associatedVehicles) ? data.associatedVehicles : [])
-                ];
+                    }));
+                    purchasedVehicles.forEach((v: any) => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Using complete customer data - found', purchasedVehicles.length, 'purchased vehicles');
+                }
+                // Fallback to quotation customer data for purchased vehicles
+                else if (Array.isArray(data.customer?.purchasedVehicle)) {
+                    const purchasedVehicles = data.customer.purchasedVehicle.map((v: any) => ({
+                        regNo: v.registerNo || v.registrationNo || v.regNo || v.vehicleRegNo || v.registration_number || '-', // Fixed: registerNo first
+                        modelName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleModel: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        id: v.vehicle?.id || v.id,
+                        dateOfSale: v.dateOfSale,
+                        engineNo: v.engineNo,
+                        vehicleType: v.vehicleType
+                    }));
+                    purchasedVehicles.forEach((v: any) => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Using quotation customer data - found', purchasedVehicles.length, 'purchased vehicles');
+                }
+
+                // 2. ADD QUOTATION VEHICLES (like web version) - show vehicles from current quotation ONLY
+                if (Array.isArray(data.vehicle)) {
+                    const quotationVehicles = data.vehicle.map((v: any) => ({
+                        regNo: '-', // Use '-' for quotation vehicles (no registration yet)
+                        modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        vehicleName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        id: v.vehicleDetail?.id || v.id
+                    }));
+                    quotationVehicles.forEach(v => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Added quotation vehicles - found', quotationVehicles.length, 'quotation vehicles');
+                }
+
+                // 3. ADD VEHICLES FROM OTHER QUOTATIONS (if available in complete customer data) - but skip current quotation
+                if (completeCustomerData && Array.isArray(completeCustomerData.customer?.quotation)) {
+                    const otherQuotationVehicles = completeCustomerData.customer.quotation.flatMap((q: any) => {
+                        // Skip current quotation to avoid duplicates
+                        if (q.id === data.id) return [];
+                        
+                        return (q.vehicle || []).map((v: any) => ({
+                            regNo: '-', // Use '-' for quotation vehicles
+                            modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            vehicleName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            id: v.vehicleDetail?.id || v.id
+                        }));
+                    });
+                    otherQuotationVehicles.forEach(v => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Added other quotation vehicles - found', otherQuotationVehicles.length, 'vehicles from other quotations');
+                }
+
+                if (allVehicles.length === 0) {
+                    console.log('No vehicles found in any data source');
+                }
 
                 // Update the associated vehicles in the quotation data
                 quotationData.associatedVehicles = allVehicles;
@@ -516,7 +622,7 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                         </View>
                         {quotation.associatedVehicles.length === 0 ? (
                             <View className="bg-gray-50 px-4 py-8 items-center">
-                                <Text className="text-gray-400 text-sm">No Data</Text>
+                                <Text className="text-gray-400 text-sm">No vehicles found</Text>
                             </View>
                         ) : (
                             quotation.associatedVehicles.map((v, idx) => (
@@ -565,21 +671,6 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
                     </View>
                 </View>
             </ScrollView>
-
-            {/* Fixed Footer */}
-            <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 shadow-lg z-20 flex-row gap-3">
-                <Button
-                    title="Close"
-                    variant="outline"
-                    className="flex-1"
-                    onPress={() => navigation?.goBack()}
-                />
-                <Button
-                    title="Share on WhatsApp"
-                    className="flex-[2]"
-                    onPress={handleViewVehicleDetails}
-                />
-            </View>
         </SafeAreaView>
     );
 }

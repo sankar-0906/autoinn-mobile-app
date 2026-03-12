@@ -10,6 +10,7 @@ export type RootStackParamList = {
     SelectPrice: { vehicleId: string; vehicleData?: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView' | 'BookingRegister'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectVehicleForBooking: { modelName?: string; customerName?: string; customerId?: string; customerPhone?: string };
+    SelectVehicleColor: { modelName?: string; selectedColor?: any };
     AddQuotation: { selectedVehicle?: any; customerId?: string; customerName?: string; phoneNumbers?: any[]; returnToPrevious?: boolean };
     AdvancedFilters: undefined;
     FollowUpFilters: undefined;
