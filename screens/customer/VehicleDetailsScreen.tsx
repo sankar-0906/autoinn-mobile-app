@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -9,46 +9,61 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
-    Platform,
     Image,
-    PermissionsAndroid,
+    KeyboardAvoidingView,
+    Platform,
+    DeviceEventEmitter,
+    StatusBar,
     Linking,
-    DeviceEventEmitter
+    PermissionsAndroid
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import {
     ChevronLeft,
     ChevronRight,
     Calendar,
-    Clock,
     X,
-    Car,
-    Hash,
-    Palette,
-    DollarSign,
-    User,
-    FileText,
-    MapPin,
-    Phone,
-    Mail,
-    Upload,
-    FolderOpen,
-    ChevronDown,
     Search,
     Plus,
+    ArrowLeft,
+    ChevronDown,
+    Clock,
+    Check,
+    AlertCircle,
+    FileText,
+    Download,
+    Eye,
+    Camera,
+    Image as ImageIcon,
+    Trash2,
+    Edit,
+    Save,
+    Users,
+    Phone,
+    Mail,
+    MapPin,
+    Info,
+    Upload,
+    FolderOpen,
+    QrCode as QrCodeIcon,
 } from 'lucide-react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { COLORS } from '../../constants/colors';
 import { BackButton, HeaderWithBack, useBackButton } from '../../components/ui/BackButton';
 import { Button } from '../../components/ui/Button';
+import BulkInsuranceUpload from '../../components/BulkInsuranceUpload';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import moment from 'moment';
 import * as ImagePicker from 'expo-image-picker';
-import RNFS from 'react-native-fs';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import platformApi from '../../src/api';
     // API imports for validation
     import {
         getVehicleById,
@@ -65,10 +80,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
         validateEngineNumber,
         validateRegistrationNumber,
         fetchMarketInfo,
+        getVehicleInsurance,
+        getJobOrderHistory,
+        getJobOrderDetails,
+        addInsurance,
+        getInsuranceTypes,
+        generateQRCode,
+        generateJobOrderPDF,
     } from '../../src/api';
 
 type VehicleDetailsRouteProp = RouteProp<RootStackParamList, 'VehicleDetails'>;
-type VehicleDetailsNavigationProp = StackNavigationProp<RootStackParamList, 'VehicleDetails'>;
+type VehicleDetailsNavigationProp = NavigationProp<RootStackParamList, 'VehicleDetails'>;
 
 interface Vehicle {
     id: string;
@@ -122,12 +144,33 @@ const VehicleDetailsScreen: React.FC = () => {
         useCallback(() => {
             const unsubscribe = DeviceEventEmitter.addListener('colorSelected', (colorData) => {
                 if (colorData) {
-                    console.log('🎨 Received color data:', colorData); // Debug log
-                    setSelectedColor(colorData.name || 'No Color Chosen');
-                    // Update the selectedColor state with full color data
-                    if (colorData.id) {
-                        // You might want to store the full color object
-                        setSelectedColor(colorData);
+                    setSelectedColor(colorData.color || colorData.name);
+                }
+            });
+
+            return () => unsubscribe.remove();
+        }, [])
+    );
+
+    // Handle vehicle selection from SelectVehicleForDetails screen
+    useFocusEffect(
+        useCallback(() => {
+            const unsubscribe = DeviceEventEmitter.addListener('vehicleSelected', (vehicleData) => {
+                if (vehicleData) {
+                    console.log('Received vehicle data:', vehicleData);
+                    
+                    // Update form fields with selected vehicle data
+                    if (vehicleData.modelName) {
+                        setModel(vehicleData.modelName);
+                    }
+                    if (vehicleData.category) {
+                        setCategory(vehicleData.category);
+                    }
+                    if (vehicleData.color) {
+                        setSelectedColor(vehicleData.color);
+                    }
+                    if (vehicleData.manufacturer) {
+                        setManufacturerName(vehicleData.manufacturer);
                     }
                 }
             });
@@ -150,7 +193,10 @@ const VehicleDetailsScreen: React.FC = () => {
     const [showModelModal, setShowModelModal] = useState(false);
     const [showColorModal, setShowColorModal] = useState(false);
     const [showVehicleTypeModal, setShowVehicleTypeModal] = useState(false);
+    const [qrCodeData, setQrCodeData] = useState<string>('');
+    const [showQrCode, setShowQrCode] = useState<boolean>(false);
     const [showCustomerModal, setShowCustomerModal] = useState(false);
+    const [showBulkInsuranceModal, setShowBulkInsuranceModal] = useState(false);
 
     // API Data States
     const [manufacturers, setManufacturers] = useState<any[]>([]);
@@ -170,6 +216,8 @@ const VehicleDetailsScreen: React.FC = () => {
     const [vehicleServices, setVehicleServices] = useState<any[]>([]);
     const [vehicleFiles, setVehicleFiles] = useState<any[]>([]);
     const [vehicleColors, setVehicleColors] = useState<any[]>([]);
+    const [insuranceData, setInsuranceData] = useState<any[]>([]);
+    const [jobOrderHistory, setJobOrderHistory] = useState<any[]>([]);
 
     // Form states - initialize with empty values for real data fetching
     const [manufacturerName, setManufacturerName] = useState("");
@@ -216,6 +264,8 @@ const VehicleDetailsScreen: React.FC = () => {
         registration: null,
         pollution: null,
     });
+    const [showImageViewer, setShowImageViewer] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
     // Fetch vehicle details on component mount
     useEffect(() => {
@@ -235,29 +285,242 @@ const VehicleDetailsScreen: React.FC = () => {
     const fetchVehicleDetails = async (vehicleId: string) => {
         try {
             setLoading(true);
-            const response = await getVehicleById(vehicleId);
-            console.log('Vehicle API Response:', response); // Debug log
+            console.log('Fetching vehicle details for:', vehicleId);
             
-            if (response.data.code === 200 && response.data.response.code === 200) {
-                const data = response.data.response.data;
-                console.log('Vehicle Data:', data); // Debug log
-                console.log('MFG Data from API:', data.mfg, data.mfgDate); // Debug log
-                
-                setVehicleDetails(data);
-                populateFormFields(data);
-                
-                // Fetch related data
-                await fetchRelatedData(vehicleId);
+            // Check if token exists before making API call
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+                console.error('No authentication token found');
+                Alert.alert('Authentication Error', 'Please login again');
+                navigation.navigate('Login');
+                return;
             }
-        } catch (error) {
+            
+            console.log('Token found:', token.substring(0, 20) + '...');
+            
+            const response = await getVehicleById(vehicleId);
+            console.log('Vehicle details response:', response.data);
+            
+            if (response.data.code === 200) {
+                setVehicleDetails(response.data.response);
+                // Fetch related data only after vehicle details are successfully fetched
+                await fetchRelatedData(vehicleId);
+            } else {
+                console.error('Vehicle details API error:', response.data);
+                Alert.alert('Error', 'Failed to fetch vehicle details');
+            }
+        } catch (error: any) {
             console.error('Error fetching vehicle details:', error);
-            Alert.alert('Error', 'Failed to fetch vehicle details');
+            
+            if (error.response?.status === 401) {
+                console.error('Authentication failed - 401 error');
+                Alert.alert(
+                    'Session Expired', 
+                    'Your session has expired. Please login again.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                            text: 'Login', 
+                            onPress: () => {
+                                AsyncStorage.removeItem('token');
+                                navigation.navigate('Login');
+                            }
+                        }
+                    ]
+                );
+            } else {
+                Alert.alert('Error', 'Failed to fetch vehicle details');
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    // Fetch related data (colors, services, files)
+    // Populate form fields when vehicleDetails are loaded
+    useEffect(() => {
+        if (vehicleDetails) {
+            console.log('=== VEHICLE DETAILS DATA POPULATION ===');
+            
+            // IMPORTANT: The actual data is nested under vehicleDetails.data
+            const vehicleData = vehicleDetails.data || vehicleDetails;
+            
+            console.log('Raw vehicleData:', vehicleData);
+            
+            // MFG Date - this is in vehicleData.mfg
+            console.log('MFG DATE:');
+            console.log('- vehicleData.mfg:', vehicleData.mfg);
+            if (vehicleData.mfg) {
+                setMfgDate(vehicleData.mfg);
+                console.log('✅ MFG date set to:', vehicleData.mfg);
+            } else {
+                console.log('❌ MFG date not found');
+            }
+            
+            // Engine Number - this is in vehicleData.engineNo
+            console.log('ENGINE NUMBER:');
+            console.log('- vehicleData.engineNo:', vehicleData.engineNo);
+            if (vehicleData.engineNo) {
+                setEngineNumber(vehicleData.engineNo);
+                console.log('✅ Engine number set to:', vehicleData.engineNo);
+            } else {
+                console.log('❌ Engine number not found');
+            }
+            
+            // Vehicle Type - this is in vehicleData.vehicleType
+            console.log('VEHICLE TYPE:');
+            console.log('- vehicleData.vehicleType:', vehicleData.vehicleType);
+            if (vehicleData.vehicleType) {
+                setVehicleType(vehicleData.vehicleType);
+                console.log('✅ Vehicle type set to:', vehicleData.vehicleType);
+            } else {
+                console.log('❌ Vehicle type not found');
+            }
+            
+            // Customer Data - this is in vehicleData.customer
+            console.log('CUSTOMER DATA:');
+            console.log('- vehicleData.customer:', vehicleData.customer);
+            
+            if (vehicleData.customer && vehicleData.customer.length > 0) {
+                // Extract customer objects from the vehicle data
+                const vehicleCustomers = vehicleData.customer
+                    .map((c: any) => c.customer)
+                    .filter((customer: any) => customer);
+                
+                console.log('Extracted customers:', vehicleCustomers);
+                
+                if (vehicleCustomers.length > 0) {
+                    setSelectedCustomers(vehicleCustomers);
+                    
+                    // Set display value for first customer
+                    const firstCustomer = vehicleCustomers[0];
+                    let phoneDisplay = '';
+                    if (firstCustomer.contacts && Array.isArray(firstCustomer.contacts)) {
+                        if (firstCustomer.contacts.length > 0) {
+                            const firstContact = firstCustomer.contacts[0];
+                            if (Array.isArray(firstContact) && firstContact.length > 0) {
+                                phoneDisplay = firstContact[0].phone ? firstContact[0].phone : '';
+                            } else if (firstContact.phone) {
+                                phoneDisplay = firstContact.phone;
+                            }
+                        }
+                    }
+                    const displayValue = phoneDisplay ? `${firstCustomer.name} - ${phoneDisplay}` : firstCustomer.name;
+                    setSelectedCustomerValue(displayValue);
+                    console.log('✅ Selected customers set successfully');
+                }
+            } else {
+                console.log('❌ Customer data not found');
+            }
+            
+            console.log('=== END VEHICLE DETAILS POPULATION ===');
+        }
+    }, [vehicleDetails]);
+    useEffect(() => {
+        if (vehicleDetails) {
+            console.log('Vehicle details loaded, checking for job orders:', {
+                hasJobOrder: !!vehicleDetails.jobOrder,
+                jobOrderType: typeof vehicleDetails.jobOrder,
+                jobOrderLength: vehicleDetails.jobOrder?.length,
+                jobOrderData: vehicleDetails.jobOrder,
+                // Check nested structure like web project
+                selectVehicleJobOrder: vehicleDetails.selectVehicle?.jobOrder,
+                responseJobOrder: vehicleDetails.response?.jobOrder,
+                dataJobOrder: vehicleDetails.data?.jobOrder
+            });
+            
+            // Try different possible structures for job orders
+            let jobOrders = null;
+            
+            if (vehicleDetails.jobOrder && Array.isArray(vehicleDetails.jobOrder)) {
+                jobOrders = vehicleDetails.jobOrder;
+                console.log('Found job orders in vehicleDetails.jobOrder');
+            } else if (vehicleDetails.selectVehicle?.jobOrder && Array.isArray(vehicleDetails.selectVehicle.jobOrder)) {
+                jobOrders = vehicleDetails.selectVehicle.jobOrder;
+                console.log('Found job orders in vehicleDetails.selectVehicle.jobOrder');
+            } else if (vehicleDetails.response?.jobOrder && Array.isArray(vehicleDetails.response.jobOrder)) {
+                jobOrders = vehicleDetails.response.jobOrder;
+                console.log('Found job orders in vehicleDetails.response.jobOrder');
+            } else if (vehicleDetails.data?.jobOrder && Array.isArray(vehicleDetails.data.jobOrder)) {
+                jobOrders = vehicleDetails.data.jobOrder;
+                console.log('Found job orders in vehicleDetails.data.jobOrder');
+            }
+            
+            if (jobOrders) {
+                console.log('Extracting job orders:', jobOrders);
+                // Fetch detailed information for each job order
+                fetchDetailedJobOrders(jobOrders);
+            } else {
+                console.log('No job orders found in vehicle details, trying API call');
+                // Try to fetch job orders separately if not in vehicle details
+                if (vehicleDetails.id) {
+                    fetchJobOrdersSeparately(vehicleDetails.id);
+                }
+            }
+        }
+    }, [vehicleDetails]);
+
+    // Fetch detailed job order information
+    const fetchDetailedJobOrders = async (jobOrders: any[]) => {
+        try {
+            console.log('Fetching detailed information for', jobOrders.length, 'job orders');
+            const detailedJobOrders = await Promise.all(
+                jobOrders.map(async (job) => {
+                    try {
+                        const response = await getJobOrderDetails(job.id);
+                        console.log('Job order details response for', job.jobNo, ':', response.data);
+                        
+                        if (response.data.code === 200) {
+                            const detailedJob = response.data.response?.data || response.data.response;
+                            console.log('Detailed job order for', job.jobNo, ':', detailedJob);
+                            return detailedJob;
+                        }
+                        return job; // Fallback to basic job order if details fetch fails
+                    } catch (error) {
+                        console.error('Error fetching details for job', job.jobNo, ':', error);
+                        return job; // Fallback to basic job order
+                    }
+                })
+            );
+            
+            console.log('All detailed job orders:', detailedJobOrders);
+            setJobOrderHistory(detailedJobOrders);
+        } catch (error) {
+            console.error('Error fetching detailed job orders:', error);
+            // Fallback to basic job orders
+            setJobOrderHistory(jobOrders);
+        }
+    };
+
+    // Fetch job orders separately if needed
+    const fetchJobOrdersSeparately = async (vehicleId: string) => {
+        try {
+            console.log('Fetching job orders separately for vehicle:', vehicleId);
+            const response = await getJobOrderHistory(vehicleId);
+            console.log('Job orders API response:', response.data);
+            
+            if (response.data.code === 200) {
+                const jobOrderData = response.data.response;
+                console.log('Job orders data structure:', jobOrderData);
+                
+                // Check different possible structures
+                if (Array.isArray(jobOrderData)) {
+                    setJobOrderHistory(jobOrderData);
+                } else if (jobOrderData.data && Array.isArray(jobOrderData.data)) {
+                    setJobOrderHistory(jobOrderData.data);
+                } else if (jobOrderData.response && Array.isArray(jobOrderData.response)) {
+                    setJobOrderHistory(jobOrderData.response);
+                } else {
+                    console.log('Job orders data structure keys:', Object.keys(jobOrderData));
+                    setJobOrderHistory([]);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching job orders separately:', error);
+            setJobOrderHistory([]);
+        }
+    };
+
+    // Fetch related data (colors, services, files, insurance, job orders)
     const fetchRelatedData = async (vehicleId: string) => {
         try {
             console.log('Fetching related data for vehicle:', vehicleId);
@@ -266,10 +529,12 @@ const VehicleDetailsScreen: React.FC = () => {
             await fetchVehicleCustomers(vehicleId);
             
             // Fetch other related data
-            const [colorResponse, servicesResponse, filesResponse] = await Promise.all([
+            const [colorResponse, servicesResponse, filesResponse, insuranceResponse, jobOrderResponse] = await Promise.all([
                 getVehicleColor(vehicleId),
                 getVehicleServices(vehicleId),
-                getVehicleFiles(vehicleId)
+                getVehicleFiles(vehicleId),
+                getVehicleInsurance(vehicleId),
+                getJobOrderHistory(vehicleId)
             ]);
             
             if (colorResponse.data.code === 200) {
@@ -281,11 +546,43 @@ const VehicleDetailsScreen: React.FC = () => {
             }
             
             if (servicesResponse.data.code === 200) {
-                setVehicleServices(servicesResponse.data.response.data.services || []);
+                const serviceData = servicesResponse.data.response.data;
+                console.log('Service API Response:', serviceData); // Debug log
+                // Services are nested inside SoldVehicle[0].services
+                if (serviceData.SoldVehicle && serviceData.SoldVehicle[0] && serviceData.SoldVehicle[0].services) {
+                    setVehicleServices(serviceData.SoldVehicle[0].services);
+                } else {
+                    setVehicleServices(serviceData.services || serviceData || []);
+                }
             }
             
             if (filesResponse.data.code === 200) {
                 setVehicleFiles(filesResponse.data.response.data.vehicle || []);
+            }
+            
+            if (insuranceResponse.data.code === 200) {
+                const vehicleData = insuranceResponse.data.response.data;
+                setInsuranceData(vehicleData.insurance || []);
+            }
+            
+            // Job orders are already included in the main vehicle data
+            if (vehicleDetails && vehicleDetails.jobOrder && Array.isArray(vehicleDetails.jobOrder)) {
+                console.log('Job Order from vehicle data:', vehicleDetails.jobOrder); // Debug log
+                setJobOrderHistory(vehicleDetails.jobOrder);
+            } else if (jobOrderResponse.data.code === 200) {
+                const jobOrderData = jobOrderResponse.data.response;
+                console.log('Job Order API Response:', jobOrderData); // Debug log
+                // Job orders might be directly in response or in response.data
+                if (jobOrderData.data && Array.isArray(jobOrderData.data)) {
+                    setJobOrderHistory(jobOrderData.data);
+                } else if (Array.isArray(jobOrderData)) {
+                    setJobOrderHistory(jobOrderData);
+                } else if (jobOrderData.response && Array.isArray(jobOrderData.response)) {
+                    setJobOrderHistory(jobOrderData.response);
+                } else {
+                    console.log('Job Order data structure:', Object.keys(jobOrderData));
+                    setJobOrderHistory([]);
+                }
             }
         } catch (error) {
             console.error('Error fetching related data:', error);
@@ -312,11 +609,23 @@ const VehicleDetailsScreen: React.FC = () => {
     // Fetch vehicle models for a manufacturer
     const fetchVehicleModels = async (manufacturerId: string) => {
         try {
+            console.log('Fetching vehicle models for manufacturer:', manufacturerId);
             const response = await getVehicleModelsByManufacturerId(manufacturerId);
+            console.log('Vehicle models response:', response.data);
+            
             if (response.data.code === 200 && response.data.response.code === 200) {
                 // Web project sets response.data as vehicles
-                setVehicleModels(response.data.response.data || []);
+                const models = response.data.response.data || [];
+                console.log('Setting vehicle models:', models);
+                setVehicleModels(models);
+                
+                // Debug: Log model structure
+                if (models.length > 0) {
+                    console.log('Sample model structure:', models[0]);
+                    console.log('Available model codes:', models.map((m: any) => ({ id: m.id, code: m.modelCode, name: m.modelName })));
+                }
             } else {
+                console.log('Failed to fetch models, setting empty array');
                 setVehicleModels([]);
             }
         } catch (error) {
@@ -754,38 +1063,38 @@ const VehicleDetailsScreen: React.FC = () => {
     // Fetch vehicle customers associated with this vehicle
     const fetchVehicleCustomers = async (vehicleId: string) => {
         try {
-            console.log('Fetching vehicle customers for:', vehicleId); // Debug log
-            console.log('Vehicle details customer structure:', vehicleDetails?.customer); // Debug log
+            console.log('Fetching vehicle customers for:', vehicleId);
+            
+            // Get the actual vehicle data from vehicleDetails.data
+            const vehicleData = vehicleDetails?.data;
+            console.log('Vehicle data for customers:', vehicleData);
             
             // Check the actual structure of customer data
-            if (vehicleDetails?.customer && Array.isArray(vehicleDetails.customer)) {
-                console.log('Customer array found:', vehicleDetails.customer); // Debug log
+            if (vehicleData?.customer && Array.isArray(vehicleData.customer)) {
+                console.log('Customer array found:', vehicleData.customer);
                 
-                // Extract customer IDs - the structure might be different
-                const customerIds = vehicleDetails.customer
+                // Extract customer IDs
+                const customerIds = vehicleData.customer
                     .map((c: any) => {
-                        console.log('Processing customer item:', c); // Debug log
-                        // Handle different possible structures
+                        console.log('Processing customer item:', c);
                         if (c.customer?.id) {
                             return c.customer.id;
                         } else if (c.id) {
                             return c.id;
-                        } else {
-                            console.log('No customer ID found in:', c);
-                            return null;
                         }
+                        return null;
                     })
-                    .filter((id: string | null) => id); // Filter out null/undefined
+                    .filter((id: string | null) => id);
                 
-                console.log('Customer IDs to fetch:', customerIds); // Debug log
+                console.log('Customer IDs to fetch:', customerIds);
                 
                 if (customerIds.length > 0) {
                     const response = await getVehicleCustomers(customerIds);
-                    console.log('Vehicle customers response:', response); // Debug log
+                    console.log('Vehicle customers response:', response);
                     
                     if (response.data.code === 200 && response.data.response.code === 200) {
                         const customerData = response.data.response.data || [];
-                        console.log('Setting customers:', customerData); // Debug log
+                        console.log('Setting customers:', customerData);
                         setCustomers(customerData);
                         setCustomerDropdownData(customerData);
                         
@@ -1284,7 +1593,64 @@ const VehicleDetailsScreen: React.FC = () => {
         }
     };
 
-    // Load saved files from AsyncStorage
+    // View uploaded file
+    const viewFile = async (fileInfo: any) => {
+        try {
+            console.log('Viewing file:', fileInfo);
+            
+            if (fileInfo.mimeType?.startsWith('image/')) {
+                // For images, show in modal
+                setSelectedImage(fileInfo.uri);
+                setShowImageViewer(true);
+            } else {
+                // For documents, try to open with sharing
+                Alert.alert(
+                    'Document Details',
+                    `Name: ${fileInfo.name}\nSize: ${fileInfo.size ? `${(fileInfo.size / 1024).toFixed(2)} KB` : 'Unknown'}\nType: ${fileInfo.mimeType || 'Unknown'}\n\nWould you like to open this document?`,
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                            text: 'Open Document', 
+                            onPress: async () => {
+                                try {
+                                    console.log('Attempting to open document:', fileInfo.uri);
+                                    
+                                    // Check if sharing is available
+                                    const isSharingAvailable = await Sharing.isAvailableAsync();
+                                    
+                                    if (isSharingAvailable) {
+                                        // Use expo-sharing to open the file
+                                        await Sharing.shareAsync(fileInfo.uri, {
+                                            mimeType: fileInfo.mimeType,
+                                            dialogTitle: `Open ${fileInfo.name}`,
+                                            UTI: fileInfo.mimeType,
+                                        });
+                                    } else {
+                                        // Fallback: show file info and manual instructions
+                                        Alert.alert(
+                                            'File Information',
+                                            `File: ${fileInfo.name}\n\nTo open this file:\n1. Use a file manager app\n2. Navigate to app cache folder\n3. Open with compatible app\n\nFile path: ${fileInfo.uri}`,
+                                            [{ text: 'OK', style: 'default' }]
+                                        );
+                                    }
+                                } catch (shareError) {
+                                    console.error('Error sharing file:', shareError);
+                                    Alert.alert(
+                                        'Cannot Open File',
+                                        'This file type requires a compatible viewer app. Please install a document viewer app and try again.',
+                                        [{ text: 'OK', style: 'default' }]
+                                    );
+                                }
+                            }
+                        }
+                    ]
+                );
+            }
+        } catch (error) {
+            console.error('Error viewing file:', error);
+            Alert.alert('Error', 'Unable to open file');
+        }
+    };
     const loadSavedFiles = async () => {
         try {
             const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
@@ -1479,46 +1845,94 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('Opening document picker for:', documentType);
             
             // Permission already checked in handleFileUpload
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.All,
-                quality: 1.0,
-                allowsEditing: false,
-                selectionLimit: 1,
-            });
+            
+            // Try expo-document-picker for real documents
+            try {
+                const result = await DocumentPicker.getDocumentAsync({
+                    type: ['*/*'], // Allow all file types
+                    copyToCacheDirectory: true,
+                    multiple: false,
+                });
 
-            console.log('Document picker result:', result);
+                console.log('Document picker result:', result);
 
-            if (!result.canceled && result.assets && result.assets[0]) {
-                const asset = result.assets[0];
-                
-                if (asset.uri) {
-                    console.log('Selected document asset:', asset);
+                if (!result.canceled && result.assets && result.assets[0]) {
+                    const asset = result.assets[0];
                     
-                    const fileInfo = {
-                        uri: asset.uri,
-                        name: asset.fileName || `document_${Date.now()}`,
-                        size: asset.fileSize || 0,
-                        mimeType: asset.mimeType || 'application/octet-stream',
-                        type: 'document'
-                    };
+                    if (asset.uri) {
+                        console.log('Selected document asset:', asset);
+                        
+                        const fileInfo = {
+                            uri: asset.uri,
+                            name: asset.name || `document_${Date.now()}`,
+                            size: asset.size || 0,
+                            mimeType: asset.mimeType || 'application/octet-stream',
+                            type: 'document'
+                        };
 
-                    console.log('Document file info created:', fileInfo);
+                        console.log('Document file info created:', fileInfo);
 
-                    setUploadedFiles(prev => ({
-                        ...prev,
-                        [documentType]: fileInfo
-                    }));
+                        setUploadedFiles(prev => ({
+                            ...prev,
+                            [documentType]: fileInfo
+                        }));
 
-                    await saveFileToStorage(documentType, fileInfo);
+                        await saveFileToStorage(documentType, fileInfo);
 
-                    Alert.alert(
-                        'Document Selected Successfully',
-                        `Document "${fileInfo.name}" has been selected.`,
-                        [{ text: 'OK', style: 'default' }]
-                    );
+                        Alert.alert(
+                            'Document Selected Successfully',
+                            `Document "${fileInfo.name}" has been selected.`,
+                            [{ text: 'OK', style: 'default' }]
+                        );
+                    }
+                } else {
+                    console.log('User cancelled document selection');
                 }
-            } else {
-                console.log('User cancelled document selection or no asset selected');
+            } catch (docPickerError) {
+                console.log('Document picker failed, falling back to image picker:', docPickerError);
+                
+                // Fallback to image picker if document picker fails
+                const result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.All,
+                    quality: 1.0,
+                    allowsEditing: false,
+                    selectionLimit: 1,
+                });
+
+                console.log('Fallback image picker result:', result);
+
+                if (!result.canceled && result.assets && result.assets[0]) {
+                    const asset = result.assets[0];
+                    
+                    if (asset.uri) {
+                        console.log('Selected document asset via image picker:', asset);
+                        
+                        const fileInfo = {
+                            uri: asset.uri,
+                            name: asset.fileName || `document_${Date.now()}`,
+                            size: asset.fileSize || 0,
+                            mimeType: asset.mimeType || 'application/octet-stream',
+                            type: 'document'
+                        };
+
+                        console.log('Document file info created:', fileInfo);
+
+                        setUploadedFiles(prev => ({
+                            ...prev,
+                            [documentType]: fileInfo
+                        }));
+
+                        await saveFileToStorage(documentType, fileInfo);
+
+                        Alert.alert(
+                            'Document Selected Successfully',
+                            `Document "${fileInfo.name}" has been selected.`,
+                            [{ text: 'OK', style: 'default' }]
+                        );
+                    }
+                } else {
+                    console.log('User cancelled document selection or no asset selected');
+                }
             }
         } catch (error) {
             console.error('Document picker error:', error);
@@ -1759,51 +2173,49 @@ const VehicleDetailsScreen: React.FC = () => {
         }
     };
 
+    // Handle bulk insurance upload save
+    const handleBulkInsuranceSave = (savedInsurances: any[]) => {
+        console.log('Bulk insurance saved:', savedInsurances);
+        // Refresh insurance data
+        if (vehicle?.id) {
+            fetchRelatedData(vehicle.id);
+        }
+        setShowBulkInsuranceModal(false);
+    };
+
     
     const renderHeader = () => (
-        <View className="bg-white border-b border-gray-100 px-4 py-3">
-            <Text className="text-lg font-bold text-gray-900">
-                Vehicle Details
-            </Text>
-            <Text className="text-sm text-gray-500">
-                {mode === 'edit' ? 'Edit Mode' : 'View Mode'}
-            </Text>
-        </View>
+        <HeaderWithBack 
+            title="Vehicle Details"
+            subtitle={mode === 'edit' ? 'Edit Mode' : 'View Mode'}
+        />
     );
 
     const renderTabNavigation = () => (
-        <View className="bg-white border-b border-gray-300">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-6">
-                <View className="flex-row gap-8">
-                    {[
-                        { key: "vehicle-details", label: "Vehicle Details" },
-                        { key: "associated-documents", label: "Associated Documents" },
-                        { key: "service-schedule", label: "Service Schedule" },
-                        { key: "job-order-history", label: "Job Order History" },
-                    ].map((tab) => (
-                        <TouchableOpacity
-                            key={tab.key}
-                            onPress={() => setActiveTab(tab.key)}
-                            className={`py-4 border-b-2 ${
-                                activeTab === tab.key
-                                    ? "border-teal-600"
-                                    : "border-transparent"
-                            }`}
-                        >
-                            <Text
-                                className={`text-sm ${
-                                    activeTab === tab.key
-                                        ? "text-teal-600 font-medium"
-                                        : "text-gray-600"
-                                }`}
-                            >
-                                {tab.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </ScrollView>
-        </View>
+        <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="bg-white border-b border-gray-200"
+            contentContainerStyle={{ paddingHorizontal: 8 }}
+            style={{ flexGrow: 0 }}
+        >
+            {[
+                { key: "vehicle-details", label: "Vehicle Details" },
+                { key: "associated-documents", label: "Documents" },
+                { key: "service-schedule", label: "Service Schedule" },
+                { key: "job-order-history", label: "Job Orders" },
+            ].map((tab) => (
+                <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => setActiveTab(tab.key)}
+                    className={`px-4 py-4 border-b-2 ${activeTab === tab.key ? 'border-teal-600' : 'border-transparent'}`}
+                >
+                    <Text className={`text-xs font-bold ${activeTab === tab.key ? 'text-teal-600' : 'text-gray-600'}`}>
+                        {tab.label}
+                    </Text>
+                </TouchableOpacity>
+            ))}
+        </ScrollView>
     );
 
     const renderVehicleDetailsTab = () => (
@@ -1876,8 +2288,10 @@ const VehicleDetailsScreen: React.FC = () => {
                             />
                             <TouchableOpacity
                                 onPress={() => {
-                                    console.log('Opening SelectVehicleColor screen'); // Debug log
-                                    navigation.navigate('SelectVehicleColor', {
+                                    console.log('Opening SelectVehicleForDetails screen from color button');
+                                    console.log('🎯 Current model value:', model);
+                                    console.log('🎯 Passing modelName:', model);
+                                    navigation.navigate('SelectVehicleForDetails' as any, {
                                         modelName: model
                                     });
                                 }}
@@ -2000,7 +2414,7 @@ const VehicleDetailsScreen: React.FC = () => {
                         onPress={() => setShowVehicleTypeModal(true)}
                         className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
                     >
-                        <Text className="text-gray-800 flex-1">{vehicleType}</Text>
+                        <Text className="text-gray-800 flex-1">{vehicleType || '-'}</Text>
                         <ChevronRight size={16} color={COLORS.gray[400]} />
                     </TouchableOpacity>
                 ) : (
@@ -2092,7 +2506,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                     ))}
                                 </View>
                             ) : (
-                                <Text className="text-gray-400">Select Customers</Text>
+                                <Text className="mt-1 text-gray-400">Select Customers</Text>
                             )}
                         </View>
                         <ChevronRight size={16} color={COLORS.gray[400]} />
@@ -2136,10 +2550,51 @@ const VehicleDetailsScreen: React.FC = () => {
                                 <Text className="text-sm font-medium text-white text-right" style={{ width: 100 }}>Actions</Text>
                             </View>
                         </View>
-                        <View className="p-12 items-center" style={{ minWidth: 400 }}>
-                            <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                            <Text className="text-sm text-gray-400 mt-2">No Data</Text>
-                        </View>
+                        {vehicleFiles && vehicleFiles.length > 0 ? (
+                            vehicleFiles.map((file, index) => (
+                                <View key={index} className="border-b border-gray-100">
+                                    <View className="flex-row p-3" style={{ minWidth: 400 }}>
+                                        <Text className="text-sm text-gray-800" style={{ width: 200 }}>
+                                            {file.name || file.fileName || `File ${index + 1}`}
+                                        </Text>
+                                        <Text className="text-sm text-gray-600" style={{ width: 100 }}>
+                                            {file.type || file.documentType || 'Document'}
+                                        </Text>
+                                        <View className="flex-row gap-2" style={{ width: 100 }}>
+                                            <TouchableOpacity 
+                                                className="px-2 py-1 bg-blue-500 rounded"
+                                                onPress={() => {
+                                                    if (file.url) {
+                                                        Linking.openURL(file.url);
+                                                    } else {
+                                                        Alert.alert('Info', 'File URL not available');
+                                                    }
+                                                }}
+                                            >
+                                                <Text className="text-xs text-white">View</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity 
+                                                className="px-2 py-1 bg-green-500 rounded"
+                                                onPress={() => {
+                                                    if (file.url) {
+                                                        Linking.openURL(file.url);
+                                                    } else {
+                                                        Alert.alert('Info', 'Download URL not available');
+                                                    }
+                                                }}
+                                            >
+                                                <Text className="text-xs text-white">Download</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            ))
+                        ) : (
+                            <View className="p-12 items-center" style={{ minWidth: 400 }}>
+                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                <Text className="text-sm text-gray-400 mt-2">No Data</Text>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
             </View>
@@ -2162,10 +2617,58 @@ const VehicleDetailsScreen: React.FC = () => {
                                 <Text className="text-sm font-medium text-white text-right" style={{ width: 80 }}>Actions</Text>
                             </View>
                         </View>
-                        <View className="p-12 items-center" style={{ minWidth: 800 }}>
-                            <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                            <Text className="text-sm text-gray-400 mt-2">No Data</Text>
-                        </View>
+                        {insuranceData && insuranceData.length > 0 ? (
+                            insuranceData.map((insurance, index) => (
+                                <View key={index} className="border-b border-gray-100">
+                                    <View className="flex-row p-3" style={{ minWidth: 800 }}>
+                                        <Text className="text-sm text-gray-800" style={{ width: 150 }}>
+                                            {insurance.insurerName || insurance.insurer || 'N/A'}
+                                        </Text>
+                                        <Text className="text-sm text-gray-800" style={{ width: 120 }}>
+                                            {insurance.policyNumber || insurance.policyNo || 'N/A'}
+                                        </Text>
+                                        <Text className="text-sm text-gray-600" style={{ width: 100 }}>
+                                            {insurance.insuranceType || insurance.type || 'N/A'}
+                                        </Text>
+                                        <Text className="text-sm text-gray-600" style={{ width: 100 }}>
+                                            {insurance.validFrom ? moment(insurance.validFrom).format('DD/MM/YYYY') : 'N/A'}
+                                        </Text>
+                                        <Text className="text-sm text-gray-600" style={{ width: 100 }}>
+                                            {insurance.validTo ? moment(insurance.validTo).format('DD/MM/YYYY') : 'N/A'}
+                                        </Text>
+                                        <View className="flex-row gap-2" style={{ width: 80 }}>
+                                            <TouchableOpacity 
+                                                className="px-2 py-1 bg-blue-500 rounded"
+                                                onPress={() => {
+                                                    Alert.alert('Insurance Details', `Insurer: ${insurance.insurerName || 'N/A'}\nPolicy: ${insurance.policyNumber || 'N/A'}\nType: ${insurance.insuranceType || 'N/A'}`);
+                                                }}
+                                            >
+                                                <Text className="text-xs text-white">View</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity 
+                                                className="px-2 py-1 bg-red-500 rounded"
+                                                onPress={() => {
+                                                    Alert.alert('Remove Insurance', 'Are you sure you want to remove this insurance?', [
+                                                        { text: 'Cancel', style: 'cancel' },
+                                                        { text: 'Remove', style: 'destructive', onPress: () => {
+                                                            // TODO: Implement remove insurance API call
+                                                            console.log('Remove insurance:', index);
+                                                        }}
+                                                    ]);
+                                                }}
+                                            >
+                                                <Text className="text-xs text-white">Remove</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            ))
+                        ) : (
+                            <View className="p-12 items-center" style={{ minWidth: 800 }}>
+                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                <Text className="text-sm text-gray-400 mt-2">No Data</Text>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
             </View>
@@ -2176,7 +2679,10 @@ const VehicleDetailsScreen: React.FC = () => {
             </Text>
 
             <View className="mb-6">
-                <TouchableOpacity className="flex-row items-center gap-2 px-4 py-2 border border-blue-600 rounded-lg self-start mb-6">
+                <TouchableOpacity 
+                    className="flex-row items-center gap-2 px-4 py-2 border border-blue-600 rounded-lg self-start mb-6"
+                    onPress={() => setShowBulkInsuranceModal(true)}
+                >
                     <Upload size={16} color="#2563eb" />
                     <Text className="text-sm text-blue-600">Upload Bulk Insurance</Text>
                 </TouchableOpacity>
@@ -2329,8 +2835,14 @@ const VehicleDetailsScreen: React.FC = () => {
                                                 <X size={16} color={COLORS.red[600]} />
                                             </TouchableOpacity>
                                         </View>
-                                        <View className="w-full h-8 items-center justify-center bg-teal-50 rounded">
+                                        <View className="w-full h-8 items-center justify-center bg-teal-50 rounded flex-row justify-between px-2">
                                             <Text className="text-xs text-teal-600">✓ Uploaded</Text>
+                                            <TouchableOpacity 
+                                                onPress={() => viewFile(uploadedFile)}
+                                                className="bg-blue-500 px-2 py-1 rounded"
+                                            >
+                                                <Text className="text-xs text-white font-medium">View</Text>
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
                                 ) : (
@@ -2368,7 +2880,9 @@ const VehicleDetailsScreen: React.FC = () => {
         </View>
     );
 
-    const renderServiceScheduleTab = () => (
+    const renderServiceScheduleTab = () => {
+        console.log('Service Schedule Tab - vehicleServices:', vehicleServices); // Debug log
+        return (
         <View>
             {/* Service Schedule Table */}
             <View className="mb-4">
@@ -2378,7 +2892,7 @@ const VehicleDetailsScreen: React.FC = () => {
                             <View className="flex-row" style={{ minWidth: 600 }}>
                                 <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service No</Text>
                                 <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Kms</Text>
+                                <Text className="text-sm font-medium text-white" style={{ width: 120, marginLeft: 25 }}>Service Kms</Text>
                                 <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Service Date</Text>
                             </View>
                         </View>
@@ -2401,7 +2915,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                                     </Text>
                                                 </View>
                                             </View>
-                                            <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                            <Text className="text-sm text-gray-800" style={{ width: 120, marginLeft: 30 }}>
                                                 {service.serviceKms || '-'}
                                             </Text>
                                             <Text className="text-sm text-gray-800" style={{ width: 120 }}>
@@ -2423,35 +2937,38 @@ const VehicleDetailsScreen: React.FC = () => {
 
             {/* QR Code and Re-Generate Buttons */}
             <View className="flex-row justify-end gap-3 mb-6">
-                <TouchableOpacity 
-                    className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg"
+                <TouchableOpacity
+                    className="px-4 py-2 bg-blue-600 rounded-lg"
                     onPress={() => {
-                        Alert.alert('QR Code', 'QR Code generation feature will be available in the next update.');
+                        try {
+                            // Generate QR data like web project: simple vehicle info
+                            const qrData = `VEHICLE:${vehicleDetails?.vehicle?.modelName || 'N/A'}-REG:${vehicleDetails?.registerNo || 'N/A'}-DATE:${moment().format('DD-MM-YYYY')}`;
+                            
+                            // Set QR data for React Native QR component
+                            setQrCodeData(qrData);
+                            setShowQrCode(true);
+                            Alert.alert('Success', 'QR Code generated successfully');
+                        } catch (error) {
+                            console.error('Error generating QR:', error);
+                            Alert.alert('Error', 'Failed to generate QR Code');
+                        }
                     }}
                 >
-                    <Hash size={16} color={COLORS.gray[600]} />
-                    <Text className="text-sm text-gray-700">QR Code</Text>
+                    <Text className="text-white font-medium">QR Code</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
                     className="flex-row items-center gap-2 px-4 py-2 bg-teal-600 rounded-lg"
-                    onPress={async () => {
+                    onPress={() => {
                         try {
-                            setLoading(true);
-                            Alert.alert('Re-Generate', 'Regenerating service dates...');
-                            // Call API to regenerate service dates
-                            if (vehicleDetails?.id) {
-                                const response = await getVehicleServices(vehicleDetails.id);
-                                if (response.data.code === 200) {
-                                    setVehicleServices(response.data.response?.data || []);
-                                    Alert.alert('Success', 'Service schedule regenerated successfully');
-                                }
-                            }
+                            // Only regenerate QR code, don't reload service schedule
+                            const qrData = `Vehicle: ${vehicleDetails?.registerNo}\nModel: ${vehicleDetails?.vehicle?.modelName}\nChassis: ${vehicleDetails?.chassisNo}\nCustomer: ${selectedCustomers[0]?.name || 'N/A'}\nRefreshed: ${new Date().toLocaleString()}`;
+                            setQrCodeData(qrData);
+                            setShowQrCode(true);
+                            Alert.alert('Success', 'QR Code regenerated successfully');
                         } catch (error) {
-                            console.error('Error regenerating service schedule:', error);
-                            Alert.alert('Error', 'Failed to regenerate service schedule');
-                        } finally {
-                            setLoading(false);
+                            console.error('Error regenerating QR:', error);
+                            Alert.alert('Error', 'Failed to regenerate QR Code');
                         }
                     }}
                 >
@@ -2461,148 +2978,213 @@ const VehicleDetailsScreen: React.FC = () => {
 
             {/* QR Code Display Area */}
             <View className="bg-gray-50 border border-gray-200 rounded-lg p-4 items-center">
-                <Text className="text-sm text-gray-500 mb-2">QR Code will appear here</Text>
-                <View className="w-32 h-32 bg-gray-200 rounded-lg items-center justify-center">
-                    <Hash size={48} color={COLORS.gray[400]} />
-                </View>
+                {showQrCode ? (
+                    <View className="items-center">
+                        <Text className="text-sm text-gray-600 mb-2 font-medium">QR Code Generated</Text>
+                        <View className="w-32 h-32 bg-white rounded-lg items-center justify-center border-2 border-gray-300">
+                            <QRCode
+                                value={qrCodeData || 'N/A'}
+                                size={112}
+                                color="black"
+                                backgroundColor="white"
+                            />
+                        </View>
+                        <Text className="text-xs text-gray-500 mt-3 text-center max-w-xs">
+                            Vehicle QR Code
+                        </Text>
+                    </View>
+                ) : (
+                    <View className="items-center">
+                        <Text className="text-sm text-gray-500 mb-2">QR Code will appear here</Text>
+                        <View className="w-32 h-32 bg-gray-200 rounded-lg items-center justify-center">
+                            <QrCodeIcon size={48} color={COLORS.gray[400]} />
+                        </View>
+                    </View>
+                )}
             </View>
         </View>
-    );
+        );
+    };
 
-    const renderJobOrderHistoryTab = () => (
+    const renderJobOrderHistoryTab = () => {
+        console.log('Job Order History Tab - jobOrderHistory:', jobOrderHistory); // Debug log
+        return (
         <View>
             {/* Job Order History Table */}
             <View className="mb-4">
                 <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
-                    <View style={{ minWidth: 1000 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                    <View style={{ minWidth: 1300 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
                         <View className="bg-gray-600 text-white p-3">
-                            <View className="flex-row" style={{ minWidth: 1000 }}>
-                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Job No</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Reg. No</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Customer</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Model</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Mechanic</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Supervisor</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Kms</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Date</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 80 }}>Status</Text>
-                                <Text className="text-sm font-medium text-white text-right" style={{ width: 80 }}>Actions</Text>
+                            <View className="flex-row" style={{ minWidth: 1300 }}>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Job No</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Reg. No</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Customer</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Model</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service No</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service Type</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Kms</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Time</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Date</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Mechanic</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Supervisor</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Status</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 100, marginLeft: 20 }}>Total Invoice</Text>
+                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Actions</Text>
                             </View>
                         </View>
                         
-                        {/* Sample Job Order Data - Replace with actual API data */}
-                        {[].length > 0 ? (
+                        {/* Job Order Data from API */}
+                        {jobOrderHistory && jobOrderHistory.length > 0 ? (
                             <View>
-                                {[].map((job: any, index: number) => (
+                                {jobOrderHistory.map((job: any, index: number) => (
                                     <View key={job.id || index} className="border-b border-gray-100">
                                         {/* Main Job Order Row */}
                                         <View className="p-3">
-                                            <View className="flex-row" style={{ minWidth: 1000 }}>
-                                                <Text className="text-sm text-gray-800" style={{ width: 80 }}>
-                                                    {job.jobNo || '-'}
+                                            <View className="flex-row" style={{ minWidth: 1300 }}>
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.jobNo || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.vehicle?.registerNo || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
+                                                    {vehicleDetails?.registerNo || job.vehicle?.registerNo || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 120 }}>
-                                                    {job.customer?.name || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
+                                                    {vehicleDetails?.customer?.[0]?.name || job.customer?.name || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.vehicle?.vehicle?.modelName || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {vehicleDetails?.vehicle?.modelName || job.vehicle?.modelName || job.vehicle?.vehicle?.modelName || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.serviceType || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.serviceNo || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.mechanic?.profile?.employeeName || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.serviceType || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.supervisor?.name || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                    {job.kms || 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 80 }}>
-                                                    {job.kms || '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('hh:mm A') : 'N/A'}
                                                 </Text>
-                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : '-'}
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : 'N/A'}
                                                 </Text>
-                                                <View style={{ width: 80 }}>
-                                                    <View className={`px-2 py-1 rounded text-xs text-center ${
-                                                        job.jobStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                                                        job.jobStatus === 'INPROGRESS' ? 'bg-orange-100 text-orange-800' :
-                                                        job.jobStatus === 'PENDING' ? 'bg-red-100 text-red-800' :
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.mechanic?.profile?.employeeName || job.mechanic?.name || job.mechanic?.employeeName || 'N/A'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                    {job.supervisor?.profile?.employeeName || job.supervisor?.name || job.supervisor?.employeeName || 'N/A'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                    <Text className={`px-2 py-1 rounded text-xs font-medium ${
+                                                        job.jobStatus === 'PAID' ? 'bg-green-100 text-green-800' :
+                                                        job.jobStatus === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                                        job.jobStatus === 'CANCELLED' ? 'bg-red-100 text-red-800' :
+                                                        job.jobStatus === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
                                                         'bg-gray-100 text-gray-800'
                                                     }`}>
-                                                        <Text className="font-medium">
-                                                            {job.jobStatus || '-'}
-                                                        </Text>
-                                                    </View>
-                                                </View>
-                                                <View style={{ width: 80 }} className="items-end">
+                                                        {job.jobStatus || job.status || 'N/A'}
+                                                    </Text>
+                                                </Text>
+                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100, marginLeft: 20 }}>
+                                                    {job.totalInvoice || job.total || job.netAmount || job.amount || 'N/A'}
+                                                </Text>
+                                                <View className="flex-row gap-2" style={{ width: 80 }}>
                                                     <TouchableOpacity 
-                                                        className="p-1"
+                                                        className="px-2 py-1 bg-blue-600 rounded"
                                                         onPress={() => {
-                                                            Alert.alert('PDF Download', 'PDF download feature will be available in the next update.');
+                                                            const jobDetails = `
+Job Number: ${job.jobNo || 'N/A'}
+Registration No: ${job.registerNo || job.vehicle?.registerNo || vehicleDetails?.registerNo || 'N/A'}
+Customer: ${job.customer?.name || selectedCustomers[0]?.name || 'N/A'}
+Model: ${job.vehicle?.modelName || vehicleDetails?.vehicle?.modelName || 'N/A'}
+Service No: ${job.serviceNo || 'N/A'}
+Service Type: ${job.serviceType || 'N/A'}
+Time: ${job.createdAt ? moment(new Date(job.createdAt)).format('hh:mm:ss A') : 'N/A'}
+Date: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : 'N/A'}
+Mechanic: ${job.mechanic?.profile?.employeeName || 'N/A'}
+Supervisor: ${job.supervisor?.name || 'N/A'}
+Status: ${job.jobStatus || 'N/A'}
+Total Invoice: ${job.totalAmount || job.totalInvoice || 'N/A'}
+Kms: ${job.kms || 'N/A'}
+Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh:mm:ss A') : 'N/A'}
+`;
+                                                            Alert.alert('Complete Job Order Details', jobDetails.trim());
                                                         }}
                                                     >
-                                                        <FileText size={16} color={COLORS.blue[600]} />
+                                                        <Text className="text-xs text-white">View</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity 
+                                                        className="px-2 py-1 bg-red-600 rounded"
+                                                        onPress={async () => {
+                                                            try {
+                                                                Alert.alert('PDF Download', 'Downloading job order PDF...');
+                                                                // Use the same method as web project
+                                                                const response = await platformApi.get(
+                                                                    `/api/jobOrder/generatePDF/${encodeURIComponent(job.id)}`,
+                                                                    { responseType: 'blob', timeout: 30000 }
+                                                                );
+                                                                
+                                                                if (response.status === 200) {
+                                                                    // Use web project approach for PDF download
+                                                                    const blob = new Blob([response.data], { type: 'application/pdf' });
+                                                                    
+                                                                    // Create object URL for the blob
+                                                                    const url = URL.createObjectURL(blob);
+                                                                    
+                                                                    try {
+                                                                        // For React Native, use Sharing with the blob URL
+                                                                        if (await Sharing.isAvailableAsync()) {
+                                                                            // Convert blob to base64 for sharing
+                                                                            const reader = new FileReader();
+                                                                            reader.onload = async () => {
+                                                                                const base64Data = reader.result as string;
+                                                                                await Sharing.shareAsync(base64Data, {
+                                                                                    mimeType: 'application/pdf',
+                                                                                    dialogTitle: 'Download Job Order PDF',
+                                                                                    UTI: 'com.adobe.pdf'
+                                                                                });
+                                                                            };
+                                                                            reader.readAsDataURL(blob);
+                                                                            Alert.alert('Success', 'PDF downloaded successfully');
+                                                                        } else {
+                                                                            Alert.alert('Success', `PDF generated successfully (size: ${Math.round(blob.size/1024)}KB)`);
+                                                                        }
+                                                                    } catch (shareError) {
+                                                                        console.error('Sharing error:', shareError);
+                                                                        Alert.alert('Success', `PDF generated (size: ${Math.round(blob.size/1024)}KB)`);
+                                                                    } finally {
+                                                                        // Clean up the object URL
+                                                                        URL.revokeObjectURL(url);
+                                                                    }
+                                                                } else {
+                                                                    Alert.alert('Error', 'Failed to download PDF');
+                                                                }
+                                                            } catch (error) {
+                                                                console.error('Error downloading PDF:', error);
+                                                                Alert.alert('Error', 'Failed to download PDF');
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Text className="text-xs text-white">PDF</Text>
                                                     </TouchableOpacity>
                                                 </View>
                                             </View>
-                                        </View>
-                                        
-                                        {/* Expandable Details Section */}
-                                        <View className="bg-gray-50 px-3 pb-3">
-                                            <View className="flex-row justify-between items-center mb-2">
-                                                <Text className="text-sm font-medium text-gray-700">Total Invoice: </Text>
-                                                <Text className="text-sm font-bold text-gray-900">₹{job.totalInvoice || '0'}/-</Text>
-                                            </View>
                                             
-                                            {/* Parts and Labour Details */}
-                                            <View className="bg-white border border-gray-200 rounded-lg p-2">
-                                                <View className="flex-row border-b border-gray-200 pb-1 mb-2">
-                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 200 }}>Details</Text>
-                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 70 }}>Quantity</Text>
-                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 80 }}>Unit Rate</Text>
-                                                    <Text className="text-xs font-medium text-gray-600" style={{ width: 100 }}>Amount</Text>
+                                            {/* Additional Service Details - Expandable */}
+                                            {job.serviceDetails && job.serviceDetails.length > 0 && (
+                                                <View className="mt-2 pt-2 border-t border-gray-200">
+                                                    <Text className="text-xs text-gray-600 font-medium mb-1">Service Details:</Text>
+                                                    <View className="flex-row flex-wrap gap-2">
+                                                        {job.serviceDetails.map((service: any, serviceIndex: number) => (
+                                                            <View key={serviceIndex} className="bg-gray-50 px-2 py-1 rounded">
+                                                                <Text className="text-xs text-gray-700">
+                                                                    {service.name || service.serviceName || `Service ${serviceIndex + 1}`}
+                                                                </Text>
+                                                            </View>
+                                                        ))}
+                                                    </View>
                                                 </View>
-                                                
-                                                {/* Sample Parts Data */}
-                                                {(job.parts || []).map((part: any, partIndex: number) => (
-                                                    <View key={partIndex} className="flex-row py-1 border-b border-gray-100">
-                                                        <Text className="text-xs text-gray-700" style={{ width: 200 }}>
-                                                            {part.partNumber?.partNumber} - {part.partNumber?.partName}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 70 }}>
-                                                            {part.quantity}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 80 }}>
-                                                            ₹{part.unitRate}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 100 }}>
-                                                            ₹{part.rate}
-                                                        </Text>
-                                                    </View>
-                                                ))}
-                                                
-                                                {/* Sample Labour Data */}
-                                                {(job.labour || []).map((labour: any, labourIndex: number) => (
-                                                    <View key={labourIndex} className="flex-row py-1 border-b border-gray-100">
-                                                        <Text className="text-xs text-gray-700" style={{ width: 200 }}>
-                                                            {labour.jobCode?.code}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 70 }}>
-                                                            {labour.quantity}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 80 }}>
-                                                            ₹{labour.unitRate}
-                                                        </Text>
-                                                        <Text className="text-xs text-gray-700" style={{ width: 100 }}>
-                                                            ₹{labour.rate}
-                                                        </Text>
-                                                    </View>
-                                                ))}
-                                            </View>
+                                            )}
                                         </View>
                                     </View>
                                 ))}
@@ -2618,7 +3200,8 @@ const VehicleDetailsScreen: React.FC = () => {
                 </ScrollView>
             </View>
         </View>
-    );
+    )
+    }
 
     const renderManufacturerModal = () => (
         <Modal visible={showManufacturerModal} transparent animationType="fade" onRequestClose={() => setShowManufacturerModal(false)}>
@@ -2727,13 +3310,30 @@ const VehicleDetailsScreen: React.FC = () => {
                         </View>
                     </View>
                     <ScrollView>
-                        {vehicleModels.length > 0 && vehicleModels.find(v => 
-                            v.modelCode && model.includes(v.modelCode)
-                        )?.image?.length > 0 ? (
+                        {vehicleModels.length > 0 && (() => {
+                            // Extract model code from the model string (format: "ModelCode - ModelName")
+                            const modelCodeFromSelection = model.split(' - ')[0]?.trim();
+                            const matchedVehicle = vehicleModels.find(v => 
+                                v.modelCode && modelCodeFromSelection && 
+                                v.modelCode.toString().trim().toUpperCase() === modelCodeFromSelection.toString().trim().toUpperCase()
+                            );
+                            
+                            console.log('Color modal - Model:', model);
+                            console.log('Color modal - Extracted model code:', modelCodeFromSelection);
+                            console.log('Color modal - Matched vehicle:', matchedVehicle);
+                            console.log('Color modal - Available models:', vehicleModels.map(v => ({ id: v.id, code: v.modelCode, name: v.modelName })));
+                            
+                            return matchedVehicle && matchedVehicle.image && matchedVehicle.image.length > 0;
+                        })() ? (
                             // Show actual colors from vehicle model
-                            vehicleModels
-                                .find(v => v.modelCode && model.includes(v.modelCode))
-                                ?.image?.map((color: any, index: number) => (
+                            (() => {
+                                const modelCodeFromSelection = model.split(' - ')[0]?.trim();
+                                const matchedVehicle = vehicleModels.find(v => 
+                                    v.modelCode && modelCodeFromSelection && 
+                                    v.modelCode.toString().trim().toUpperCase() === modelCodeFromSelection.toString().trim().toUpperCase()
+                                );
+                                
+                                return matchedVehicle?.image?.map((color: any, index: number) => (
                                     <TouchableOpacity 
                                         key={color.id || index} 
                                         onPress={() => { 
@@ -2757,63 +3357,73 @@ const VehicleDetailsScreen: React.FC = () => {
                                                     }`}>
                                                         {color.color}
                                                     </Text>
-                                            {color.code && (
-                                                <Text className="text-xs text-gray-500">
-                                                    Code: {color.code}
+                                                    {color.code && (
+                                                        <Text className="text-xs text-gray-500">
+                                                            Code: {color.code}
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                            </View>
+                                            <View className={`w-5 h-5 rounded-full border-2 ${
+                                                selectedColor === color.color 
+                                                    ? 'bg-teal-600 border-teal-600' 
+                                                    : 'border-gray-300'
+                                            }`}>
+                                                {selectedColor === color.color && (
+                                                    <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
+                                                )}
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                ));
+                            })()
+                        ) : (
+                            // Fallback to default colors
+                            [
+                                { id: '1', name: 'Metallic Black', code: 'SMX', color: 'black' },
+                                { id: '2', name: 'Blue', code: 'BLU', color: 'blue' },
+                                { id: '3', name: 'Red', code: 'RED', color: 'red' },
+                                { id: '4', name: 'Gray', code: 'GRY', color: 'gray' },
+                                { id: '5', name: 'White', code: 'WHT', color: 'white' },
+                                { id: '6', name: 'Silver', code: 'SLV', color: 'gray' },
+                            ].map((item) => (
+                                <TouchableOpacity 
+                                    key={item.id} 
+                                    onPress={() => { setSelectedColor(item.name); setShowColorModal(false); }} 
+                                    className="p-4 border-b border-gray-100"
+                                >
+                                    <View className="flex-row items-center justify-between">
+                                        <View className="flex-row items-center flex-1">
+                                            <View className={`w-8 h-8 rounded-full mr-3 ${
+                                                item.color === 'black' ? 'bg-black' :
+                                                item.color === 'blue' ? 'bg-blue-500' :
+                                                item.color === 'red' ? 'bg-red-500' :
+                                                item.color === 'gray' ? 'bg-gray-500' :
+                                                item.color === 'white' ? 'bg-white border border-gray-300' :
+                                                'bg-gray-400'
+                                            }`} />
+                                            <View>
+                                                <Text className={`text-gray-800 ${
+                                                    selectedColor === item.name ? 'font-bold text-teal-700' : ''
+                                                }`}>
+                                                    {item.name}
                                                 </Text>
+                                                <Text className="text-xs text-gray-500">{item.code}</Text>
+                                            </View>
+                                        </View>
+                                        <View className={`w-5 h-5 rounded-full border-2 ${
+                                            selectedColor === item.name 
+                                                ? 'bg-teal-600 border-teal-600' 
+                                                : 'border-gray-300'
+                                        }`}>
+                                            {selectedColor === item.name && (
+                                                <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
                                             )}
                                         </View>
                                     </View>
-                                    <View className={`w-5 h-5 rounded-full border-2 ${
-                                        selectedColor === color.color 
-                                            ? 'bg-teal-600 border-teal-600' 
-                                            : 'border-gray-300'
-                                    }`}>
-                                        {selectedColor === color.color && (
-                                            <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
-                                        )}
-                                    </View>
-                                </View>
-                            </TouchableOpacity>
-                        ))
-                    ) : (
-                        // Fallback to default colors
-                        [
-                            { id: '1', name: 'Metallic Black', code: 'SMX', color: 'black' },
-                            { id: '2', name: 'Blue', code: 'BLU', color: 'blue' },
-                            { id: '3', name: 'Red', code: 'RED', color: 'red' },
-                            { id: '4', name: 'Gray', code: 'GRY', color: 'gray' },
-                        ].map((item) => (
-                            <TouchableOpacity 
-                                key={item.id} 
-                                onPress={() => { setSelectedColor(item.name); setShowColorModal(false); }} 
-                                className="p-4 border-b border-gray-100"
-                            >
-                                <View className="flex-row items-center justify-between">
-                                    <View className="flex-row items-center flex-1">
-                                        <View className={`w-8 h-8 rounded-full mr-3 bg-${item.color}-500`} />
-                                        <View>
-                                            <Text className={`text-gray-800 ${
-                                                selectedColor === item.name ? 'font-bold text-teal-700' : ''
-                                            }`}>
-                                                {item.name}
-                                            </Text>
-                                            <Text className="text-xs text-gray-500">{item.code}</Text>
-                                        </View>
-                                    </View>
-                                    <View className={`w-5 h-5 rounded-full border-2 ${
-                                        selectedColor === item.name 
-                                            ? 'bg-teal-600 border-teal-600' 
-                                            : 'border-gray-300'
-                                    }`}>
-                                        {selectedColor === item.name && (
-                                            <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
-                                        )}
-                                    </View>
-                                </View>
-                            </TouchableOpacity>
-                        ))
-                    )}
+                                </TouchableOpacity>
+                            ))
+                        )}
                     </ScrollView>
                     <TouchableOpacity onPress={() => setShowColorModal(false)} className="p-3 border-t border-gray-200">
                         <Text className="text-center text-gray-600 font-medium">Cancel</Text>
@@ -3070,20 +3680,11 @@ const VehicleDetailsScreen: React.FC = () => {
     };
 
     const renderFooter = () => (
-        <View className="border-t border-gray-300 px-4 py-3 flex-row justify-end gap-3">
+        <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
             {mode === 'edit' ? (
                 <>
-                    <TouchableOpacity
-                        onPress={() => navigation.goBack()}
-                        className="px-6 py-2 border border-gray-300 rounded-lg"
-                    >
-                        <Text className="text-sm text-gray-800">Cancel</Text>
-                    </TouchableOpacity>
-                    <Button 
-                        title="Save Changes" 
-                        onPress={handleSave}
-                        className="px-6 py-2"
-                    />
+                    <Button title="Cancel" variant="outline" className="flex-1" onPress={() => navigation.goBack()} />
+                    <Button title="Save Changes" className="flex-1" onPress={handleSave} />
                 </>
             ) : null}
         </View>
@@ -3402,9 +4003,10 @@ const VehicleDetailsScreen: React.FC = () => {
     
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
+            <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+            {renderHeader()}
+            {renderTabNavigation()}
             <View className="flex-1">
-                {renderHeader()}
-                {renderTabNavigation()}
                 <ScrollView
                     className="flex-1"
                     showsVerticalScrollIndicator={false}
@@ -3425,118 +4027,44 @@ const VehicleDetailsScreen: React.FC = () => {
             {renderCalendarModal()}
             {renderValidFromCalendarModal()}
             {renderValidToCalendarModal()}
-            {/* Customer Dropdown Modal */}
-            {customerDropdownVisible && (
-                <Modal 
-                    visible={customerDropdownVisible} 
-                    transparent 
-                    animationType="fade" 
-                    onRequestClose={() => setCustomerDropdownVisible(false)}
-                >
-                    <View className="flex-1 bg-black/40 items-center justify-center px-4">
-                        <View className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '80%' }}>
-                            <View className="p-4 border-b border-gray-200">
-                                <View className="flex-row justify-between items-center mb-3">
-                                    <Text className="text-lg font-semibold text-gray-800">Select Customer</Text>
-                                    <TouchableOpacity onPress={() => setCustomerDropdownVisible(false)}>
-                                        <X size={20} color={COLORS.gray[600]} />
-                                    </TouchableOpacity>
-                                </View>
-                                
-                                {/* Search Input */}
-                                <View className="flex-row items-center bg-gray-100 rounded-lg px-3 py-2">
-                                    <Search size={16} color={COLORS.gray[400]} />
-                                    <TextInput
-                                        className="flex-1 ml-2 text-gray-800"
-                                        placeholder="Search customers..."
-                                        value={customerSearchQuery}
-                                        onChangeText={handleCustomerDropdownSearch}
-                                        autoFocus={true}
-                                    />
-                                </View>
-                            </View>
-                            
-                            <ScrollView>
-                                {/* Customer List with checkboxes */}
-                                {customerDropdownData.map((customer: any) => {
-                                    // Format display value as "customername - mobilenumber"
-                                    let phoneDisplay = '';
-                                    if (customer.contacts && Array.isArray(customer.contacts)) {
-                                        if (customer.contacts.length > 0) {
-                                            const firstContact = customer.contacts[0];
-                                            // Handle case where contacts is an array of arrays
-                                            if (Array.isArray(firstContact) && firstContact.length > 0) {
-                                                phoneDisplay = firstContact[0].phone ? firstContact[0].phone : '';
-                                            } else if (firstContact.phone) {
-                                                phoneDisplay = firstContact.phone;
-                                            }
-                                        }
-                                    }
-                                    
-                                    const displayValue = phoneDisplay ? `${customer.name} - ${phoneDisplay}` : customer.name;
-                                    const isSelected = selectedCustomers.some((selected: any) => selected.id === customer.id);
-                                    
-                                    return (
-                                        <TouchableOpacity 
-                                            key={customer.id} 
-                                            onPress={() => handleCustomerSelection(customer)}
-                                            className="p-4 border-b border-gray-100 flex-row items-center"
-                                        >
-                                            <View className="flex-1">
-                                                <Text className={`text-gray-800 ${isSelected ? 'font-bold text-blue-700' : ''}`}>
-                                                    {displayValue}
-                                                </Text>
-                                            </View>
-                                            <View className={`w-5 h-5 rounded-full border-2 ${
-                                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-                                            }`}>
-                                                {isSelected && (
-                                                    <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
-                                                )}
-                                            </View>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                                
-                                {customerDropdownData.length === 0 && (
-                                    <View className="p-8 items-center">
-                                        <Text className="text-gray-500 text-center">
-                                            {customerSearchQuery.trim() ? 'No customers found' : 'No customers available'}
-                                        </Text>
-                                    </View>
-                                )}
-                            </ScrollView>
-                            
-                            {/* Add Customer Button */}
-                            <TouchableOpacity 
-                                onPress={() => {
-                                    setCustomerDropdownVisible(false);
-                                    setShowAddCustomerForm(true);
-                                }}
-                                className="p-4 border-t border-gray-200 bg-blue-50"
-                            >
-                                <View className="flex-row items-center justify-center">
-                                    <Plus size={20} color={COLORS.primary} />
-                                    <Text className="ml-2 text-blue-600 font-medium">Add New Customer</Text>
-                                </View>
-                            </TouchableOpacity>
-                            
-                            {/* Done Button */}
-                            <View className="p-3 border-t border-gray-200">
-                                <TouchableOpacity 
-                                    onPress={() => {
-                                        setCustomerDropdownVisible(false);
-                                        setCustomerSearchQuery('');
-                                    }} 
-                                    className="bg-blue-600 p-3 rounded-lg"
-                                >
-                                    <Text className="text-center text-white font-medium">Done ({selectedCustomers.length})</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
-            )}
+            {/* Image Viewer Modal */}
+            <Modal
+                visible={showImageViewer}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => {
+                    setShowImageViewer(false);
+                    setSelectedImage(null);
+                }}
+            >
+                <View className="flex-1 bg-black bg-opacity-90 justify-center items-center">
+                    <TouchableOpacity
+                        className="absolute top-12 right-6 z-10"
+                        onPress={() => {
+                            setShowImageViewer(false);
+                            setSelectedImage(null);
+                        }}
+                    >
+                        <X size={24} color="white" />
+                    </TouchableOpacity>
+                    
+                    {selectedImage && (
+                        <Image
+                            source={{ uri: selectedImage }}
+                            className="w-full h-full"
+                            resizeMode="contain"
+                        />
+                    )}
+                </View>
+            </Modal>
+            
+            {/* Bulk Insurance Upload Modal */}
+            <BulkInsuranceUpload
+                visible={showBulkInsuranceModal}
+                onClose={() => setShowBulkInsuranceModal(false)}
+                onSave={handleBulkInsuranceSave}
+                vehicleId={vehicle?.id || ''}
+            />
         </SafeAreaView>
     );
 };

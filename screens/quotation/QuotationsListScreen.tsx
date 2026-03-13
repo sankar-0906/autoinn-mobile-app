@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
     Alert,
     View,
@@ -40,9 +40,12 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     }
 
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [activeTab, setActiveTab] = useState('active');
     const [quotations, setQuotations] = useState<Quotation[]>([]);
     const [loading, setLoading] = useState(false);
+    const [searchLoading, setSearchLoading] = useState(false);
     const [count, setCount] = useState(0);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [showLimitOptions, setShowLimitOptions] = useState(false);
@@ -61,23 +64,54 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     const toast = useToast();
 
     const totalPages = useMemo(() => {
-        if (searchQuery) {
+        if (debouncedSearchQuery) {
             return 1; // Disable pagination when searching
         }
         return Math.max(1, Math.ceil(count / itemsPerPage));
-    }, [count, itemsPerPage, searchQuery]);
+    }, [count, itemsPerPage, debouncedSearchQuery]);
+
+    // Debounce search query
+    useEffect(() => {
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+
+        searchTimeoutRef.current = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+        }, 300); // Reduced debounce delay to 300ms for better responsiveness
+
+        return () => {
+            if (searchTimeoutRef.current) {
+                clearTimeout(searchTimeoutRef.current);
+            }
+        };
+    }, [searchQuery]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, activeTab, itemsPerPage]);
+    }, [debouncedSearchQuery, activeTab, itemsPerPage]);
 
-    useEffect(() => {
-        if (currentPage > totalPages) {
-            setCurrentPage(totalPages);
+    const paginatedQuotations = useMemo(() => {
+        if (!debouncedSearchQuery) {
+            return quotations;
         }
-    }, [currentPage, totalPages]);
+        
+        const searchTerm = debouncedSearchQuery.toLowerCase();
+        return quotations.filter(quotation => 
+            quotation.customerName.toLowerCase().includes(searchTerm) ||
+            quotation.displayId.toLowerCase().includes(searchTerm) ||
+            quotation.vehicle.toLowerCase().includes(searchTerm) ||
+            quotation.mobileNo.toLowerCase().includes(searchTerm)
+        );
+    }, [quotations, debouncedSearchQuery]);
 
-    const paginatedQuotations = useMemo(() => quotations, [quotations]);
+    // Calculate display count based on search results
+    const displayCount = useMemo(() => {
+        if (debouncedSearchQuery) {
+            return paginatedQuotations.length;
+        }
+        return count;
+    }, [count, debouncedSearchQuery, paginatedQuotations]);
 
     const paginationWindow = useMemo(() => {
         let start = Math.max(1, currentPage - 2);
@@ -188,8 +222,12 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
         return count;
     };
 
-    const fetchQuotations = async () => {
-        setLoading(true);
+    const fetchQuotations = async (isSearch = false) => {
+        if (isSearch) {
+            setSearchLoading(true);
+        } else {
+            setLoading(true);
+        }
         try {
             const branchIds = await getBranchIds();
             const storedFiltersRaw = await AsyncStorage.getItem('quotationFilters');
@@ -211,11 +249,11 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 if (!sanitizedFilters.model.length) delete sanitizedFilters.model;
             }
             const body: any = {
-                page: searchQuery ? 1 : currentPage,
-                size: searchQuery ? 1000 : itemsPerPage,
+                page: debouncedSearchQuery ? 1 : currentPage,
+                size: debouncedSearchQuery ? 500 : itemsPerPage, // Increased size for client-side filtering
                 filter: sanitizedFilters || {},
                 status: tabToStatus(activeTab),
-                searchString: searchQuery ? searchQuery : undefined,
+                searchString: '', // Let client-side handle the search
             };
             if (branchIds.length) body.branch = branchIds;
             const token = await AsyncStorage.getItem('token');
@@ -248,7 +286,11 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 toast.error(msg);
             }
         } finally {
-            setLoading(false);
+            if (isSearch) {
+                setSearchLoading(false);
+            } else {
+                setLoading(false);
+            }
         }
     };
 
@@ -398,7 +440,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     );
 
     const renderPaginationFooter = () => {
-        if (count === 0 || searchQuery) return null;
+        if (count === 0 || debouncedSearchQuery) return null;
 
         return (
             <View className="mx-4 mt-1 mb-4">
@@ -531,14 +573,22 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     }, [selectedBranch]);
 
     useEffect(() => {
-        fetchQuotations();
-    }, [activeTab, currentPage, itemsPerPage, searchQuery]);
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
+
+    useEffect(() => {
+        const isSearch = Boolean(debouncedSearchQuery);
+        fetchQuotations(isSearch);
+    }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery]);
 
     // Refresh data when screen comes into focus (after applying filters)
     useFocusEffect(
         useCallback(() => {
-            fetchQuotations();
-        }, [activeTab, currentPage, itemsPerPage, searchQuery])
+            const isSearch = Boolean(debouncedSearchQuery);
+            fetchQuotations(isSearch);
+        }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery])
     );
 
     return (
@@ -555,7 +605,7 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 <View className="flex-row items-center justify-between mb-4">
                     <View className="flex-row items-center">
                         <Text className="text-[20px] font-bold text-gray-900 mr-3">
-                            Quotations [{count}]
+                            Quotations [{displayCount}]
                         </Text>
                         <View className="relative">
                             <TouchableOpacity
@@ -608,6 +658,19 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                         />
+                        {searchLoading && (
+                            <View className="ml-2">
+                                <Text className="text-gray-400 text-xs">Searching...</Text>
+                            </View>
+                        )}
+                        {searchQuery.length > 0 && !searchLoading && (
+                            <TouchableOpacity
+                                onPress={() => setSearchQuery('')}
+                                className="ml-2 p-1"
+                            >
+                                <X size={16} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     {/* Filter Button Outside */}
@@ -670,16 +733,22 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                 keyExtractor={keyExtractor}
                 contentContainerStyle={{ paddingVertical: 16 }}
                 refreshing={loading}
-                onRefresh={fetchQuotations}
+                onRefresh={() => fetchQuotations(false)}
                 initialNumToRender={8}
                 maxToRenderPerBatch={8}
                 windowSize={7}
                 removeClippedSubviews
                 ListEmptyComponent={
                     <View className="flex-1 items-center justify-center p-10">
-                        <Text className="text-gray-500 text-center text-lg">
-                            No quotations found matching your criteria.
-                        </Text>
+                        {searchLoading ? (
+                            <Text className="text-gray-500 text-center text-lg">
+                                Searching quotations...
+                            </Text>
+                        ) : (
+                            <Text className="text-gray-500 text-center text-lg">
+                                No quotations found matching your criteria.
+                            </Text>
+                        )}
                     </View>
                 }
                 ListFooterComponent={renderPaginationFooter}

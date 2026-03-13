@@ -113,29 +113,18 @@ export default function BookingActivityScreen({
 
     // Determine the back navigation target based on how we got here
     const getBackNavigationTarget = () => {
-        // Check if we came from FollowUpDetail by looking at navigation state
-        const state = navigation.getState();
-        const previousRoute = state?.routes?.[state.index - 1];
+        // Always navigate to FollowUpDetail when cancelling
+        // Use the available phone number (customerPhone from route params or current phone state)
+        const phoneForFollowUp = customerPhone || phone || '';
         
-        // Check the navigation stack to see if we came from FollowUpDetail → CustomerDetails → BookingActivity
-        // We need to look at the route before the previous one
-        const routeBeforePrevious = state?.routes?.[state.index - 2];
-        
-        if (previousRoute?.name === 'FollowUpDetail') {
-            // If we came directly from FollowUpDetail, use goBack() to preserve exact state
-            return { screen: 'FollowUpDetail' as const, useGoBack: true };
-        } else if (previousRoute?.name === 'CustomerDetails' && routeBeforePrevious?.name === 'FollowUpDetail') {
-            // If we came from FollowUpDetail → CustomerDetails → BookingActivity, use goBack() to CustomerDetails first
-            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
-        } else if ((isAdvancedBooking || isConfirmBooking) && customerId) {
-            // If we came from Advanced/Confirm Booking (but not from FollowUpDetail flow), use goBack() to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
-        } else if (previousRoute?.name === 'CustomerDetails') {
-            // If we came from Customer Details, use goBack() to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId }, useGoBack: true };
+        if (phoneForFollowUp) {
+            console.log('🔍 Navigating to FollowUpDetail with phone:', phoneForFollowUp);
+            return { screen: 'FollowUpDetail' as const, params: { id: phoneForFollowUp }, useGoBack: false };
+        } else {
+            // Fallback to FollowUps if no phone number is available
+            console.log('🔍 No phone number available, navigating to FollowUps');
+            return { screen: 'FollowUps' as const, params: undefined, useGoBack: false };
         }
-        // Otherwise, go to FollowUps (default behavior)
-        return { screen: 'FollowUps' as const, params: undefined, useGoBack: false };
     };
 
     // Use the custom back button hook

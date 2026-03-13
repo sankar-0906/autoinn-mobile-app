@@ -10,6 +10,7 @@ export type RootStackParamList = {
     SelectPrice: { vehicleId: string; vehicleData?: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView' | 'BookingRegister'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectVehicleForBooking: { modelName?: string; customerName?: string; customerId?: string; customerPhone?: string };
+    SelectVehicleForDetails: { modelName?: string };
     SelectVehicleColor: { modelName?: string; selectedColor?: any };
     AddQuotation: { selectedVehicle?: any; customerId?: string; customerName?: string; phoneNumbers?: any[]; returnToPrevious?: boolean };
     AdvancedFilters: undefined;
@@ -27,7 +28,7 @@ export type RootStackParamList = {
     WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
-    VehicleDetails: { vehicle: any; mode?: 'view' | 'edit' };
+    VehicleDetails: { vehicle: any; mode?: 'view' | 'edit'; selectedVehicleData?: any };
 };
 
 export type TabParamList = {

@@ -1,23 +1,17 @@
-
-
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-
-// const DEFAULT_ENDPOINT = 'http://192.168.1.20:4000/';
-// const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
-
-const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in/';
+const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
 
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 const platformApi = axios.create({
   baseURL: ENDPOINT,
   headers: {
     'Content-Type': 'application/json',
-  },
+  }
 });
 
 platformApi.interceptors.request.use(async (config) => {
@@ -32,6 +26,33 @@ platformApi.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Add response interceptor for retry logic and better error handling
+platformApi.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const { config, code } = error;
+    
+    // Retry logic for timeouts and 504 errors
+    if ((code === 'ECONNABORTED' || error.response?.status === 504) && !config._retry) {
+      config._retry = true;
+      config._retryCount = config._retryCount || 0;
+      
+      if (config._retryCount < 3) {
+        config._retryCount += 1;
+        console.log(`🔄 Retrying request (attempt ${config._retryCount}/3):`, config.url);
+        
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = 1000 * Math.pow(2, config._retryCount - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        return platformApi(config);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 export const login = (phone: string, password: string) => {
   return platformApi.post('/api/user/login', { phone, password });
@@ -151,20 +172,18 @@ export const getCustomerById = (id: string) => {
   return platformApi.get(`/api/customer/${id}`);
 };
 
+// Customer Details API - Used by CustomerDetailsScreen
 export const getCustomerDetails = (id: string) => {
   return platformApi.get(`/api/customer/details/${id}`);
 };
 
-export const getQuotationByCustomerId = (customerId: string) => {
-  return platformApi.get(`/api/quotation/customer/${customerId}`);
+// Alternative customer details API (kept for compatibility)
+export const getCustomerDetailsById = (id: string) => {
+  return platformApi.get(`/api/customer/details/${id}`);
 };
 
-export const getCustomerByPhoneNo = (phoneNo: string) => {
+export const getCustomerQuotationsByPhone = (phoneNo: string) => {
   return platformApi.get(`/api/customer/phone-no/${phoneNo}`);
-};
-
-export const getCustomerQuotations = (customerId: string) => {
-  return platformApi.get(`/api/quotation/getCus/${customerId}`);
 };
 
 export const getAccessories = (searchString?: string) => {
@@ -205,6 +224,18 @@ export const checkEngineNumber = (engineNo: string, vehicleId?: string) => {
   return platformApi.post(`/api/vehicle/checkEngineNo`, { engineNo, id: vehicleId });
 };
 
+export const validateChassisNumber = (chassisNo: string, vehicleId?: string) => {
+  return platformApi.post(`/api/vehicle/checkChassisNo`, { chassisNo, id: vehicleId });
+};
+
+export const validateEngineNumber = (engineNo: string, vehicleId?: string) => {
+  return platformApi.post(`/api/vehicle/checkEngineNo`, { engineNo, id: vehicleId });
+};
+
+export const validateRegistrationNumber = (registerNo: string, vehicleId?: string) => {
+  return platformApi.post(`/api/vehicle/checkRegisterNo`, { registerNo, id: vehicleId });
+};
+
 export const getVehicleColor = (vehicleId: string) => {
   return platformApi.post(`/api/vehicle/get?color=${vehicleId}`);
 };
@@ -220,6 +251,89 @@ export const getVehicleServices = (vehicleId: string) => {
 export const getVehicleCustomers = (customerIds: string[]) => {
   return platformApi.post('/api/vehicle/getCustomer', {
     customer: customerIds
+  });
+};
+
+// Job Order APIs
+export const getJobOrderHistory = (vehicleId: string) => {
+  return platformApi.post('/api/jobOrder/get', {
+    vehicle: vehicleId
+  });
+};
+
+export const getJobOrderDetails = (jobOrderId: string) => {
+  return platformApi.get(`/api/jobOrder/${jobOrderId}`);
+};
+
+export const generateQRCode = (data: string) => {
+  return platformApi.post('/api/jobOrder/generateQR', { data });
+};
+
+export const generateJobOrderPDF = (jobOrderId: string) => {
+  return platformApi.get(`/api/jobOrder/generatePDF/${jobOrderId}`);
+};
+
+// Insurance APIs
+export const getInsuranceTypes = () => {
+  return platformApi.get('/api/insurance');
+};
+
+export const addInsurance = (insuranceData: any) => {
+  return platformApi.post('/api/insurance', insuranceData);
+};
+
+export const parseInsurancePDF = (pdfData: FormData) => {
+  return platformApi.post('/api/insurance/parse', pdfData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const getVehicleInsurance = (vehicleId: string) => {
+  return platformApi.get(`/api/vehicle/${vehicleId}`);
+};
+
+// Customer Management APIs
+export const getCustomersByPhone = (phoneNo: string) => {
+  return platformApi.get(`/api/customer/phone-no/${phoneNo}`);
+};
+
+export const getCustomerByPhoneNo = (phoneNo: string) => {
+  return platformApi.get(`/api/customer/phone-no/${phoneNo}`);
+};
+
+export const mergeCustomerData = (customerIds: string[]) => {
+  return platformApi.post('/api/customer/merge', { ids: customerIds });
+};
+
+export const getCustomerActivities = (customerId: string) => {
+  return platformApi.post('/api/activity/customers', { ids: [customerId] });
+};
+
+export const addNewCustomer = (customerData: any) => {
+  return platformApi.post('/api/customer', customerData);
+};
+
+// Follow-up Related APIs
+export const getCustomerQuotations = (customerId: string) => {
+  return platformApi.get(`/api/quotation/getCus/${customerId}`);
+};
+
+export const getCustomerDetailsBasic = (customerId: string) => {
+  return platformApi.get(`/api/customer/${customerId}`);
+};
+
+export const getCustomerActivitiesList = (body: { ids: string[] }) => {
+  return platformApi.post('/api/activity/customers', body);
+};
+
+// Market info API
+export const fetchMarketInfo = (vehicleId: string) => {
+  return platformApi.post('/api/options/get', {
+    module: "vehicles",
+    column: "modelName",
+    searchString: "",
+    fields: ["modelName", "modelCode"],
+    size: 10
   });
 };
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
     Modal,
     ScrollView,
@@ -11,10 +11,12 @@ import {
     Platform,
     Dimensions,
     DeviceEventEmitter,
+    Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { Audio } from 'expo-av';
 import {
     ChevronLeft,
     Calendar,
@@ -29,7 +31,11 @@ import {
     Mail,
     FileText,
     Hash,
-    MessageSquare
+    MessageSquare,
+    Play,
+    Pause,
+    Volume2,
+    StopCircle
 } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
@@ -62,6 +68,7 @@ type Activity = {
     employeeName?: string;
     phone?: string;
     quotationId?: string;
+    bucketUrl?: string; // Voice recording URL
     createdBy?: {
         profile?: {
             employeeName?: string;
@@ -193,6 +200,9 @@ export default function FollowUpDetailScreen() {
     const { id: phoneNo } = route.params || {};
     const toast = useToast();
 
+    // Ref for debouncing
+    const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     const [loading, setLoading] = useState(true);
     const [customer, setCustomer] = useState<any>(null);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -205,6 +215,11 @@ export default function FollowUpDetailScreen() {
     const [followUpDate, setFollowUpDate] = useState<string>('');
     const [status, setStatus] = useState<string>('');
     const [currentCustomerIndex, setCurrentCustomerIndex] = useState(0);
+
+    // Audio player states
+    const [sound, setSound] = useState<Audio.Sound | null>(null);
+    const [isPlaying, setIsPlaying] = useState<string | null>(null); // Track which activity is playing
+    const [audioLoading, setAudioLoading] = useState<string | null>(null); // Track which audio is loading
 
     const [showCustomerModal, setShowCustomerModal] = useState(false);
     const [customerTab, setCustomerTab] = useState<(typeof CUSTOMER_TABS)[number]['id']>('customer-details');
@@ -280,7 +295,19 @@ export default function FollowUpDetailScreen() {
     // Data fetching functions matching autoinn-fe
     const getCustomersByPhone = async (phoneNo: string) => {
         try {
-            const customerRes = await getCustomerByPhoneNo(phoneNo);
+            console.log('🚀 Starting customer data fetch for phone:', phoneNo);
+            const startTime = Date.now();
+            
+            // Add timeout to prevent hanging - increased for network issues
+            const timeoutPromise = new Promise<any>((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout')), 25000) // Increased to 25 seconds
+            );
+            
+            const customerRes = await Promise.race([
+                getCustomerByPhoneNo(phoneNo),
+                timeoutPromise
+            ]);
+            
             const customersData = (customerRes.data?.response?.data?.customers as any[]) || [];
 
             setCustomers(customersData);
@@ -290,13 +317,42 @@ export default function FollowUpDetailScreen() {
                 setCustomerIds(allCustomerIds);
                 setCustomerId(customersData[0].id);
 
-                await getCustomerInfo(customersData[0].id);
-                await getMergedInfo(allCustomerIds);
-                await getActivityByCustomer(allCustomerIds);
+                console.log('📊 Customer IDs fetched:', allCustomerIds.length);
+
+                // ⚡ PARALLEL API CALLS - Major Performance Improvement!
+                const [customerInfo, mergedInfo, activities] = await Promise.all([
+                    getCustomerInfo(customersData[0].id).catch(err => {
+                        console.error('Customer info failed:', err);
+                        return null;
+                    }),
+                    getMergedInfo(allCustomerIds).catch(err => {
+                        console.error('Merged info failed:', err);
+                        return { purchasedVehicle: [], quotation: [] };
+                    }),
+                    getActivityByCustomer(allCustomerIds).catch(err => {
+                        console.error('Activities failed:', err);
+                        return [];
+                    })
+                ]);
+
+                const endTime = Date.now();
+                console.log(`✅ All data loaded in ${endTime - startTime}ms`);
+            } else {
+                setLoading(false); // Set loading to false if no customers found
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching customers by phone:', error);
             setCustomers([]);
+            setLoading(false);
+            
+            // Better error handling for specific error codes
+            if (error.message?.includes('504') || error.response?.status === 504) {
+                toast.error("Server timeout - please try again");
+            } else if (error.message?.includes('timeout')) {
+                toast.error("Request timed out - check your connection");
+            } else {
+                toast.error("Unable to load customer details");
+            }
         }
     };
 
@@ -330,10 +386,12 @@ export default function FollowUpDetailScreen() {
                     latest?.scheduleDateAndTime || latest?.scheduleDate || latest?.createdAt || ""
                 );
             }
+            return { purchasedVehicle: filteredVehicles, quotation };
         } catch (error) {
             console.error('Error fetching merged info:', error);
             setMergedPurchasedVehicle([]);
             setMergedQuotations([]);
+            return { purchasedVehicle: [], quotation: [] };
         }
     };
 
@@ -370,8 +428,10 @@ export default function FollowUpDetailScreen() {
                 console.log('👤 Setting fallback customer info:', fallbackCustomer);
                 setCustomer(fallbackCustomer);
             }
+            return customerData;
         } catch (error) {
             console.error('Error fetching customer info:', error);
+            return null;
         }
     };
 
@@ -380,21 +440,32 @@ export default function FollowUpDetailScreen() {
             const activityRes = await getActivitiesByCustomer({ ids, limit, offset });
             const activityData = activityRes.data?.response?.data || [];
             setActivities(activityData);
+            return activityData;
         } catch (error) {
             console.error('Error fetching activities:', error);
+            return [];
         }
     };
 
     const fetchData = useCallback(async () => {
-        setLoading(true);
-        try {
-            await getCustomersByPhone(phoneNo);
-        } catch (error) {
-            console.error('Error in fetchData:', error);
-        } finally {
-            setLoading(false);
+        // Clear any existing timeout
+        if (fetchTimeoutRef.current) {
+            clearTimeout(fetchTimeoutRef.current);
         }
-    }, [phoneNo]);
+
+        // Debounce the fetch call
+        fetchTimeoutRef.current = setTimeout(async () => {
+            setLoading(true);
+            try {
+                await getCustomersByPhone(phoneNo);
+            } catch (error) {
+                console.error('Error in fetchData:', error);
+                toast.error("Failed to load customer data");
+            } finally {
+                setLoading(false);
+            }
+        }, 300); // 300ms debounce delay
+    }, [phoneNo, toast]);
 
     // Handler functions from autoinn-fe
     const updateCustomerData = async (customerId: string, customerData: any) => {
@@ -567,7 +638,77 @@ export default function FollowUpDetailScreen() {
 
     useEffect(() => {
         fetchData();
+        
+        // Cleanup function
+        return () => {
+            if (fetchTimeoutRef.current) {
+                clearTimeout(fetchTimeoutRef.current);
+            }
+            if (sound) {
+                sound.unloadAsync();
+            }
+        };
     }, [fetchData]);
+
+    // Audio playback functions
+    const playAudio = async (audioUrl: string, activityId: string) => {
+        try {
+            // Stop any currently playing sound
+            if (sound) {
+                await sound.unloadAsync();
+                setSound(null);
+                setIsPlaying(null);
+            }
+
+            setAudioLoading(activityId);
+            
+            console.log('🎵 Playing audio:', audioUrl);
+            
+            // Create and load the sound
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { uri: audioUrl },
+                { shouldPlay: true }
+            );
+            
+            newSound.setOnPlaybackStatusUpdate((status: any) => {
+                if (status.isLoaded && status.didJustFinish) {
+                    setIsPlaying(null);
+                    newSound.unloadAsync();
+                    setSound(null);
+                }
+            });
+
+            setSound(newSound);
+            setIsPlaying(activityId);
+            setAudioLoading(null);
+            
+        } catch (error) {
+            console.error('Error playing audio:', error);
+            toast.error("Unable to play voice recording");
+            setAudioLoading(null);
+        }
+    };
+
+    const stopAudio = async () => {
+        try {
+            if (sound) {
+                await sound.unloadAsync();
+                setSound(null);
+                setIsPlaying(null);
+            }
+        } catch (error) {
+            console.error('Error stopping audio:', error);
+        }
+    };
+
+    // Cleanup audio on unmount
+    useEffect(() => {
+        return () => {
+            if (sound) {
+                sound.unloadAsync();
+            }
+        };
+    }, [sound]);
 
     const customerTabContent = useMemo(() => {
         if (!customer) return null;
@@ -790,7 +931,20 @@ export default function FollowUpDetailScreen() {
                                 <Text className="text-xs text-gray-700 w-20">{formatDate(activity.createdAt)}</Text>
                                 <Text className="text-xs text-gray-800 w-24">{activity.activityType || activity.type || 'Activity'}</Text>
                                 <Text className="text-xs text-gray-700 flex-1" numberOfLines={2}>{activity.remarks || '-'}</Text>
-                                <Text className="text-xs text-gray-600 w-20">{activity.createdBy?.profile?.employeeName || '-'}</Text>
+                                <View className="w-20 flex-row items-center justify-between">
+                                    <Text className="text-xs text-gray-600 flex-1" numberOfLines={1}>{activity.createdBy?.profile?.employeeName || '-'}</Text>
+                                    {activity.bucketUrl && activity.bucketUrl !== "null" && (
+                                        <TouchableOpacity onPress={() => playAudio(activity.bucketUrl!, activity.id)}>
+                                            {isPlaying === activity.id ? (
+                                                <StopCircle size={12} color="#ef4444" />
+                                            ) : audioLoading === activity.id ? (
+                                                <ActivityIndicator size={10} color="#6b7280" />
+                                            ) : (
+                                                <Volume2 size={12} color="#06b6d4" />
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             </View>
                         ))
                     ) : (
@@ -819,7 +973,8 @@ export default function FollowUpDetailScreen() {
         return (
             <SafeAreaView className="flex-1 bg-white items-center justify-center">
                 <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text className="mt-4 text-gray-500">Loading details...</Text>
+                <Text className="mt-4 text-gray-500">Loading customer details...</Text>
+                <Text className="mt-2 text-gray-400 text-sm">Fetching activities and quotations</Text>
             </SafeAreaView>
         );
     }
@@ -963,10 +1118,7 @@ export default function FollowUpDetailScreen() {
                             onPress={() =>
                                 navigation.navigate('AddQuotation', {
                                     customerName: customer.name,
-                                    customerPhone: phoneNo,
-                                    locality: customer.locality,
-                                    customerType: customer.customerType,
-                                    gender: customer.gender
+                                    phoneNumbers: [phoneNo]
                                 })
                             }
                         />
@@ -1266,6 +1418,40 @@ export default function FollowUpDetailScreen() {
                                                 </View>
                                             </View>
                                         </View>
+
+                                        {/* Voice Recording */}
+                                        {activity.bucketUrl && activity.bucketUrl !== "null" ? (
+                                            <View className="mt-3 bg-gray-50 rounded-lg p-3">
+                                                <View className="flex-row items-center gap-2 mb-2">
+                                                    <Volume2 size={14} color="#6b7280" />
+                                                    <Text className="text-gray-600 text-xs font-medium">Voice Recording</Text>
+                                                </View>
+                                                <View className="flex-row items-center gap-2">
+                                                    {isPlaying === activity.id ? (
+                                                        <TouchableOpacity
+                                                            className="flex-row items-center justify-center gap-2 py-2 px-4 bg-red-100 rounded-lg flex-1"
+                                                            onPress={stopAudio}
+                                                        >
+                                                            <StopCircle size={16} color="#ef4444" />
+                                                            <Text className="text-red-600 text-sm font-semibold">Stop</Text>
+                                                        </TouchableOpacity>
+                                                    ) : audioLoading === activity.id ? (
+                                                        <View className="flex-row items-center justify-center gap-2 py-2 px-4 bg-gray-100 rounded-lg flex-1">
+                                                            <ActivityIndicator size="small" color="#6b7280" />
+                                                            <Text className="text-gray-600 text-sm font-semibold">Loading...</Text>
+                                                        </View>
+                                                    ) : (
+                                                        <TouchableOpacity
+                                                            className="flex-row items-center justify-center gap-2 py-2 px-4 bg-teal-100 rounded-lg flex-1"
+                                                            onPress={() => playAudio(activity.bucketUrl!, activity.id)}
+                                                        >
+                                                            <Play size={16} color="#06b6d4" />
+                                                            <Text className="text-teal-600 text-sm font-semibold">Play Recording</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                </View>
+                                            </View>
+                                        ) : null}
 
                                         {/* Remarks */}
                                         {activity.remarks && activity.remarks.length > 0 ? (
