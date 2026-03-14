@@ -97,11 +97,23 @@ export default function BookingActivityScreen({
 }) {
     const { isAdvancedBooking = false, isConfirmBooking = false, customerId, customerName, customerPhone } = route.params || {};
 
+    // Persist booking type in state to prevent loss during navigation
+    const [persistedIsConfirmBooking, setPersistedIsConfirmBooking] = useState(isConfirmBooking);
+    const [persistedIsAdvancedBooking, setPersistedIsAdvancedBooking] = useState(isAdvancedBooking);
+
+    // Update persisted state when route params change (initial load or explicit navigation)
+    useEffect(() => {
+        if (route.params?.isConfirmBooking !== undefined) {
+            setPersistedIsConfirmBooking(route.params.isConfirmBooking);
+        }
+        if (route.params?.isAdvancedBooking !== undefined) {
+            setPersistedIsAdvancedBooking(route.params.isAdvancedBooking);
+        }
+    }, [route.params?.isConfirmBooking, route.params?.isAdvancedBooking]);
+
     // Safe mode detection - preserves current behavior as default
     const getBookingMode = () => {
-        if (isConfirmBooking) return 'ConfirmBooking';
-        if (isAdvancedBooking) return 'AdvancedBooking';  
-        return 'NormalBooking'; // Default - preserves current behavior
+        return persistedIsConfirmBooking ? 'ConfirmBooking' : persistedIsAdvancedBooking ? 'AdvancedBooking' : 'NormalBooking';
     };
 
     const bookingMode = getBookingMode();
@@ -923,7 +935,15 @@ export default function BookingActivityScreen({
             // Clear savedFormData from params to prevent re-restoring
             navigation.setParams({ savedFormData: undefined } as any);
         }
-    }, []);
+        
+        // Also restore booking mode flags if they're passed in params
+        if (route.params?.isConfirmBooking !== undefined) {
+            setPersistedIsConfirmBooking(route.params.isConfirmBooking);
+        }
+        if (route.params?.isAdvancedBooking !== undefined) {
+            setPersistedIsAdvancedBooking(route.params.isAdvancedBooking);
+        }
+    }, [route.params?.savedFormData, route.params?.isConfirmBooking, route.params?.isAdvancedBooking]);
 
     // Default sales officer — use ref to avoid overwriting restored value
     useEffect(() => {
@@ -1382,12 +1402,12 @@ export default function BookingActivityScreen({
             confirmBookingId: null,
             
             // Authentication data for Confirm Booking (matching web app pattern)
-            ...(isConfirmBooking && {
+            ...(persistedIsConfirmBooking && {
                 authentication: {
                     verifiedAt: null, // Will be set when customer is verified
                     beforeVerification: null, // Document URLs
                     afterVerification: null, // Document URLs
-                    status: 'PENDING_VERIFICATION'
+                    digital: null, // Digital verification status
                 }
             }),
         };
@@ -1629,7 +1649,7 @@ export default function BookingActivityScreen({
             setActiveTab('payment');
         } else if (activeTab === 'payment') {
             // For Confirm Booking, go to auth step; for others, stay on payment (final step)
-            if (isConfirmBooking) {
+            if (persistedIsConfirmBooking) {
                 setActiveTab('auth');
             }
         }
@@ -1687,7 +1707,7 @@ export default function BookingActivityScreen({
             {/* Tabs */}
             <View className="w-[340px] self-center bg-white border-b border-gray-100">
                 <View className="flex-row items-center px-4">
-                    {(['customer', 'vehicle', 'payment', ...(isConfirmBooking ? ['auth'] : [])] as Array<'customer' | 'vehicle' | 'payment' | 'auth'>).map((tab, idx, arr) => (
+                    {(['customer', 'vehicle', 'payment', ...(persistedIsConfirmBooking ? ['auth'] : [])] as Array<'customer' | 'vehicle' | 'payment' | 'auth'>).map((tab, idx, arr) => (
                         <React.Fragment key={tab}>
                             <TouchableOpacity
                                 onPress={() => setActiveTab(tab)}
@@ -2082,12 +2102,16 @@ export default function BookingActivityScreen({
                                         </Text>
                                     </View>
                                     <TouchableOpacity
-                                        onPress={isModelSelected ? () => navigation.navigate('SelectVehicleForBooking', {
-                                            modelName: model,
-                                            customerName: route.params?.customerName,
-                                            customerId: route.params?.customerId,
-                                            customerPhone: route.params?.customerPhone,
-                                            savedFormData: {
+                                        onPress={isModelSelected ? () => {
+                                            navigation.navigate('SelectVehicleForBooking', {
+                                                modelName: model,
+                                                customerName: route.params?.customerName,
+                                                customerId: route.params?.customerId,
+                                                customerPhone: route.params?.customerPhone,
+                                                // Pass the booking mode flags to preserve them
+                                                isConfirmBooking: persistedIsConfirmBooking,
+                                                isAdvancedBooking: persistedIsAdvancedBooking,
+                                                savedFormData: {
                                                 fatherName: fatherNameRef.current,
                                                 address: addressRef.current,
                                                 address2: address2Ref.current,
@@ -2111,10 +2135,11 @@ export default function BookingActivityScreen({
                                                 expectedDelivery: expectedDeliveryRef.current,
                                                 customerFullName: customerFullNameRef.current,
                                             },
-                                        }) : undefined}
-                                        disabled={!isModelSelected}
-                                        className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${isModelSelected ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
-                                    >
+                                        });
+                                    } : undefined}
+                                    disabled={!isModelSelected}
+                                    className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${isModelSelected ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
+                                >
                                         <Text className={`font-medium mr-2 ${isModelSelected ? 'text-white' : 'text-gray-500'}`}>
                                             Select Vehicle Color
                                         </Text>

@@ -394,7 +394,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             locality: customer.address.locality || '',
                             country: customer.address.country?.id || '',
                             state: customer.address.state?.id || '',
-                            city: customer.address.city?.id || '',
+                            city: customer.address.district?.id || '',  // ✅ Fix: Read from district field
                             pincode: customer.address.pincode || ''
                         });
                         
@@ -658,22 +658,30 @@ const CustomerDetailsScreen: React.FC = () => {
             country: billingAddress.country || null,
             state: billingAddress.state || null,
             city: billingAddress.city || null,
-            district: null
+            district: billingAddress.city || null  // ✅ Fix: Include district data like shipping address
         };
 
-        // Prepare shipping address with EXACT same format as billing
+        // Prepare shipping address with EXACT same format as web app
         const shippingAddressObj = sameAsBilling 
-            ? { ...billingAddressObj } // Create a copy of billing address
+            ? {
+                shippingline1: billingAddressObj.line1,
+                shippingline2: billingAddressObj.line2,
+                shippingline3: billingAddressObj.line3,
+                shippinglocality: billingAddressObj.locality,
+                shippingpincode: billingAddressObj.pincode,
+                shippingcountry: billingAddressObj.country,
+                shippingstate: billingAddressObj.state,
+                shippingdistrict: billingAddressObj.city
+            } 
             : {
-                line1: shippingAddress.address1 || null,
-                line2: shippingAddress.address2 || null,
-                line3: shippingAddress.address3 || null,
-                locality: shippingAddress.locality || null,
-                pincode: shippingAddress.pincode || null,
-                country: shippingAddress.country || null,
-                state: shippingAddress.state || null,
-                city: shippingAddress.city || null,
-                district: null
+                shippingline1: shippingAddress.address1 || null,
+                shippingline2: shippingAddress.address2 || null,
+                shippingline3: shippingAddress.address3 || null,
+                shippinglocality: shippingAddress.locality || null,
+                shippingpincode: shippingAddress.pincode || null,
+                shippingcountry: shippingAddress.country || null,
+                shippingstate: shippingAddress.state || null,
+                shippingdistrict: shippingAddress.city || null
             };
         
         const customerDataToSave = {
@@ -718,11 +726,10 @@ const CustomerDetailsScreen: React.FC = () => {
                 console.log('💾 === SHIPPING ADDRESS RESPONSE DEBUG ===');
                 console.log('💾 Shipping Address Type:', typeof responseData.shippingAddress);
                 console.log('💾 Shipping Address Keys:', responseData.shippingAddress ? Object.keys(responseData.shippingAddress) : 'NULL');
-                console.log('💾 Shipping Address Line1:', responseData.shippingAddress?.line1);
-                console.log('💾 Shipping Address Country:', responseData.shippingAddress?.country);
-                console.log('💾 Shipping Address State:', responseData.shippingAddress?.state);
-                console.log('💾 Shipping Address City:', responseData.shippingAddress?.city);
-                console.log('💾 Shipping Address District:', responseData.shippingAddress?.district);
+                console.log('💾 Shipping Address Line1:', responseData.shippingAddress?.shippingline1);
+                console.log('💾 Shipping Address Country:', responseData.shippingAddress?.shippingcountry);
+                console.log('💾 Shipping Address State:', responseData.shippingAddress?.shippingstate);
+                console.log('💾 Shipping Address District:', responseData.shippingAddress?.shippingdistrict);
             }
             
             if (response.data?.code === 200) {
@@ -755,38 +762,38 @@ const CustomerDetailsScreen: React.FC = () => {
                     if (refreshedCustomer.customerGrouping) setCustomerGrouping(refreshedCustomer.customerGrouping);
                     
                     // Update billing address
-                    if (refreshedCustomer.billingAddress) {
+                    if (refreshedCustomer.address) {
                         setBillingAddress({
-                            address1: refreshedCustomer.billingAddress.line1 || '',
-                            address2: refreshedCustomer.billingAddress.line2 || '',
-                            address3: refreshedCustomer.billingAddress.line3 || '',
-                            locality: refreshedCustomer.billingAddress.locality || '',
-                            country: refreshedCustomer.billingAddress.country || '',
-                            state: refreshedCustomer.billingAddress.state || '',
-                            city: refreshedCustomer.billingAddress.city || '',
-                            pincode: refreshedCustomer.billingAddress.pincode || ''
+                            address1: refreshedCustomer.address.line1 || '',
+                            address2: refreshedCustomer.address.line2 || '',
+                            address3: refreshedCustomer.address.line3 || '',
+                            locality: refreshedCustomer.address.locality || '',
+                            country: refreshedCustomer.address.country?.id || '',
+                            state: refreshedCustomer.address.state?.id || '',
+                            city: refreshedCustomer.address.district?.id || '',  // ✅ Fix: Read from district field
+                            pincode: refreshedCustomer.address.pincode || ''
                         });
                         
                         // Fetch states and cities if needed
-                        if (refreshedCustomer.billingAddress.country) {
-                            fetchStates(refreshedCustomer.billingAddress.country);
+                        if (refreshedCustomer.address.country?.id) {
+                            fetchStates(refreshedCustomer.address.country.id);
                         }
-                        if (refreshedCustomer.billingAddress.state) {
-                            fetchCities(refreshedCustomer.billingAddress.state);
+                        if (refreshedCustomer.address.state?.id) {
+                            fetchCities(refreshedCustomer.address.state.id);
                         }
                     }
                     
                     // Update shipping address
                     if (refreshedCustomer.shippingAddress) {
                         setShippingAddress({
-                            address1: refreshedCustomer.shippingAddress.line1 || '',
-                            address2: refreshedCustomer.shippingAddress.line2 || '',
-                            address3: refreshedCustomer.shippingAddress.line3 || '',
-                            locality: refreshedCustomer.shippingAddress.locality || '',
-                            country: refreshedCustomer.shippingAddress.country || '',
-                            state: refreshedCustomer.shippingAddress.state || '',
-                            city: refreshedCustomer.shippingAddress.city || '',
-                            pincode: refreshedCustomer.shippingAddress.pincode || ''
+                            address1: refreshedCustomer.shippingAddress.shippingline1 || '',
+                            address2: refreshedCustomer.shippingAddress.shippingline2 || '',
+                            address3: refreshedCustomer.shippingAddress.shippingline3 || '',
+                            locality: refreshedCustomer.shippingAddress.shippinglocality || '',
+                            country: refreshedCustomer.shippingAddress.shippingcountry?.id || '',
+                            state: refreshedCustomer.shippingAddress.shippingstate?.id || '',
+                            city: refreshedCustomer.shippingAddress.shippingdistrict?.id || '',
+                            pincode: refreshedCustomer.shippingAddress.shippingpincode || ''
                         });
                     }
                     
@@ -2051,47 +2058,46 @@ const CustomerDetailsScreen: React.FC = () => {
                 </View>
             ) : (
                 <View className="space-y-2">
-                    {bookings.map((booking) => (
-                        <View key={booking.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm mb-2">
-                            {/* Vehicle Image and Color */}
-                            <View className="p-3">
-                                {booking.color?.url ? (
-                                    <View className="items-center">
-                                        <Image 
-                                            source={{ uri: booking.color.url }} 
-                                            className="w-full h-32 rounded-lg"
-                                            resizeMode="cover"
-                                        />
-                                        <View className="mt-2">
-                                            <Text className="font-bold text-center text-gray-900">{booking.color.color}</Text>
-                                        </View>
-                                    </View>
-                                ) : (
-                                    <View className="w-full h-32 bg-gray-100 rounded-lg items-center justify-center">
-                                        <Car size={40} color="#9ca3af" />
-                                        <Text className="mt-2 text-gray-500">No Image</Text>
-                                    </View>
-                                )}
-                            </View>
-                            
+                    {bookings.map((booking, index) => (
+                        <View key={booking.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm p-4">
                             {/* Booking Details */}
-                            <View className="px-3 pb-3 space-y-2">
-                                <View className="flex-row justify-between items-start">
-                                    <View className="flex-1">
-                                        <Text className="font-bold text-lg text-teal-600">{booking.bookingId}</Text>
-                                        <Text className="text-gray-800 mt-1">{booking.vehicle}</Text>
+                            <View className="space-y-2 mb-2">
+                                <Text className="font-bold text-lg text-gray-900 mb-2">
+                                    {booking.bookingId}
+                                </Text>
+                                
+                                <View className="space-y-1">
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Vehicle:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">{booking.vehicle || 'N/A'}</Text>
                                     </View>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Status:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">{booking.status || 'N/A'}</Text>
+                                    </View>
+                                    <View className="flex-row mb-1">
+                                        <Text className="text-gray-600 w-24 text-sm">Created On:</Text>
+                                        <Text className="text-gray-900 font-medium text-sm">
+                                            {booking.createdOn ? moment(booking.createdOn).format('DD-MM-YYYY') : 'N/A'}
+                                        </Text>
+                                    </View>
+                                    {booking.color?.color && (
+                                        <View className="flex-row mb-1">
+                                            <Text className="text-gray-600 w-24 text-sm">Color:</Text>
+                                            <Text className="text-gray-900 font-medium text-sm">
+                                                {booking.color.code || 'N/A'} - {booking.color.color}
+                                            </Text>
+                                        </View>
+                                    )}
                                 </View>
                                 
-                                <View className="flex-row justify-between items-center">
-                                    <View className="flex-row items-center">
-                                        <Text className="text-gray-600 text-sm">Status: </Text>
-                                        <Text className="font-medium text-gray-900 text-sm">{booking.status}</Text>
-                                    </View>
-                                    <Text className="text-sm text-gray-500">{booking.createdOn}</Text>
-                                </View>
-                                
-                                <TouchableOpacity className="mt-2 bg-teal-600 py-2 px-4 rounded-lg items-center">
+                                <TouchableOpacity 
+                                    className="mt-3 bg-teal-600 py-2 px-4 rounded-lg items-center"
+                                    onPress={() => {
+                                        // Navigate to booking details or perform action
+                                        console.log('View booking:', booking.bookingId);
+                                    }}
+                                >
                                     <Text className="text-white font-medium">View Booking</Text>
                                 </TouchableOpacity>
                             </View>

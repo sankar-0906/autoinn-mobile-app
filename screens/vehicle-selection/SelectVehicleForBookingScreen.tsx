@@ -931,6 +931,9 @@ export default function SelectVehicleForBookingScreen({ navigation, route }: { n
                                     customerId: route.params?.customerId,
                                     customerPhone: route.params?.customerPhone,
                                     savedFormData: route.params?.savedFormData,
+                                    // CRITICAL: Pass back the booking mode flags to preserve Auth section
+                                    isConfirmBooking: route.params?.isConfirmBooking,
+                                    isAdvancedBooking: route.params?.isAdvancedBooking,
                                     scrollToSection: 'vehicle' // Ensure return to Vehicle section
                                 } as any);
                             }}
