@@ -4,7 +4,6 @@ import {
     Text,
     FlatList,
     TouchableOpacity,
-    TextInput,
     Image,
     ScrollView,
     DeviceEventEmitter,
@@ -39,14 +38,8 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
 }) {
     const [selectedVehicle, setSelectedVehicle] = useState<string>('');
     const [noSelectionError, setNoSelectionError] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [manufacturers, setManufacturers] = useState<Array<{ id: string; name: string }>>([]);
-    const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
-    const [category, setCategory] = useState<'ALL' | 'SCOOTER' | 'MOTORCYCLE'>('ALL');
     const [models, setModels] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-    const [openManufacturer, setOpenManufacturer] = useState(false);
-    const [openCategory, setOpenCategory] = useState(false);
     const [selectedVehicleData, setSelectedVehicleData] = useState<any>(null);
 
     // Get the selected model name from route params
@@ -87,7 +80,8 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
             baseImage: item.baseImage
         });
 
-        const imageSource = item.imageUrl ? { uri: item.imageUrl } : placeholder;
+        // Use the actual vehicle image from API, not placeholder
+        const imageSource = item.baseImage ? { uri: getAbsoluteImageUrl(item.baseImage) || undefined } : undefined;
 
         return (
             <TouchableOpacity
@@ -99,11 +93,17 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
             >
                 <View className="flex-row">
                     <View className="w-20 h-20 rounded-lg overflow-hidden mr-3 bg-gray-100">
-                        <Image
-                            source={imageSource}
-                            className="w-full h-full"
-                            defaultSource={placeholder}
-                        />
+                        {imageSource ? (
+                            <Image
+                                source={imageSource}
+                                className="w-full h-full"
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <View className="w-full h-full bg-gray-200 items-center justify-center">
+                                <Text className="text-gray-400 text-xs">No Image</Text>
+                            </View>
+                        )}
                     </View>
                     <View className="flex-1">
                         <Text className="font-bold text-gray-800 text-sm mb-1" numberOfLines={2}>
@@ -138,140 +138,113 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
         );
     };
 
-    const CustomDropdown = ({
-        label,
-        value,
-        options,
-        placeholder,
-        open,
-        onToggle,
-        onSelect,
-    }: {
-        label: string;
-        value: string;
-        options: Array<{ label: string; value: string }>;
-        placeholder: string;
-        open: boolean;
-        onToggle: () => void;
-        onSelect: (val: string) => void;
-    }) => {
-        const selectedLabel = options.find((o) => o.value === value)?.label || '';
-        const listHeight = Math.min(options.length, 5) * 44 + 8;
-        return (
-            <View style={{ position: 'relative', zIndex: open ? 50 : 1 }}>
-                <Text className="text-sm text-gray-600 mb-1 font-medium">{label}</Text>
-                <TouchableOpacity
-                    onPress={onToggle}
-                    style={{
-                        backgroundColor: 'white',
-                        borderWidth: 1,
-                        borderColor: '#e5e7eb',
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        height: 44,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                    }}
-                >
-                    <Text style={{ color: selectedLabel ? '#111827' : '#9ca3af', fontSize: 12 }} numberOfLines={1}>
-                        {selectedLabel || placeholder}
-                    </Text>
-                    <ChevronRight size={14} color="#9ca3af" style={{ transform: [{ rotate: '90deg' }] }} />
-                </TouchableOpacity>
-                {open && (
-                    <View
-                        style={{
-                            position: 'absolute',
-                            top: 52,
-                            left: 0,
-                            right: 0,
-                            zIndex: 100,
-                            elevation: 10,
-                        }}
-                        className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-                    >
-                        <ScrollView style={{ maxHeight: 220 }}>
-                            {options.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt.value}
-                                    onPress={() => {
-                                        onSelect(opt.value);
-                                    }}
-                                    className={`px-4 py-3 border-b border-gray-50 ${value === opt.value ? 'bg-teal-50' : ''}`}
-                                >
-                                    <Text className={`text-sm ${value === opt.value ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                        {opt.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                )}
-                {open && <View style={{ height: listHeight }} />}
-            </View>
-        );
-    };
-
-    const fetchManufacturers = async () => {
+    const fetchModelsForSelectedModel = async () => {
+        if (!selectedModelName) {
+            console.log('❌ No model name provided');
+            return;
+        }
+        
         setLoading(true);
         try {
-            const res = await getManufacturers();
-            const data = res?.data;
-            if (data && data.code === 200 && data.response?.code === 200) {
-                const list = data.response.data || [];
-                setManufacturers(list.map((m: any) => ({ id: m.id, name: m.name })));
-                if (!selectedManufacturer && list.length > 0) {
-                    setSelectedManufacturer(list[0].id);
+            console.log('🔍 Fetching models for selected model:', selectedModelName);
+            
+            // Get all manufacturers first to find the right one
+            const manufacturersRes = await getManufacturers();
+            let allModels: any[] = [];
+            
+            if (manufacturersRes.data?.code === 200 && manufacturersRes.data.response?.code === 200) {
+                const manufacturers = manufacturersRes.data.response.data || [];
+                
+                // Fetch models from all manufacturers
+                for (const manufacturer of manufacturers) {
+                    try {
+                        const modelsRes = await getVehicleModelsByManufacturer(manufacturer.id, '');
+                        if (modelsRes.data?.code === 200 && modelsRes.data.response?.code === 200) {
+                            const models = Array.isArray(modelsRes.data.response.data) ? modelsRes.data.response.data : [];
+                            allModels = allModels.concat(models);
+                        }
+                    } catch (error) {
+                        console.error('Error fetching models for manufacturer:', manufacturer.name, error);
+                    }
                 }
             }
-        } catch (e) {
-            setManufacturers([]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchModels = async () => {
-        if (!selectedManufacturer) return;
-        setLoading(true);
-        try {
-            const res = await getVehicleModelsByManufacturer(selectedManufacturer, searchQuery);
-            const data = res?.data;
-            if (data && data.code === 200 && data.response?.code === 200) {
-                const list = Array.isArray(data.response.data) ? data.response.data : [];
-                // Temporarily include both AVAILABLE and NOTAVAILABLE to test
-                const available = list.filter(
-                    (model: any) => (model.vehicleStatus === 'AVAILABLE' || model.vehicleStatus === 'NOTAVAILABLE') && Array.isArray(model.price) && model.price.length > 0
-                );
-                const filtered = category === 'ALL' ? available : available.filter((m: any) => m.category === category);
-                console.log('🔍 FetchModels - Total models:', list.length);
-                console.log('🔍 FetchModels - Available models:', available.length);
-                console.log('🔍 FetchModels - Filtered models:', filtered.length);
-                console.log('🔍 FetchModels - Sample available models:', available.slice(0, 3).map((m: any) => ({ 
-                    modelCode: m.modelCode, 
-                    modelName: m.modelName, 
-                    status: m.vehicleStatus,
-                    priceCount: m.price?.length || 0
-                })));
+            
+            console.log('� Total models fetched:', allModels.length);
+            
+            // Filter models that match the selected model name
+            const matchingModels = allModels.filter((model: any) => {
+                const modelKey = `${model.modelCode} - ${model.modelName}`;
+                const modelNameLower = selectedModelName.toLowerCase();
+                const modelKeyLower = modelKey.toLowerCase();
+                const modelCodeLower = model.modelCode?.toLowerCase() || '';
+                const modelNameLowerField = model.modelName?.toLowerCase() || '';
                 
-                // Check for Aerox models specifically
-                const aeroxModels = available.filter((m: any) => 
-                    m.modelName && m.modelName.toLowerCase().includes('aerox')
-                );
-                console.log('🔍 Aerox models found:', aeroxModels.length);
-                console.log('🔍 Aerox models:', aeroxModels.map((m: any) => ({
-                    modelCode: m.modelCode,
-                    modelName: m.modelName,
-                    status: m.vehicleStatus
-                })));
+                // More flexible matching for R15 and other models
+                // Extract base model name (like "R15" from "B9E200 - R15 V3")
+                const baseModelName = selectedModelName.split(' - ')[1]?.toLowerCase() || '';
+                const baseModelNameFromKey = modelKey.split(' - ')[1]?.toLowerCase() || '';
                 
-                setModels(filtered);
+                console.log('🔍 Model matching:', {
+                    selectedModel: selectedModelName,
+                    currentModel: modelKey,
+                    baseModelName,
+                    baseModelNameFromKey,
+                    modelCode: model.modelCode,
+                    modelName: model.modelName
+                });
+                
+                // Multiple matching strategies
+                const matchesByCode = modelCodeLower.includes(baseModelName) || baseModelName.includes(modelCodeLower);
+                const matchesByName = modelNameLowerField.includes(baseModelName) || baseModelName.includes(modelNameLowerField);
+                const matchesByKey = modelKeyLower.includes(modelNameLower) || modelNameLower.includes(modelKeyLower);
+                const matchesByBaseName = baseModelName && baseModelNameFromKey && 
+                    (baseModelNameFromKey.includes(baseModelName) || baseModelName.includes(baseModelNameFromKey));
+                const matchesByPartial = baseModelName && (
+                    modelKeyLower.includes(baseModelName) || 
+                    modelNameLowerField.includes(baseModelName) ||
+                    modelCodeLower.includes(baseModelName)
+                );
+                
+                const isMatch = matchesByCode || matchesByName || matchesByKey || matchesByBaseName || matchesByPartial;
+                
+                console.log('🔍 Matching results:', {
+                    matchesByCode,
+                    matchesByName,
+                    matchesByKey,
+                    matchesByBaseName,
+                    matchesByPartial,
+                    isMatch
+                });
+                
+                return isMatch;
+            });
+            
+            console.log('✅ Matching models found:', matchingModels.length);
+            console.log('📋 Matching models:', matchingModels.map((m: any) => ({
+                modelCode: m.modelCode,
+                modelName: m.modelName,
+                status: m.vehicleStatus,
+                priceCount: m.price?.length || 0
+            })));
+            
+            // If no exact matches found, don't show fallback - keep it empty
+            if (matchingModels.length === 0) {
+                console.log('⚠️ No exact matches found for model:', selectedModelName);
+                setModels([]); // Keep empty to show "No vehicles found"
             } else {
-                setModels([]);
+                // Filter to show only available models
+                const availableMatchingModels = matchingModels.filter((model: any) => 
+                    model.vehicleStatus === 'AVAILABLE' && 
+                    Array.isArray(model.price) && 
+                    model.price.length > 0
+                );
+                
+                console.log('🔄 Filtered to available models only:', availableMatchingModels.length);
+                setModels(availableMatchingModels);
             }
-        } catch (e) {
-            console.error('🔍 FetchModels error:', e);
+            
+        } catch (error) {
+            console.error('❌ Error fetching models:', error);
             setModels([]);
         } finally {
             setLoading(false);
@@ -279,19 +252,8 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
     };
 
     useEffect(() => {
-        fetchManufacturers();
-    }, []);
-
-    useEffect(() => {
-        fetchModels();
-    }, [selectedManufacturer, category]);
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            fetchModels();
-        }, 300);
-        return () => clearTimeout(timeout);
-    }, [searchQuery]);
+        fetchModelsForSelectedModel();
+    }, [selectedModelName]);
 
     const vehicles = useMemo(() => {
         const vehicleList: any[] = [];
@@ -305,35 +267,26 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
 
             console.log('📋 Processing model:', modelKey, 'Prices:', prices.length);
 
-            // Filter by selected model name if provided - improved matching logic
-            if (selectedModelName && selectedModelName.trim() !== '') {
-                console.log('🔍 Filtering by model:', selectedModelName);
-                console.log('🔍 Checking against modelKey:', modelKey);
-                
-                // Try multiple matching approaches
-                const matchesByCode = model.modelCode && selectedModelName.toLowerCase().includes(model.modelCode.toLowerCase());
-                const matchesByName = model.modelName && selectedModelName.toLowerCase().includes(model.modelName.toLowerCase());
-                const matchesByKey = modelKey.toLowerCase().includes(selectedModelName.toLowerCase());
-                const reverseMatch = selectedModelName.toLowerCase().includes(modelKey.toLowerCase());
-                
-                console.log('🔍 Matching results:', {
-                    matchesByCode,
-                    matchesByName,
-                    matchesByKey,
-                    reverseMatch
-                });
-                
-                if (!matchesByCode && !matchesByName && !matchesByKey && !reverseMatch) {
-                    console.log('⏭️ Skipping model - not matching selected model name');
-                    return;
-                } else {
-                    console.log('✅ Model matches filter!');
-                }
-            }
-
+            // Models are already filtered in fetchModelsForSelectedModel, so process all of them
             // Create separate vehicle for each price/vehicle combination
             prices.forEach((price: any, index: number) => {
-                const imageUrl = price?.colors?.[0]?.imageDetails?.[0]?.url || model?.image?.[0]?.url || model?.image?.url || undefined;
+                // Try multiple image sources from API
+                const imageUrl = price?.colors?.[0]?.imageDetails?.[0]?.url || 
+                                model?.image?.[0]?.url || 
+                                model?.image?.url || 
+                                model?.baseImage ||
+                                price?.image?.[0]?.url ||
+                                price?.image?.url;
+                
+                console.log('🖼️ Image sources for', modelKey, ':', {
+                    priceColorImage: price?.colors?.[0]?.imageDetails?.[0]?.url,
+                    modelImage: model?.image?.[0]?.url,
+                    modelImageUrl: model?.image?.url,
+                    modelBaseImage: model?.baseImage,
+                    priceImage: price?.image?.[0]?.url,
+                    priceImageUrl: price?.image?.url,
+                    finalUrl: imageUrl
+                });
 
                 // Try multiple ways to get color data
                 let colorName = 'Standard';
@@ -440,100 +393,49 @@ export default function SelectVehicleForDetailsScreen({ navigation, route }: {
                     <TouchableOpacity onPress={() => navigation.goBack()}>
                         <ChevronLeft size={24} color={COLORS.gray[600]} />
                     </TouchableOpacity>
-                    <Text className="text-lg font-semibold text-gray-800">Select Vehicle</Text>
+                    <Text className="text-lg font-semibold text-gray-800">Select Vehicle Color</Text>
                     <View className="w-6" />
                 </View>
             </View>
 
             <ScrollView className="flex-1 px-4 py-4">
-                {/* Search */}
-                <View className="mb-4">
-                    <Text className="text-sm text-gray-600 mb-1 font-medium">Search Vehicle</Text>
-                    <View className="relative">
-                        <Search size={20} color={COLORS.gray[400]} style={{ position: 'absolute', left: 12, top: 12 }} />
-                        <TextInput
-                            className="bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-3 text-sm"
-                            placeholder="Search by model name..."
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            placeholderTextColor={COLORS.gray[400]}
-                        />
-                    </View>
-                </View>
-
-                {/* Filters */}
-                <View className="flex-row gap-3 mb-4">
-                    <View className="flex-1">
-                        <CustomDropdown
-                            label="Manufacturer"
-                            value={selectedManufacturer}
-                            options={manufacturers.map(m => ({ label: m.name, value: m.id }))}
-                            placeholder="Select Manufacturer"
-                            open={openManufacturer}
-                            onToggle={() => {
-                                setOpenManufacturer(!openManufacturer);
-                                setOpenCategory(false);
-                            }}
-                            onSelect={(val) => {
-                                setSelectedManufacturer(val);
-                                setOpenManufacturer(false);
-                            }}
-                        />
-                    </View>
-                    <View className="flex-1">
-                        <CustomDropdown
-                            label="Category"
-                            value={category}
-                            options={[
-                                { label: 'All', value: 'ALL' },
-                                { label: 'Scooter', value: 'SCOOTER' },
-                                { label: 'Motorcycle', value: 'MOTORCYCLE' },
-                            ]}
-                            placeholder="Select Category"
-                            open={openCategory}
-                            onToggle={() => {
-                                setOpenCategory(!openCategory);
-                                setOpenManufacturer(false);
-                            }}
-                            onSelect={(val) => {
-                                setCategory(val as 'ALL' | 'SCOOTER' | 'MOTORCYCLE');
-                                setOpenCategory(false);
-                            }}
-                        />
-                    </View>
+                {/* Model Info */}
+                <View className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <Text className="text-sm font-medium text-blue-800">Selected Model:</Text>
+                    <Text className="text-base font-semibold text-blue-900">{selectedModelName}</Text>
+                    {vehicles.length > 0 && vehicles[0].name !== selectedModelName && (
+                        <Text className="text-xs text-blue-700 mt-1">Showing similar available models</Text>
+                    )}
                 </View>
 
                 {/* Vehicle List */}
                 <View className="mb-4">
                     <Text className="text-sm font-semibold text-gray-700 mb-3">
-                        Available Vehicles ({vehicles.length})
+                        Available Colors ({vehicles.length})
                     </Text>
                     {loading ? (
                         <View className="items-center py-8">
-                            <Text className="text-gray-500">Loading vehicles...</Text>
+                            <Text className="text-gray-500">Loading vehicle colors...</Text>
                         </View>
                     ) : vehicles.length === 0 ? (
                         <View className="items-center py-8">
-                            <Text className="text-gray-500">No vehicles found</Text>
-                            <Text className="text-gray-400 text-xs mt-2">Debug: models={models.length}, filter="{selectedModelName}"</Text>
+                            <Text className="text-gray-500">No vehicle colors found</Text>
+                            <Text className="text-gray-400 text-xs mt-2">Model: "{selectedModelName}"</Text>
                         </View>
                     ) : (
-                        <>
-                            <Text className="text-xs text-gray-500 mb-2">Debug: Found {vehicles.length} vehicles</Text>
-                            <FlatList
-                                data={vehicles}
-                                renderItem={renderVehicleItem}
-                                keyExtractor={(item, index) => `${item.id}-${index}`}
-                                scrollEnabled={false}
-                            />
-                        </>
+                        <FlatList
+                            data={vehicles}
+                            renderItem={renderVehicleItem}
+                            keyExtractor={(item, index) => `${item.id}-${index}`}
+                            scrollEnabled={false}
+                        />
                     )}
                 </View>
 
                 {/* Error Message */}
                 {noSelectionError && (
                     <View className="mb-4 p-3 bg-red-50 rounded-lg">
-                        <Text className="text-red-600 text-sm">Please select a vehicle</Text>
+                        <Text className="text-red-600 text-sm">Please select a vehicle color</Text>
                     </View>
                 )}
 

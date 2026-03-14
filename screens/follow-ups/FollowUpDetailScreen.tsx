@@ -991,20 +991,6 @@ export default function FollowUpDetailScreen() {
                         </TouchableOpacity>
                         <Text className="text-lg font-bold text-gray-900">Follow-Ups</Text>
                     </View>
-                    <View className="flex-row gap-2">
-                        <TouchableOpacity
-                            onPress={() => changeFollowUp(false)}
-                            className="px-3 py-1.5 bg-gray-100 rounded-lg border border-gray-200"
-                        >
-                            <Text className="text-xs font-semibold text-gray-700">Previous</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={() => changeFollowUp(true)}
-                            className="px-3 py-1.5 bg-teal-600 rounded-lg"
-                        >
-                            <Text className="text-xs font-semibold text-white">Next</Text>
-                        </TouchableOpacity>
-                    </View>
                 </View>
             </View>
 
@@ -1108,7 +1094,8 @@ export default function FollowUpDetailScreen() {
                                 navigation.navigate('BookingActivity', {
                                     customerName: customer.name,
                                     customerId: customer.id,
-                                    customerPhone: phoneNo
+                                    customerPhone: phoneNo,
+                                    cameFrom: 'FollowUpDetail'
                                 })
                             }
                         />
@@ -1117,6 +1104,7 @@ export default function FollowUpDetailScreen() {
                             variant="outline"
                             onPress={() =>
                                 navigation.navigate('AddQuotation', {
+                                    customerId: customer.id,
                                     customerName: customer.name,
                                     phoneNumbers: [phoneNo]
                                 })

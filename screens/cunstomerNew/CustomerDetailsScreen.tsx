@@ -40,6 +40,11 @@ import { HeaderWithBack, useBackButton } from '../../components/ui/BackButton';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import moment from 'moment';
 import { getCustomerDetails, updateCustomer, getCountries, getStates, getCities, getCustomerQuotations } from '../../src/api';
+import JobOrdersSection from '../../components/customer/JobOrdersSection';
+import SpareOrdersSection from '../../components/customer/SpareOrdersSection';
+import CallHistorySection from '../../components/customer/CallHistorySection';
+import NumberPlatesSection from '../../components/customer/NumberPlatesSection';
+import PaymentsSection from '../../components/customer/PaymentsSection';
 
 type CustomerDetailsRouteProp = RouteProp<RootStackParamList, 'CustomerDetails'>;
 type CustomerDetailsNavProp = StackNavigationProp<RootStackParamList, 'CustomerDetails'>;
@@ -261,7 +266,12 @@ const CustomerDetailsScreen: React.FC = () => {
         { id: 'customer-details', label: 'Customer Details' },
         { id: 'associated-vehicles', label: 'Associated Vehicles' },
         { id: 'bookings', label: 'Bookings' },
-        { id: 'quotations', label: 'Quotations' }
+        { id: 'quotations', label: 'Quotations' },
+        { id: 'job-orders', label: 'Job Orders' },
+        { id: 'spare-orders', label: 'Spare Orders' },
+        { id: 'call-history', label: 'Call History' },
+        { id: 'number-plates', label: 'Number Plates' },
+        { id: 'payments', label: 'Payments' }
     ];
 
     // Form label component
@@ -2148,6 +2158,7 @@ const CustomerDetailsScreen: React.FC = () => {
     );
 
     const renderContent = () => {
+        const id = customerId || 'CNS33355';
         switch (activeTab) {
             case 'customer-details':
                 return renderCustomerDetails();
@@ -2157,6 +2168,16 @@ const CustomerDetailsScreen: React.FC = () => {
                 return renderBookings();
             case 'quotations':
                 return renderQuotations();
+            case 'job-orders':
+                return <JobOrdersSection customerId={id} />;
+            case 'spare-orders':
+                return <SpareOrdersSection customerId={id} />;
+            case 'call-history':
+                return <CallHistorySection customerId={id} />;
+            case 'number-plates':
+                return <NumberPlatesSection customerId={id} />;
+            case 'payments':
+                return <PaymentsSection customerId={id} />;
             default:
                 return renderCustomerDetails();
         }

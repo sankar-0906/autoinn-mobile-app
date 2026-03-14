@@ -113,8 +113,33 @@ export default function BookingActivityScreen({
 
     // Determine the back navigation target based on how we got here
     const getBackNavigationTarget = () => {
-        // Always navigate to FollowUpDetail when cancelling
-        // Use the available phone number (customerPhone from route params or current phone state)
+        // Check if we came from QuotationForm by examining the navigation state
+        const state = navigation.getState();
+        const routes = state.routes;
+        const currentRoute = routes[routes.length - 1];
+        const previousRoute = routes[routes.length - 2]; // Get previous route
+        const previousPreviousRoute = routes[routes.length - 3]; // Get route before previous
+        
+        // Also check the route params for explicit cameFrom information
+        const cameFrom = route.params?.cameFrom;
+        
+        console.log('🔍 Navigation state check:', {
+            totalRoutes: routes.length,
+            currentRoute: currentRoute?.name,
+            previousRoute: previousRoute?.name,
+            previousPreviousRoute: previousPreviousRoute?.name,
+            cameFromParam: cameFrom,
+            fullStack: routes.map((r, i) => `${i}: ${r.name}`),
+            routeKeys: routes.map(r => r.key)
+        });
+        
+        // If we came from FollowUpDetail, always go back to it
+        if (cameFrom === 'FollowUpDetail' || previousRoute?.name === 'FollowUpDetail') {
+            console.log('🔍 Came from FollowUpDetail, using goBack()');
+            return { screen: 'FollowUpDetail' as const, params: undefined, useGoBack: true };
+        }
+        
+        // Otherwise, navigate to FollowUpDetail (from FollowUpDetail flow)
         const phoneForFollowUp = customerPhone || phone || '';
         
         if (phoneForFollowUp) {
@@ -131,13 +156,16 @@ export default function BookingActivityScreen({
     useBackButton({
         onBackPress: () => {
             const target = getBackNavigationTarget();
-            console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
+            console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}, useGoBack: ${target.useGoBack}`);
             
             if (target.useGoBack) {
+                console.log('🔍 Using navigation.goBack()');
                 navigation.goBack();
             } else if (target.params) {
+                console.log(`🔍 Using navigation.navigate('${target.screen}', params)`);
                 navigation.navigate(target.screen, target.params);
             } else {
+                console.log(`🔍 Using navigation.navigate('${target.screen}')`);
                 navigation.navigate(target.screen);
             }
         },
@@ -1222,9 +1250,16 @@ export default function BookingActivityScreen({
 
             customerId:         displayCustomerId,
             customerName:       currentName,
+            fatherName:         currentFather || '',
             customerFatherName: currentFather || '',
             customerPhone:      currentPhone,
             customerGender:     currentGender,
+            line1:               currentAddr || '',
+            line2:               currentAddr2 || '',
+            line3:               currentAddr3 || '',
+            customerLine1:      currentAddr || '',
+            customerLine2:      currentAddr2 || '',
+            customerLine3:      currentAddr3 || '',
             customerLocality:   currentLoc,
             customerCountry:    currentCountry,
             customerState:      currentState,
@@ -1407,48 +1442,61 @@ export default function BookingActivityScreen({
                     
                     // Emit event to refresh FollowUps list
                     DeviceEventEmitter.emit('refreshFollowUps');
-                    console.log('📡 Emitted refreshFollowUps event');
                 } else {
                     console.log('⚠️ No quotation ID found in booking response');
                 }
                 
-                // Reset navigation stack and navigate to Quotations tab after successful booking
-                const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
-                if (customerPhone) {
-                    console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
-                    
+                // Reset navigation stack based on where we came from after successful booking
+                const state = navigation.getState();
+                const previousRoute = state.routes[state.routes.length - 2]; // Get previous route
+                
+                console.log('🔍 Save completed - Navigation state check:', {
+                    currentRoute: state.routes[state.routes.length - 1].name,
+                    previousRoute: previousRoute?.name,
+                    cameFromQuotationForm: previousRoute?.name === 'QuotationForm'
+                });
+                
+                // If we came from QuotationForm, go back to it after successful booking
+                if (previousRoute?.name === 'QuotationForm') {
+                    console.log('🔍 Came from QuotationForm, going back after successful booking');
                     setTimeout(() => {
-                        if (quotationId) {
-                            console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
-                            navigation.reset({
-                                index: 2,
-                                routes: [
-                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
-                                    { name: 'QuotationView', params: { id: quotationId } },
-                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
-                                ]
-                            });
-                        } else {
-                            console.log('🔍 No quotation found, using standard navigation to Quotations tab');
-                            navigation.reset({
-                                index: 0,
-                                routes: [
-                                    { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
-                                ]
-                            });
-                        }
-                    }, 1500);
+                        navigation.goBack();
+                    }, 1500); // Small delay to show success message
                 } else {
-                    console.log('🔍 No customerPhone found, resetting navigation to Quotations');
-                    setTimeout(() => {
-                        navigation.reset({
-                            index: 0,
-                            routes: [{ name: 'Main', state: { routes: [{ name: 'Quotations' }] } }]
-                        });
-                    }, 1500);
+                    // Otherwise, reset to Quotations tab (original behavior)
+                    const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
+                    if (customerPhone) {
+                        console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
+                        
+                        setTimeout(() => {
+                            if (quotationId) {
+                                console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
+                                navigation.reset({
+                                    index: 2,
+                                    routes: [
+                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
+                                        { name: 'QuotationView', params: { id: quotationId } },
+                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                                    ]
+                                });
+                            } else {
+                                console.log('🔍 No quotation found, using standard navigation to Quotations tab');
+                                navigation.reset({
+                                    index: 0,
+                                    routes: [
+                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                                    ]
+                                });
+                            }
+                        }, 1500);
+                    } else {
+                        console.log('🔍 No customer phone found, using standard goBack');
+                        setTimeout(() => {
+                            navigation.goBack();
+                        }, 1500);
+                    }
                 }
             } else {
-                console.error('❌ Booking creation failed:', response);
                 console.error('❌ Response data details:', JSON.stringify(response.data, null, 2));
                 const err = response.data?.err || response.data;
                 console.error('❌ Error object:', err);

@@ -10,6 +10,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { X, Search, Plus, Trash2, Check } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
 import { getAccessories, deleteBookingAccessory } from '../src/api';
 
@@ -506,7 +507,7 @@ const AccessoryModal: React.FC<AccessoryModalProps> = ({
             animationType="slide"
             presentationStyle="fullScreen"
         >
-            <View className="flex-1 bg-gray-50">
+            <SafeAreaView className="flex-1 bg-gray-50" edges={['top', 'left', 'right']}>
                 {/* Header */}
                 <View className="bg-white border-b border-gray-200 px-4 py-3">
                     <View className="flex-row items-center justify-between">
@@ -585,7 +586,7 @@ const AccessoryModal: React.FC<AccessoryModalProps> = ({
                         </TouchableOpacity>
                     </View>
                 </View>
-            </View>
+            </SafeAreaView>
         </Modal>
     );
 };

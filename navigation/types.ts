@@ -8,7 +8,7 @@ export type RootStackParamList = {
     QuotationView: { id: string };
     SelectModel: { returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView'; quotationId?: string; viewMode?: boolean; viewVehicleData?: any; paymentDetails?: any } | undefined;
     SelectPrice: { vehicleId: string; vehicleData?: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView' | 'BookingRegister'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
-    SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
+    SelectPayment: { vehicleId: string; vehicleData?: any; priceDetails: any; returnTo?: 'QuotationForm' | 'AddQuotation' | 'QuotationView' | 'BookingRegister'; quotationId?: string; viewMode?: boolean; paymentDetails?: any };
     SelectVehicleForBooking: { modelName?: string; customerName?: string; customerId?: string; customerPhone?: string };
     SelectVehicleForDetails: { modelName?: string };
     SelectVehicleColor: { modelName?: string; selectedColor?: any };
@@ -23,12 +23,13 @@ export type RootStackParamList = {
     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     JobCardsList: undefined;
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
-    BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
+    BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean; cameFrom?: string };
     BookingConfirmActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
     WalkInActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
     VehicleDetails: { vehicle: any; mode?: 'view' | 'edit'; selectedVehicleData?: any };
+    FollowUpQuotationForm: { customerName?: string; customerPhone?: string; locality?: string; customerType?: string; gender?: string };
 };
 
 export type TabParamList = {

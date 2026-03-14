@@ -72,6 +72,7 @@ import platformApi from '../../src/api';
         getVehicleModelsByManufacturerId,
         getVehicleColor,
         getVehicleFiles,
+        getVehicleEReceipt,
         getVehicleServices,
         getVehicleCustomers,
         searchCustomers,
@@ -88,6 +89,35 @@ import platformApi from '../../src/api';
         generateQRCode,
         generateJobOrderPDF,
     } from '../../src/api';
+    import { uploadVehicleFile, deleteVehicleFile } from '../../src/api';
+
+// Document type mapping to match web project database
+const DOCUMENT_TYPE_MAPPING: {[key: string]: string} = {
+    'address_proof': 'addressproof',
+    'chassis_impression': 'chassisimpression', 
+    'form_22': 'form22',
+    'form_21': 'form21',
+    'signature': 'signature',
+    'pan_card_form60': 'pancard_form60',
+    'vehicle_right': 'right',
+    'vehicle_left': 'left',
+    'vehicle_front': 'front',
+    'vehicle_rear': 'rear',
+    'sales_invoice': 'invoice',
+    'disclaimer': 'disclaimer',
+    'form_14': 'form14',
+    'inspection_certificate': 'inspectioncertificate',
+    'insurance': 'insurance',
+    'registration': 'registration',
+    'pollution': 'pollution',
+    'consent': 'consent'
+};
+
+// Reverse mapping for display
+const REVERSE_DOCUMENT_MAPPING: {[key: string]: string} = {};
+Object.entries(DOCUMENT_TYPE_MAPPING).forEach(([mobile, web]) => {
+    REVERSE_DOCUMENT_MAPPING[web] = mobile;
+});
 
 type VehicleDetailsRouteProp = RouteProp<RootStackParamList, 'VehicleDetails'>;
 type VehicleDetailsNavigationProp = NavigationProp<RootStackParamList, 'VehicleDetails'>;
@@ -218,6 +248,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const [vehicleColors, setVehicleColors] = useState<any[]>([]);
     const [insuranceData, setInsuranceData] = useState<any[]>([]);
     const [jobOrderHistory, setJobOrderHistory] = useState<any[]>([]);
+    const [eReceiptUrl, setEReceiptUrl] = useState<string | null>(null);
 
     // Form states - initialize with empty values for real data fetching
     const [manufacturerName, setManufacturerName] = useState("");
@@ -258,7 +289,7 @@ const VehicleDetailsScreen: React.FC = () => {
         { id: 'service', name: 'Service' },
         { id: 'test_ride', name: 'Test Ride' },
     ];
-    const [uploadedFiles, setUploadedFiles] = useState<{[key: string]: {name: string | null, uri: string, size?: number, mimeType?: string, type?: string} | null}>({
+    const [uploadedFiles, setUploadedFiles] = useState<{[key: string]: {name: string | null, uri: string, url?: string, size?: number, mimeType?: string, type?: string, id?: string} | null}>({
         consent: null,
         insurance: null,
         registration: null,
@@ -557,7 +588,46 @@ const VehicleDetailsScreen: React.FC = () => {
             }
             
             if (filesResponse.data.code === 200) {
-                setVehicleFiles(filesResponse.data.response.data.vehicle || []);
+                const vehicleData = filesResponse.data.response.data;
+                const serverFiles = vehicleData.vehicleDocuments || []; // Use vehicleDocuments like web
+                setVehicleFiles(serverFiles);
+                
+                // Extract e-Receipt URL from the same API response as web project
+                const eReceiptUrl = vehicleData.SoldVehicle?.[0]?.eReceipt;
+                if (eReceiptUrl) {
+                    setEReceiptUrl(eReceiptUrl);
+                    console.log('✅ e-Receipt URL found:', eReceiptUrl);
+                } else {
+                    setEReceiptUrl(null);
+                    console.log('❌ No e-Receipt URL found');
+                }
+                
+                // Populate uploadedFiles state with server files
+                const serverUploadedFiles: {[key: string]: any} = {};
+                serverFiles.forEach((file: any) => {
+                    // Use the exact type from server (web compatibility)
+                    const webType = file.type?.toLowerCase();
+                    const mobileType = REVERSE_DOCUMENT_MAPPING[webType] || webType;
+                    
+                    serverUploadedFiles[mobileType] = {
+                        uri: file.url,
+                        url: file.url,
+                        name: file.name,
+                        size: file.size,
+                        mimeType: file.mimeType || file.type || 'application/octet-stream',
+                        type: mobileType,
+                        id: file.id, // Store server file ID
+                        webType: webType, // Store web type for reference
+                    };
+                });
+                
+                // Merge with existing uploaded files
+                setUploadedFiles(prev => ({
+                    ...prev,
+                    ...serverUploadedFiles
+                }));
+                
+                console.log('Loaded vehicle documents from server:', serverUploadedFiles);
             }
             
             if (insuranceResponse.data.code === 200) {
@@ -1190,8 +1260,8 @@ const VehicleDetailsScreen: React.FC = () => {
                 setCategory(categoryValue);
                 console.log('Category set:', categoryValue, 'from vehicle category:', vehicle.vehicle?.category);
             }
-            // Handle color properly - ensure it's a string
-            if (vehicle.color) {
+            // Handle color properly - ensure it's a string, but don't override if user has already selected a color
+            if (vehicle.color && selectedColor === "No Color Chosen") {
                 if (typeof vehicle.color === 'object' && vehicle.color.color) {
                     // Color object has color, code, url properties
                     setSelectedColor(vehicle.color.color);
@@ -1217,7 +1287,10 @@ const VehicleDetailsScreen: React.FC = () => {
         try {
             setLoading(true);
             
-            if (!vehicleDetails?.id) {
+            // Check for vehicle ID in both possible locations
+            const vehicleId = vehicleDetails?.id || vehicleDetails?.data?.id;
+            if (!vehicleId) {
+                console.error('Vehicle ID not found. vehicleDetails:', vehicleDetails);
                 Alert.alert('Error', 'Vehicle ID not found');
                 return;
             }
@@ -1248,7 +1321,7 @@ const VehicleDetailsScreen: React.FC = () => {
             }
 
             // Call API to update vehicle
-            const response = await updateVehicle(vehicleDetails.id, formData);
+            const response = await updateVehicle(vehicleId, formData);
             
             if (response.data.code === 200 && response.data.response.code === 200) {
                 Alert.alert('Success', 'Vehicle details updated successfully');
@@ -1338,15 +1411,15 @@ const VehicleDetailsScreen: React.FC = () => {
                 [
                     {
                         text: '📷 Camera',
-                        onPress: () => openCamera(documentType)
+                        onPress: () => openCameraForUpload(documentType)
                     },
                     {
                         text: '🖼️ Gallery',
-                        onPress: () => openGallery(documentType)
+                        onPress: () => openGalleryForUpload(documentType)
                     },
                     {
                         text: '📄 Documents',
-                        onPress: () => openDocumentPicker(documentType)
+                        onPress: () => openDocumentPickerForUpload(documentType)
                     },
                     {
                         text: 'Cancel',
@@ -1590,6 +1663,210 @@ const VehicleDetailsScreen: React.FC = () => {
             await AsyncStorage.setItem(storageKey, JSON.stringify(files));
         } catch (error) {
             console.error('Error saving file to storage:', error);
+        }
+    };
+
+    // Server-based upload functions matching web project
+    const openCameraForUpload = async (documentType: string) => {
+        try {
+            console.log('Opening camera for server upload:', documentType);
+            
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 0.8,
+                allowsEditing: true,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                await uploadFileToServer(documentType, asset);
+            }
+        } catch (error) {
+            console.error('Camera upload error:', error);
+            Alert.alert('Error', 'Failed to capture photo');
+        }
+    };
+
+    const openGalleryForUpload = async (documentType: string) => {
+        try {
+            console.log('Opening gallery for server upload:', documentType);
+            
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 0.8,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                await uploadFileToServer(documentType, asset);
+            }
+        } catch (error) {
+            console.error('Gallery upload error:', error);
+            Alert.alert('Error', 'Failed to select file from gallery');
+        }
+    };
+
+    const openDocumentPickerForUpload = async (documentType: string) => {
+        try {
+            console.log('Opening document picker for server upload:', documentType);
+            
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['*/*'],
+                copyToCacheDirectory: true,
+                multiple: false,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const asset = result.assets[0];
+                await uploadFileToServer(documentType, asset);
+            }
+        } catch (error) {
+            console.error('Document upload error:', error);
+            Alert.alert('Error', 'Failed to select document');
+        }
+    };
+
+    const uploadFileToServer = async (documentType: string, asset: any) => {
+        try {
+            console.log('Uploading file to server:', { documentType, asset });
+            
+            setLoading(true);
+            
+            // Get vehicle ID from route params or vehicleDetails
+            const vehicleId = vehicle?.id || vehicleDetails?.data?.id || vehicleDetails?.id;
+            
+            if (!vehicleId) {
+                throw new Error('Vehicle ID not found');
+            }
+
+            // Create FormData matching web project structure
+            const formData = new FormData();
+            
+            // Append the file
+            if (asset.uri) {
+                formData.append('profile', {
+                    uri: asset.uri,
+                    type: asset.mimeType || 'application/octet-stream',
+                    name: asset.fileName || `file_${Date.now()}`,
+                } as any);
+            }
+
+            // Append metadata matching web project
+            formData.append('master', 'Transaction Master');
+            formData.append('module', 'vehicle');
+            formData.append('id', vehicleId);
+            
+            // Use web-compatible document type
+            const webDocumentType = DOCUMENT_TYPE_MAPPING[documentType] || documentType.toLowerCase();
+            formData.append('type', webDocumentType);
+
+            console.log('Uploading with FormData:', {
+                master: 'Transaction Master',
+                module: 'vehicle',
+                id: vehicleId,
+                mobileType: documentType,
+                webType: webDocumentType,
+            });
+
+            // Upload to server using same API as web project
+            const response = await uploadVehicleFile(formData);
+            
+            console.log('Upload response:', response.data);
+
+            if (response.data.code === 200) {
+                const uploadedFile = response.data.response.data;
+                
+                console.log('🎯 Upload Success!', {
+                    mobileType: documentType,
+                    webType: webDocumentType,
+                    serverResponse: uploadedFile
+                });
+                
+                // Update local state with server response
+                const fileInfo = {
+                    uri: uploadedFile.url,
+                    url: uploadedFile.url, // Add url property for consistency
+                    name: asset.fileName || `${documentType}_${Date.now()}`,
+                    size: asset.fileSize || 0,
+                    mimeType: asset.mimeType || 'application/octet-stream',
+                    type: documentType,
+                    id: uploadedFile.id, // Store server file ID
+                    webType: webDocumentType, // Store web type for deletion
+                };
+
+                setUploadedFiles(prev => ({
+                    ...prev,
+                    [documentType]: fileInfo
+                }));
+
+                // Also save to AsyncStorage for offline access
+                await saveFileToStorage(documentType, fileInfo);
+
+                Alert.alert(
+                    'Upload Successful',
+                    `${documentType} uploaded successfully!`,
+                    [{ text: 'OK', style: 'default' }]
+                );
+            } else {
+                throw new Error(response.data.message || 'Upload failed');
+            }
+        } catch (error: any) {
+            console.error('Server upload error:', error);
+            
+            let errorMessage = 'Failed to upload file';
+            
+            if (error.response?.data?.msg?.message?.includes('Chassis mismatch!')) {
+                errorMessage = 'Incorrect chassis photo. Please upload the correct chassis photo';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            Alert.alert('Upload Failed', errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const deleteFileFromServer = async (documentType: string, fileInfo: any) => {
+        try {
+            console.log('Deleting file from server:', { documentType, fileInfo });
+            
+            setLoading(true);
+            
+            // Delete from server using same API as web project
+            const deleteData = {
+                delid: fileInfo.id,
+                type: fileInfo.webType || DOCUMENT_TYPE_MAPPING[documentType] || documentType,
+                url: fileInfo.url || fileInfo.uri,
+            };
+
+            console.log('Deleting file from server:', { documentType, deleteData });
+
+            const response = await deleteVehicleFile(deleteData);
+            
+            if (response.data.code === 200) {
+                // Remove from local state
+                const newUploadedFiles = { ...uploadedFiles };
+                delete newUploadedFiles[documentType];
+                setUploadedFiles(newUploadedFiles);
+
+                // Remove from AsyncStorage
+                await removeFileFromStorage(documentType);
+
+                Alert.alert(
+                    'Delete Successful',
+                    `${documentType} deleted successfully!`,
+                    [{ text: 'OK', style: 'default' }]
+                );
+            } else {
+                throw new Error('Delete failed');
+            }
+        } catch (error: any) {
+            console.error('Server delete error:', error);
+            Alert.alert('Delete Failed', 'Failed to delete file from server');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -2096,20 +2373,20 @@ const VehicleDetailsScreen: React.FC = () => {
         };
 
         const fileNames: Record<string, string[]> = {
-            'addressProof': ['Address_Proof', 'Utility_Bill', 'Bank_Statement'],
-            'chassisImpression': ['Chassis_Impression', 'Vehicle_Chassis', 'Frame_Number'],
-            'form22': ['FORM_22', 'Sale_Form', 'Transfer_Form'],
-            'form21': ['FORM_21', 'Registration_Form', 'Vehicle_Form'],
+            'address_proof': ['Address_Proof', 'Utility_Bill', 'Bank_Statement'],
+            'chassis_impression': ['Chassis_Impression', 'Vehicle_Chassis', 'Frame_Number'],
+            'form_22': ['FORM_22', 'Sale_Form', 'Transfer_Form'],
+            'form_21': ['FORM_21', 'Registration_Form', 'Vehicle_Form'],
             'signature': ['Signature', 'Customer_Sign', 'Authorized_Sign'],
-            'panCard': ['PAN_Card', 'PAN_Card_Copy', 'Tax_ID'],
-            'right': ['Vehicle_Right', 'Right_Side', 'Side_View_Right'],
-            'left': ['Vehicle_Left', 'Left_Side', 'Side_View_Left'],
-            'front': ['Vehicle_Front', 'Front_View', 'Front_Photo'],
-            'rear': ['Vehicle_Rear', 'Rear_View', 'Back_Photo'],
-            'invoice': ['Invoice', 'Bill_Copy', 'Purchase_Invoice'],
+            'pan_card_form60': ['PAN_Card', 'PAN_Card_Copy', 'Tax_ID'],
+            'vehicle_right': ['Vehicle_Right', 'Right_Side', 'Side_View_Right'],
+            'vehicle_left': ['Vehicle_Left', 'Left_Side', 'Side_View_Left'],
+            'vehicle_front': ['Vehicle_Front', 'Front_View', 'Front_Photo'],
+            'vehicle_rear': ['Vehicle_Rear', 'Rear_View', 'Back_Photo'],
+            'sales_invoice': ['Invoice', 'Bill_Copy', 'Purchase_Invoice'],
             'disclaimer': ['Disclaimer', 'Terms_Conditions', 'Agreement'],
-            'form14': ['FORM_14', 'Insurance_Form', 'Vehicle_Form'],
-            'inspectionCertificate': ['Inspection_Certificate', 'Fitness_Certificate', 'Road_Worthy']
+            'form_14': ['FORM_14', 'Insurance_Form', 'Vehicle_Form'],
+            'inspection_certificate': ['Inspection_Certificate', 'Fitness_Certificate', 'Road_Worthy']
         };
 
         const nameOptions = fileNames[documentType] || ['Document'];
@@ -2153,20 +2430,26 @@ const VehicleDetailsScreen: React.FC = () => {
 
     const handleRemoveFile = async (documentType: string) => {
         try {
-            // Remove from state
-            setUploadedFiles(prev => ({
-                ...prev,
-                [documentType]: null
-            }));
+            const fileInfo = uploadedFiles[documentType];
             
-            // Remove from storage
-            await removeFileFromStorage(documentType);
-            
-            Alert.alert(
-                'File Removed',
-                'File has been removed successfully.',
-                [{ text: 'OK', style: 'default' }]
-            );
+            // If file has server ID, delete from server first
+            if (fileInfo?.id) {
+                await deleteFileFromServer(documentType, fileInfo);
+            } else {
+                // Local file only, remove from state and storage
+                setUploadedFiles(prev => ({
+                    ...prev,
+                    [documentType]: null
+                }));
+                
+                await removeFileFromStorage(documentType);
+                
+                Alert.alert(
+                    'File Removed',
+                    'File has been removed successfully.',
+                    [{ text: 'OK', style: 'default' }]
+                );
+            }
         } catch (error) {
             console.error('Error removing file:', error);
             Alert.alert('Error', 'Failed to remove file.');
@@ -2673,6 +2956,41 @@ const VehicleDetailsScreen: React.FC = () => {
                 </ScrollView>
             </View>
 
+            {/* Vehicle e-Receipt Section */}
+            <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
+                Vehicle e-Receipt
+            </Text>
+
+            <View className="mb-6">
+                <View className="bg-white border border-gray-300 rounded-lg p-4">
+                    {eReceiptUrl ? (
+                        <View className="flex-row items-center justify-between">
+                            <View className="flex-1">
+                                <Text className="text-sm font-medium text-gray-800 mb-1">e-Receipt Available</Text>
+                                <Text className="text-xs text-gray-600">Tap to view the vehicle e-Receipt document</Text>
+                            </View>
+                            <TouchableOpacity 
+                                className="px-4 py-2 bg-teal-600 rounded-lg flex-row items-center gap-2"
+                                onPress={() => {
+                                    Linking.openURL(eReceiptUrl);
+                                }}
+                            >
+                                <Eye size={16} color="white" />
+                                <Text className="text-sm text-white font-medium">View e-Receipt</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <View className="flex-row items-center justify-center py-8">
+                            <FileText size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                            <View className="ml-4">
+                                <Text className="text-sm text-gray-500 font-medium">No e-Receipt Available</Text>
+                                <Text className="text-xs text-gray-400 mt-1">e-Receipt will be generated when vehicle is sold</Text>
+                            </View>
+                        </View>
+                    )}
+                </View>
+            </View>
+
             {/* Upload Insurance Section */}
             <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
                 Upload Insurance
@@ -2800,20 +3118,20 @@ const VehicleDetailsScreen: React.FC = () => {
             <View className="mb-6">
                 <View className="flex-row flex-wrap gap-3">
                     {[
-                        { name: 'Address Proof', key: 'addressProof' },
-                        { name: 'Chassis Impression', key: 'chassisImpression' },
-                        { name: 'Form 22', key: 'form22' },
-                        { name: 'Form 21', key: 'form21' },
+                        { name: 'Address Proof', key: 'address_proof' },
+                        { name: 'Chassis Impression', key: 'chassis_impression' },
+                        { name: 'Form 22', key: 'form_22' },
+                        { name: 'Form 21', key: 'form_21' },
                         { name: 'Signature', key: 'signature' },
-                        { name: 'PanCard/Form60', key: 'panCard' },
-                        { name: 'Right', key: 'right' },
-                        { name: 'Left', key: 'left' },
-                        { name: 'Front', key: 'front' },
-                        { name: 'Rear', key: 'rear' },
-                        { name: 'Invoice', key: 'invoice' },
+                        { name: 'PanCard/Form60', key: 'pan_card_form60' },
+                        { name: 'Right', key: 'vehicle_right' },
+                        { name: 'Left', key: 'vehicle_left' },
+                        { name: 'Front', key: 'vehicle_front' },
+                        { name: 'Rear', key: 'vehicle_rear' },
+                        { name: 'Invoice', key: 'sales_invoice' },
                         { name: 'Disclaimer', key: 'disclaimer' },
-                        { name: 'Form14', key: 'form14' },
-                        { name: 'InspectionCertificate', key: 'inspectionCertificate' }
+                        { name: 'Form14', key: 'form_14' },
+                        { name: 'Inspection Certificate', key: 'inspection_certificate' }
                     ].map((doc) => {
                         const uploadedFile = uploadedFiles[doc.key];
                         return (

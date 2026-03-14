@@ -17,6 +17,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
+import AuthenticationData from '../../components/AuthenticationData';
 
 type ConfirmBookingNavigationProp = StackNavigationProp<RootStackParamList, 'ConfirmBooking'>;
 
@@ -44,6 +45,9 @@ export default function ConfirmBookingScreen() {
     const [registeredPhone, setRegisteredPhone] = useState('');
     const [otp, setOtp] = useState('');
     const [authStatus, setAuthStatus] = useState('Pending');
+    
+    // Booking data for authentication
+    const [bookingData, setBookingData] = useState<any>(null);
 
     const steps = [
         { id: 1, label: 'Customer Data', icon: 'person-outline' },
@@ -109,6 +113,7 @@ export default function ConfirmBookingScreen() {
     const [showroomFinanceCharges, setShowroomFinanceCharges] = useState('');
     const [remarks, setRemarks] = useState('');
     const [netReceivables, setNetReceivables] = useState('');
+    const [tempRegister, setTempRegister] = useState('');
 
     const handleNext = () => {
         if (currentStep < 4) {
@@ -117,6 +122,128 @@ export default function ConfirmBookingScreen() {
             // Save and complete
             Alert.alert('Success', 'Booking completed successfully!');
             navigation.goBack();
+        }
+    };
+
+    const prepareBookingData = () => {
+        // Prepare booking data object for authentication component
+        const data = {
+            id: 'BK123456', // This would come from API
+            bookingId: 'BK123456',
+            customer: {
+                name: customerFullName,
+                contacts: [{ phone }],
+                address: {
+                    line1: address1,
+                    line2: address2,
+                    line3: address3,
+                    city,
+                    pincode: pincode,
+                },
+                fatherName,
+                email,
+                dateOfBirth: dob,
+                gender: 'Male', // Default or from form
+                customerId: 'CUST123456',
+            },
+            customerName: customerFullName,
+            customerPhone: phone,
+            vehicle: {
+                modelName,
+                manufacturer: { name: manufacturer },
+                id: 'VEH123456',
+                price: [{
+                    showroomPrice: parseFloat(totalAmount) || 0,
+                    roadTax: 0,
+                    registrationFee: 0,
+                    warrantyPrice: 0,
+                }],
+            },
+            selectedVehicle: [{
+                color: {
+                    color: selectedColor?.name || vehicleColor,
+                    url: '', // Would come from vehicle selection
+                },
+                vehicleDetail: {
+                    expectedDeliveryDate: new Date().toISOString(),
+                },
+            }],
+            price: {
+                onRoadPrice: parseFloat(totalAmount) || 0,
+                tempRegister: parseFloat(tempRegister) || 0,
+                onRoadDiscount: parseFloat(discount) || 0,
+                netRecieveables: parseFloat(netAmount) || 0,
+                numberPlate: 0,
+                specialNoCharges: 0,
+                hp: parseFloat(hypothecation) || 0,
+                affidavit: 0,
+                finalAmount: parseFloat(netAmount) || 0,
+                accessoriesTotalDiscount: parseFloat(accessoriesTotal) || 0,
+                accessoriesTotalAfterDiscount: parseFloat(accessoriesTotalAfterDiscount) || 0,
+                accessoriesTotal: parseFloat(accessoriesTotal) || 0,
+                totalDiscount: parseFloat(discount) || 0,
+                paymentMode,
+                insuranceType,
+            },
+            accessories: [], // Would be populated from accessories selection
+            color: {
+                url: '', // Would come from vehicle selection
+            },
+            loan: {
+                loanType,
+                financer: { id: 'FIN123' },
+                financerBranch: financierBranch,
+                downPayment: parseFloat(downPayment) || 0,
+                loanAmount: parseFloat(loanAmount) || 0,
+                tenure: parseInt(tenure) || 0,
+                emiAmount: parseFloat(emiAmount) || 0,
+                emiDate: parseInt(emiDate) || 1,
+                emiStartDate,
+                disbursementAmount: parseFloat(loanDisbursementAmount) || 0,
+                showroomFinanceCharges: parseFloat(showroomFinanceCharges) || 0,
+                hypothecation,
+            },
+            branch,
+            executive: salesOfficer,
+            remarks,
+            bookingStatus: 'PENDING',
+            authorisedTime: null,
+            authentication: {
+                beforeVerification: null,
+                afterVerification: null,
+                verifiedAt: null,
+            },
+            nomineeName,
+            nomineeAge,
+            relationship,
+            rto: { id: 'RTO123' },
+        };
+        
+        setBookingData(data);
+        return data;
+    };
+
+    const handleAuthenticationComplete = (result: any) => {
+        console.log('Authentication completed:', result);
+        // Handle authentication completion
+        if (result.success) {
+            // Update booking data with authentication results
+            if (bookingData) {
+                const updatedData = { ...bookingData };
+                if (result.status) {
+                    updatedData.bookingStatus = result.status;
+                }
+                if (result.authorisedTime) {
+                    updatedData.authorisedTime = result.authorisedTime;
+                }
+                if (result.digitalVerified) {
+                    updatedData.authentication = {
+                        ...updatedData.authentication,
+                        verifiedAt: result.verifiedTime,
+                    };
+                }
+                setBookingData(updatedData);
+            }
         }
     };
 
@@ -703,6 +830,19 @@ export default function ConfirmBookingScreen() {
 
                 <View className="mb-4">
                     <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
+                        Temporary Registration Charges
+                    </Text>
+                    <TextInput
+                        value={tempRegister}
+                        onChangeText={setTempRegister}
+                        placeholder="Temporary Registration Charges"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        keyboardType="numeric"
+                    />
+                </View>
+
+                <View className="mb-4">
+                    <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
                         Hypothecation
                     </Text>
                     <TextInput
@@ -882,86 +1022,20 @@ export default function ConfirmBookingScreen() {
         </View>
     );
 
-    const renderCustomerAuthentication = () => (
-        <ScrollView className="flex-1">
-            <View className="space-y-8">
-                {/* Digital Authentication */}
-                <View>
-                    <Text className="text-base font-medium text-gray-700 mb-4">Digital Authentication</Text>
-                    
-                    <View className="space-y-4">
-                        <View>
-                            <Text className="text-sm text-gray-600 mb-1">Registered Phone Number</Text>
-                            <TextInput
-                                value={registeredPhone}
-                                onChangeText={setRegisteredPhone}
-                                placeholder="Registered Phone Number"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                        </View>
-
-                        <View className="flex-row justify-start">
-                            <TouchableOpacity 
-                                onPress={() => setAuthStatus('Sent')}
-                                className="px-6 py-2 bg-teal-600 rounded-lg items-center"
-                            >
-                                <Text className="text-white font-medium">Generate OTP and Link</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View>
-                            <Text className="text-sm text-gray-600 mb-1">Enter OTP</Text>
-                            <TextInput
-                                value={otp}
-                                onChangeText={setOtp}
-                                placeholder="Enter OTP"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                        </View>
-
-                        <View className="flex-row justify-start">
-                            <TouchableOpacity 
-                                onPress={() => setAuthStatus('Verified')}
-                                className="px-6 py-2 bg-teal-600 rounded-lg items-center"
-                            >
-                                <Text className="text-white font-medium">Verify</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="flex justify-end mt-4">
-                            <View className="flex-row items-center">
-                                <Text className="text-sm text-gray-600">Authentication Status: </Text>
-                                <Text className="text-sm font-medium text-gray-700">{authStatus}</Text>
-                            </View>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Manual Authentication */}
-                <View className="border-t border-gray-200 pt-8">
-                    <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
-                    
-                    <View className="space-y-6">
-                        <View>
-                            <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
-                            <TouchableOpacity className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg">
-                                <Ionicons name="download-outline" size={16} color="#6B7280" />
-                                <Text className="text-sm text-gray-700">Click to download</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View>
-                            <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
-                            <TouchableOpacity className="flex-row items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg">
-                                <Ionicons name="cloud-upload-outline" size={16} color="#6B7280" />
-                                <Text className="text-sm text-gray-700">Upload Booking Form</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </View>
-        </ScrollView>
-    );
+    const renderCustomerAuthentication = () => {
+        // Prepare booking data when entering authentication step
+        if (!bookingData) {
+            prepareBookingData();
+        }
+        
+        return (
+            <AuthenticationData
+                data={bookingData || prepareBookingData()}
+                onAuthenticationComplete={handleAuthenticationComplete}
+                editable={true}
+            />
+        );
+    };
 
     const renderCurrentStep = () => {
         switch (currentStep) {

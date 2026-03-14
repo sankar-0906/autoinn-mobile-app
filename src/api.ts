@@ -4,10 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
+// const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
+const DEFAULT_ENDPOINT = 'https://test.autocloud.in/'
 
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
+
+
 const platformApi = axios.create({
+  
   baseURL: ENDPOINT,
   headers: {
     'Content-Type': 'application/json',
@@ -67,6 +71,7 @@ export const getUserCount = () => {
 };
 
 export const getQuotations = (body: any) => {
+  console.log("endpoint : ",ENDPOINT);
   return platformApi.post('/api/quotation/get', body);
 };
 
@@ -241,6 +246,10 @@ export const getVehicleColor = (vehicleId: string) => {
 };
 
 export const getVehicleFiles = (vehicleId: string) => {
+  return platformApi.post(`/api/vehicle/get?vehicleFiles=${vehicleId}`);
+};
+
+export const getVehicleEReceipt = (vehicleId: string) => {
   return platformApi.post(`/api/vehicle/get?vehicleFiles=${vehicleId}`);
 };
 
@@ -456,6 +465,110 @@ export const updateBookingStatus = (bookingId: string, statusData: any) => {
 
 export const updateQuotationStatus = (quotationId: string, status: string) => {
   return platformApi.put(`/api/quotation/updateStatus/${quotationId}`, { status });
+};
+
+// File Upload APIs - matching web project
+export const uploadVehicleFile = (fileData: FormData) => {
+  return platformApi.post('/api/upload/vehicle', fileData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const deleteVehicleFile = (deleteData: { delid?: string; type?: string; url: string }) => {
+  return platformApi.post('/api/upload/deleteFile', deleteData);
+};
+
+export const uploadVehicleInsurance = (fileData: FormData) => {
+  return platformApi.post('/api/upload/vehicleInsurance', fileData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+// Authentication APIs - matching web project
+export const authoriseBooking = (bookingId: string, password: string, status: string) => {
+  return platformApi.post('/api/booking/authorise', { 
+    bookingId, 
+    password, 
+    status 
+  });
+};
+
+export const generateBookingOTP = (phone: string, bookingData: any) => {
+  return platformApi.post('/api/sendSms/sendOtp', {
+    phone,
+    type: "WhatsApp",
+    smsData: bookingData
+  });
+};
+
+export const verifyBookingOTP = (referenceId: string, passcode: string) => {
+  return platformApi.post('/api/sendSms/verifyOtp', {
+    referenceId,
+    passcode
+  });
+};
+
+export const sendBookingConfirmationSMS = (phone: string, bookingData: any) => {
+  return platformApi.post('/api/sendSms/bookingconfirm', {
+    phone,
+    type: "WhatsApp",
+    smsData: bookingData
+  });
+};
+
+export const generateBookingPDF = (pdfData: any) => {
+  return platformApi.post('/api/pdfGenerate/booking', pdfData);
+};
+
+export const uploadBookingDocument = (fileData: FormData) => {
+  return platformApi.post('/api/upload', fileData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const getVehicleLatestPrice = (vehicleId: string) => {
+  return platformApi.get(`/api/vehiclePrice/latest/${vehicleId}`);
+};
+
+export const getFinancerDetails = (financerId: string) => {
+  return platformApi.get(`/api/financer/${financerId}`);
+};
+
+export const getRTODetails = (rtoId: string) => {
+  return platformApi.get(`/api/rto/${rtoId}`);
+};
+
+// Job Order APIs
+export const getCustomerJobOrders = (customerId: string) => {
+  return platformApi.get(`/api/customer/details/${customerId}`);
+};
+
+// Spare Order APIs
+export const getCustomerSpareOrders = (customerId: string) => {
+  return platformApi.get(`/api/customer/details/${customerId}`);
+};
+
+export const getSpareOrderDetails = (spareOrderId: string) => {
+  return platformApi.get(`/api/customerSpare/${spareOrderId}`);
+};
+
+// Call History APIs
+export const getCustomerCallHistory = (customerId: string) => {
+  return platformApi.get(`/api/customer/details/${customerId}`);
+};
+
+// Number Plate APIs
+export const getCustomerNumberPlates = (customerId: string) => {
+  return platformApi.get(`/api/customer/details/${customerId}`);
+};
+
+export const getNumberPlateDetails = (plateId: string) => {
+  return platformApi.get(`/api/numberPlating/${plateId}`);
+};
+
+// Payment APIs
+export const getCustomerPayments = (customerId: string) => {
+  return platformApi.get(`/api/customer/details/${customerId}`);
 };
 
 export default platformApi;

@@ -215,8 +215,8 @@ export const HeaderWithBack: React.FC<HeaderWithBackProps> = ({
 // Utility functions for common back scenarios
 export const backNavigationHelpers = {
     // Navigate back to specific screen
-    navigateBackTo: (navigation: StackNavigationProp<RootStackParamList>, screenName: string, params?: any) => {
-        navigation.navigate(screenName as keyof RootStackParamList, params);
+    navigateBackTo: (navigation: StackNavigationProp<RootStackParamList>, screenName: keyof RootStackParamList, params?: any) => {
+        (navigation.navigate as any)(screenName, params);
     },
 
     // Go back with confirmation for unsaved changes
