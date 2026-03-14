@@ -170,17 +170,23 @@ const VehicleDetailsScreen: React.FC = () => {
     const { vehicle, mode = 'view' } = route.params as { vehicle: Vehicle; mode?: 'view' | 'edit' };
 
     // Handle color selection from SelectVehicleColor screen
-    useFocusEffect(
-        useCallback(() => {
-            const unsubscribe = DeviceEventEmitter.addListener('colorSelected', (colorData) => {
-                if (colorData) {
-                    setSelectedColor(colorData.color || colorData.name);
-                }
-            });
+    useEffect(() => {
+        const unsubscribe = DeviceEventEmitter.addListener('colorSelected', (colorData) => {
+            console.log('🎨 VehicleDetails - Received colorSelected event:', colorData);
+            if (colorData) {
+                // Display color in "(code-colorname)" format
+                const colorDisplay = colorData.code && colorData.color 
+                    ? `(${colorData.code}-${colorData.color})`
+                    : colorData.color || colorData.name || 'No Color Chosen';
+                console.log('🎨 VehicleDetails - Setting color to:', colorDisplay);
+                setSelectedColor(colorDisplay);
+            } else {
+                console.log('🎨 VehicleDetails - No color data received');
+            }
+        });
 
-            return () => unsubscribe.remove();
-        }, [])
-    );
+        return () => unsubscribe.remove();
+    }, []);
 
     // Handle vehicle selection from SelectVehicleForDetails screen
     useFocusEffect(
@@ -1261,17 +1267,31 @@ const VehicleDetailsScreen: React.FC = () => {
                 console.log('Category set:', categoryValue, 'from vehicle category:', vehicle.vehicle?.category);
             }
             // Handle color properly - ensure it's a string, but don't override if user has already selected a color
-            if (vehicle.color && selectedColor === "No Color Chosen") {
+            // Only set initial color if it's the first load and no user selection has been made
+            console.log('🎨 VehicleDetails - useEffect checking color:', {
+                vehicleColor: vehicle.color,
+                currentSelectedColor: selectedColor,
+                includesParentheses: selectedColor.includes('('),
+                condition: vehicle.color && !selectedColor.includes('(') && selectedColor === "No Color Chosen"
+            });
+            
+            if (vehicle.color && !selectedColor.includes('(') && selectedColor === "No Color Chosen") {
                 if (typeof vehicle.color === 'object' && vehicle.color.color) {
                     // Color object has color, code, url properties
+                    console.log('🎨 VehicleDetails - Setting color from object:', vehicle.color.color);
                     setSelectedColor(vehicle.color.color);
                 } else if (typeof vehicle.color === 'string') {
+                    console.log('🎨 VehicleDetails - Setting color from string:', vehicle.color);
                     setSelectedColor(vehicle.color);
                 } else if (vehicle.color.color && typeof vehicle.color.color === 'string') {
+                    console.log('🎨 VehicleDetails - Setting color from nested color:', vehicle.color.color);
                     setSelectedColor(vehicle.color.color);
                 } else {
+                    console.log('🎨 VehicleDetails - Setting default color');
                     setSelectedColor('No Color Chosen');
                 }
+            } else {
+                console.log('🎨 VehicleDetails - NOT overriding color - condition not met');
             }
         }
     }, [vehicle]);
@@ -2571,10 +2591,10 @@ const VehicleDetailsScreen: React.FC = () => {
                             />
                             <TouchableOpacity
                                 onPress={() => {
-                                    console.log('Opening SelectVehicleForDetails screen from color button');
+                                    console.log('Opening ColorSelection screen from color button');
                                     console.log('🎯 Current model value:', model);
                                     console.log('🎯 Passing modelName:', model);
-                                    navigation.navigate('SelectVehicleForDetails' as any, {
+                                    navigation.navigate('ColorSelection' as any, {
                                         modelName: model
                                     });
                                 }}
@@ -2956,41 +2976,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 </ScrollView>
             </View>
 
-            {/* Vehicle e-Receipt Section */}
-            <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
-                Vehicle e-Receipt
-            </Text>
-
-            <View className="mb-6">
-                <View className="bg-white border border-gray-300 rounded-lg p-4">
-                    {eReceiptUrl ? (
-                        <View className="flex-row items-center justify-between">
-                            <View className="flex-1">
-                                <Text className="text-sm font-medium text-gray-800 mb-1">e-Receipt Available</Text>
-                                <Text className="text-xs text-gray-600">Tap to view the vehicle e-Receipt document</Text>
-                            </View>
-                            <TouchableOpacity 
-                                className="px-4 py-2 bg-teal-600 rounded-lg flex-row items-center gap-2"
-                                onPress={() => {
-                                    Linking.openURL(eReceiptUrl);
-                                }}
-                            >
-                                <Eye size={16} color="white" />
-                                <Text className="text-sm text-white font-medium">View e-Receipt</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <View className="flex-row items-center justify-center py-8">
-                            <FileText size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                            <View className="ml-4">
-                                <Text className="text-sm text-gray-500 font-medium">No e-Receipt Available</Text>
-                                <Text className="text-xs text-gray-400 mt-1">e-Receipt will be generated when vehicle is sold</Text>
-                            </View>
-                        </View>
-                    )}
-                </View>
-            </View>
-
+            
             {/* Upload Insurance Section */}
             <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
                 Upload Insurance
@@ -3189,10 +3175,33 @@ const VehicleDetailsScreen: React.FC = () => {
                 Vehicle e-Receipt
             </Text>
 
-            <View className="mb-4">
-                <View className="bg-white border border-gray-300 rounded-lg p-12 items-center">
-                    <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                    <Text className="text-sm text-gray-400 mt-2">No Data</Text>
+            <View className="mb-6">
+                <View className="bg-white border border-gray-300 rounded-lg p-4">
+                    {eReceiptUrl ? (
+                        <View className="flex-row items-center justify-between">
+                            <View className="flex-1">
+                                <Text className="text-sm font-medium text-gray-800 mb-1">e-Receipt Available</Text>
+                                <Text className="text-xs text-gray-600">Tap to view the vehicle e-Receipt document</Text>
+                            </View>
+                            <TouchableOpacity 
+                                className="px-4 py-2 bg-teal-600 rounded-lg flex-row items-center gap-2"
+                                onPress={() => {
+                                    Linking.openURL(eReceiptUrl);
+                                }}
+                            >
+                                <Eye size={16} color="white" />
+                                <Text className="text-sm text-white font-medium">View e-Receipt</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <View className="flex-row items-center justify-center py-8">
+                            <FileText size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                            <View className="ml-4">
+                                <Text className="text-sm text-gray-500 font-medium">No e-Receipt Available</Text>
+                                <Text className="text-xs text-gray-400 mt-1">e-Receipt will be generated when vehicle is sold</Text>
+                            </View>
+                        </View>
+                    )}
                 </View>
             </View>
         </View>

@@ -12,6 +12,7 @@ export type RootStackParamList = {
     SelectVehicleForBooking: { modelName?: string; customerName?: string; customerId?: string; customerPhone?: string };
     SelectVehicleForDetails: { modelName?: string };
     SelectVehicleColor: { modelName?: string; selectedColor?: any };
+    ColorSelection: { modelName?: string; modelId?: string };
     AddQuotation: { selectedVehicle?: any; customerId?: string; customerName?: string; phoneNumbers?: any[]; returnToPrevious?: boolean };
     AdvancedFilters: undefined;
     FollowUpFilters: undefined;

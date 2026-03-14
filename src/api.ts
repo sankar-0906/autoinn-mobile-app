@@ -4,8 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-// const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
-const DEFAULT_ENDPOINT = 'https://test.autocloud.in/'
+const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
+const FALLBACK_ENDPOINT = 'https://test.autocloud.in/';
 
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
@@ -18,18 +18,39 @@ const platformApi = axios.create({
   }
 });
 
-platformApi.interceptors.request.use(async (config) => {
-  try {
-    const token = await AsyncStorage.getItem('token');
-    if (token) {
-      config.headers = config.headers || {};
-      config.headers['x-access-token'] = token;
-    }
-  } catch (e) {
-    // ignore
+// Create fallback API instance for test server
+const fallbackApi = axios.create({
+  baseURL: FALLBACK_ENDPOINT,
+  headers: {
+    'Content-Type': 'application/json',
   }
-  return config;
 });
+
+// Add request interceptor to both APIs
+const addRequestInterceptor = (apiInstance: any) => {
+  apiInstance.interceptors.request.use(async (config: any) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        config.headers = config.headers || {};
+        config.headers['x-access-token'] = token;
+        
+        // Debug: Log token for authorization requests
+        if (config.url?.includes('/authorise')) {
+          console.log('🔐 Authorization Request - Token present:', !!token);
+          console.log('🔐 Authorization Request - Token preview:', token.substring(0, 20) + '...');
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return config;
+  });
+  return apiInstance;
+};
+
+addRequestInterceptor(platformApi);
+addRequestInterceptor(fallbackApi);
 
 // Add response interceptor for retry logic and better error handling
 platformApi.interceptors.response.use(
@@ -508,16 +529,16 @@ export const verifyBookingOTP = (referenceId: string, passcode: string) => {
   });
 };
 
-export const sendBookingConfirmationSMS = (phone: string, bookingData: any) => {
+export const sendBookingConfirmationSMS = (phone: string, type: string, smsData: any) => {
   return platformApi.post('/api/sendSms/bookingconfirm', {
     phone,
-    type: "WhatsApp",
-    smsData: bookingData
+    type,
+    smsData
   });
 };
 
-export const generateBookingPDF = (pdfData: any) => {
-  return platformApi.post('/api/pdfGenerate/booking', pdfData);
+export const generateBookingPDF = (bookingData: any) => {
+  return platformApi.post('/api/pdfGenerate/booking', bookingData);
 };
 
 export const uploadBookingDocument = (fileData: FormData) => {
@@ -569,6 +590,37 @@ export const getNumberPlateDetails = (plateId: string) => {
 // Payment APIs
 export const getCustomerPayments = (customerId: string) => {
   return platformApi.get(`/api/customer/details/${customerId}`);
+};
+
+// Authentication APIs
+export const generateOTP = (phone: string, bookingId: string, customerName: string, vehicleName: string, salesOfficer: any, branch: any) => {
+  return platformApi.post('/api/sendSms/sendOtp', {
+    phone,
+    type: "SMS",
+    smsData: {
+      link: "", // Will be populated if needed
+      cname: customerName,
+      bkid: bookingId,
+      vname: vehicleName,
+      slex: salesOfficer,
+      dlr: branch
+    }
+  });
+};
+
+export const verifyOTP = (referenceId: string, otp: string) => {
+  return platformApi.post('/api/sendSms/verifyOtp', {
+    referenceId,
+    passcode: otp
+  });
+};
+
+export const authorizeBooking = (bookingId: string, password: string, status: string) => {
+  return platformApi.post('/api/booking/authorise', {
+    password,
+    status,
+    bookingId
+  });
 };
 
 export default platformApi;

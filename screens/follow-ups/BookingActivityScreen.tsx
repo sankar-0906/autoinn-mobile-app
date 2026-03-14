@@ -16,6 +16,7 @@ import AccessoryModal from '../../components/AccessoryModal';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton, HeaderWithBack, useBackButton, backNavigationHelpers } from '../../components/ui/BackButton';
+import * as DocumentPicker from 'expo-document-picker';
 import {
     getBranches,
     getUsers,
@@ -35,7 +36,13 @@ import {
     createBooking,
     updateBooking,
     getQuotationById,
-    updateQuotationStatus
+    updateQuotationStatus,
+    generateBookingPDF,
+    sendBookingConfirmationSMS,
+    uploadBookingDocument,
+    generateOTP,
+    verifyOTP,
+    authorizeBooking
 } from '../../src/api';
 import platformApi from '../../src/api';
 import { useToast } from '../../src/ToastContext';
@@ -226,6 +233,15 @@ export default function BookingActivityScreen({
     const [registeredPhone, setRegisteredPhone] = useState('');
     const [otp, setOtp] = useState('');
     const [authStatus, setAuthStatus] = useState('Pending');
+    const [authPassword, setAuthPassword] = useState('');
+    const [bookingId, setBookingId] = useState('');
+    const [otpReferenceId, setOtpReferenceId] = useState('');
+    const [isGeneratingOTP, setIsGeneratingOTP] = useState(false);
+    const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
+    const [isAuthorizing, setIsAuthorizing] = useState(false);
+    const [bookingStatus, setBookingStatus] = useState('ACCEPTED');
+    const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+    const [showBookingStatusModal, setShowBookingStatusModal] = useState(false);
 
     // ── Customer fields ────────────────────────────────────────────────────
     const [branch, setBranch]                     = useState('');
@@ -1451,6 +1467,17 @@ export default function BookingActivityScreen({
                 toast.success('Booking saved successfully!');
                 console.log('📦 Booking created successfully, updating quotation status...');
                 
+                // Extract booking ID from response
+                const bookingData = response.data?.response?.data;
+                const extractedBookingId = bookingData?.bookingId || bookingData?.id;
+                
+                if (extractedBookingId) {
+                    console.log('📝 Found bookingId:', extractedBookingId);
+                    setBookingId(extractedBookingId);
+                } else {
+                    console.log('⚠️ No booking ID found in booking response');
+                }
+                
                 // Update quotation status to "BOOKED" after successful booking
                 const quotationData = response.data?.response?.data?.quotation?.[0];
                 const quotationId = quotationData?.id || quotationData?.quotationId;
@@ -1466,54 +1493,63 @@ export default function BookingActivityScreen({
                     console.log('⚠️ No quotation ID found in booking response');
                 }
                 
-                // Reset navigation stack based on where we came from after successful booking
-                const state = navigation.getState();
-                const previousRoute = state.routes[state.routes.length - 2]; // Get previous route
-                
-                console.log('🔍 Save completed - Navigation state check:', {
-                    currentRoute: state.routes[state.routes.length - 1].name,
-                    previousRoute: previousRoute?.name,
-                    cameFromQuotationForm: previousRoute?.name === 'QuotationForm'
-                });
-                
-                // If we came from QuotationForm, go back to it after successful booking
-                if (previousRoute?.name === 'QuotationForm') {
-                    console.log('🔍 Came from QuotationForm, going back after successful booking');
+                // After successful booking, navigate to Auth section if it's a confirm booking
+                if (persistedIsConfirmBooking) {
+                    console.log('🔍 Confirm booking successful, navigating to Auth section');
                     setTimeout(() => {
-                        navigation.goBack();
-                    }, 1500); // Small delay to show success message
+                        setActiveTab('auth');
+                        toast.success('Booking saved! Please complete the authorization.');
+                    }, 1500);
                 } else {
-                    // Otherwise, reset to Quotations tab (original behavior)
-                    const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
-                    if (customerPhone) {
-                        console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
-                        
-                        setTimeout(() => {
-                            if (quotationId) {
-                                console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
-                                navigation.reset({
-                                    index: 2,
-                                    routes: [
-                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
-                                        { name: 'QuotationView', params: { id: quotationId } },
-                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
-                                    ]
-                                });
-                            } else {
-                                console.log('🔍 No quotation found, using standard navigation to Quotations tab');
-                                navigation.reset({
-                                    index: 0,
-                                    routes: [
-                                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
-                                    ]
-                                });
-                            }
-                        }, 1500);
-                    } else {
-                        console.log('🔍 No customer phone found, using standard goBack');
+                    // For advanced bookings, proceed with original navigation logic
+                    const state = navigation.getState();
+                    const previousRoute = state.routes[state.routes.length - 2]; // Get previous route
+                    
+                    console.log('🔍 Save completed - Navigation state check:', {
+                        currentRoute: state.routes[state.routes.length - 1].name,
+                        previousRoute: previousRoute?.name,
+                        cameFromQuotationForm: previousRoute?.name === 'QuotationForm'
+                    });
+                    
+                    // If we came from QuotationForm, go back to it after successful booking
+                    if (previousRoute?.name === 'QuotationForm') {
+                        console.log('🔍 Came from QuotationForm, going back after successful booking');
                         setTimeout(() => {
                             navigation.goBack();
-                        }, 1500);
+                        }, 1500); // Small delay to show success message
+                    } else {
+                        // Otherwise, reset to Quotations tab (original behavior)
+                        const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
+                        if (customerPhone) {
+                            console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
+                            
+                            setTimeout(() => {
+                                if (quotationId) {
+                                    console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
+                                    navigation.reset({
+                                        index: 2,
+                                        routes: [
+                                            { name: 'Main', state: { routes: [{ name: 'Quotations' }] } },
+                                            { name: 'QuotationView', params: { id: quotationId } },
+                                            { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                                        ]
+                                    });
+                                } else {
+                                    console.log('🔍 No quotation found, using standard navigation to Quotations tab');
+                                    navigation.reset({
+                                        index: 0,
+                                        routes: [
+                                            { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                                        ]
+                                    });
+                                }
+                            }, 1500);
+                        } else {
+                            console.log('🔍 No customer phone found, using standard goBack');
+                            setTimeout(() => {
+                                navigation.goBack();
+                            }, 1500);
+                        }
                     }
                 }
             } else {
@@ -1652,6 +1688,20 @@ export default function BookingActivityScreen({
             if (persistedIsConfirmBooking) {
                 setActiveTab('auth');
             }
+        } else if (activeTab === 'auth') {
+            // After completing auth section, navigate to QuotationList
+            console.log('🔍 Auth section completed, navigating to QuotationList');
+            toast.success('Authorization completed! Redirecting to quotations...');
+            
+            setTimeout(() => {
+                // Reset navigation and go to Quotations tab
+                navigation.reset({
+                    index: 0,
+                    routes: [
+                        { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                    ]
+                });
+            }, 1500);
         }
     };
 
@@ -1664,6 +1714,379 @@ export default function BookingActivityScreen({
             setActiveTab('customer');
         }
     };
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Authentication Functions
+    // ─────────────────────────────────────────────────────────────────────
+    const handleGenerateOTP = async () => {
+        if (!registeredPhone || registeredPhone.length !== 10) {
+            toast.error('Please enter a valid 10-digit phone number');
+            return;
+        }
+
+        if (!bookingId) {
+            toast.error('Booking ID not available');
+            return;
+        }
+
+        setIsGeneratingOTP(true);
+        try {
+            const salesOfficerData = { 
+                profile: { employeeName: salesOfficerRef.current }, 
+                phone: phoneRef.current 
+            };
+            const branchData = { name: branch };
+            
+            const response = await generateOTP(
+                registeredPhone, 
+                bookingId, 
+                customerFullNameRef.current || customerFullName, 
+                model, 
+                salesOfficerData, 
+                branchData
+            );
+            console.log('🔐 OTP Generation Response:', response.data);
+            
+            if (response.data.code === 200) {
+                setOtpReferenceId(response.data.data.referenceId);
+                setAuthStatus('Sent');
+                toast.success('OTP sent successfully!');
+            } else {
+                toast.error(response.data.message || 'Failed to generate OTP');
+            }
+        } catch (error: any) {
+            console.error('🔐 OTP Generation Error:', error);
+            toast.error('Failed to generate OTP. Please try again.');
+        } finally {
+            setIsGeneratingOTP(false);
+        }
+    };
+
+    const handleVerifyOTP = async () => {
+        if (!otp || otp.length !== 6) {
+            toast.error('Please enter a valid 6-digit OTP');
+            return;
+        }
+
+        if (!otpReferenceId) {
+            toast.error('OTP reference ID missing. Please generate OTP first.');
+            return;
+        }
+
+        setIsVerifyingOTP(true);
+        try {
+            const response = await verifyOTP(otpReferenceId, otp);
+            console.log('🔐 OTP Verification Response:', response.data);
+            
+            if (response.data.code === 200 && response.data.data.isValid) {
+                setAuthStatus('Verified');
+                toast.success('OTP verified successfully!');
+            } else {
+                toast.error('Invalid OTP. Please try again.');
+            }
+        } catch (error: any) {
+            console.error('🔐 OTP Verification Error:', error);
+            toast.error('Failed to verify OTP. Please try again.');
+        } finally {
+            setIsVerifyingOTP(false);
+        }
+    };
+
+    const handleAuthorizeBooking = async () => {
+        console.log('🔐 Authorization attempt - Current state:', {
+            bookingId: bookingId,
+            authPassword: authPassword ? '***' : 'empty',
+            bookingStatus: bookingStatus
+        });
+        
+        if (!authPassword) {
+            toast.error('Please enter authorization password');
+            return;
+        }
+
+        if (!bookingId) {
+            toast.error('Booking ID not available. Please try creating the booking again.');
+            console.error('🔐 Booking ID is empty or null:', bookingId);
+            return;
+        }
+
+        setIsAuthorizing(true);
+        try {
+            console.log('🔐 Attempting to authorize booking:', bookingId, 'with status:', bookingStatus);
+            console.log('🔐 Payload being sent:', {
+                password: authPassword,
+                status: bookingStatus,
+                bookingId: bookingId
+            });
+            
+            const response = await authorizeBooking(bookingId, authPassword, bookingStatus);
+            console.log('🔐 Booking Authorization Response:', response.data);
+            console.log('🔐 Full response structure:', JSON.stringify(response.data, null, 2));
+            
+            if (response.data.code === 200) {
+                setAuthStatus('Authorized');
+                toast.success(`Booking ${bookingStatus.toLowerCase()} successfully!`);
+                
+                // Send confirmation SMS only for accepted bookings
+                if (bookingStatus === 'ACCEPTED') {
+                    await sendConfirmationSMS();
+                }
+                
+                // Navigate to quotations after successful authorization
+                setTimeout(() => {
+                    navigation.reset({
+                        index: 0,
+                        routes: [
+                            { name: 'Main', state: { routes: [{ name: 'Quotations' }] } }
+                        ]
+                    });
+                }, 2000);
+            } else if (response.data.code === 403) {
+                toast.error('Invalid password. Please check your credentials.');
+            } else if (response.data.code === 500) {
+                // Specific handling for 500 errors
+                console.error('🔐 Backend server error - possible causes:');
+                console.error('🔐 1. JWT token invalid/expired');
+                console.error('🔐 2. User not found in database');
+                console.error('🔐 3. Backend server/database issues');
+                toast.error('Server error: Please check your authentication or contact support.');
+            } else {
+                const errorMsg = response.data.msg || response.data.message || 'Failed to authorize booking';
+                console.error('🔐 Authorization failed with error:', errorMsg);
+                console.error('🔐 Full error response:', JSON.stringify(response.data, null, 2));
+                toast.error(errorMsg);
+            }
+        } catch (error: any) {
+            console.error('🔐 Booking Authorization Error:', error);
+            console.error('🔐 Error response:', error.response?.data);
+            console.error('🔐 Error status:', error.response?.status);
+            console.error('🔐 Error headers:', error.response?.headers);
+            
+            if (error.response?.status === 500) {
+                toast.error('Backend server error. Please try again later or contact support.');
+            } else {
+                const errorMsg = error.response?.data?.msg || error.response?.data?.message || 'Failed to authorize booking. Please check your password.';
+                toast.error(errorMsg);
+            }
+        } finally {
+            setIsAuthorizing(false);
+        }
+    };
+
+    const handleDownloadBookingForm = async () => {
+        if (!bookingId) {
+            toast.error('Booking ID not available');
+            return;
+        }
+        
+        try {
+            console.log('📄 Attempting to download booking form for ID:', bookingId);
+            
+            // Build complete PDF data structure matching web implementation
+            const pdfData = {
+                fileNo: bookingId,
+                status: authStatus,
+                verifiedTime: new Date().toLocaleString(),
+                bookingId: bookingId,
+                bookingDate: new Date().toLocaleDateString('en-GB'),
+                printDate: new Date().toLocaleDateString('en-GB'),
+                printTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                customer: {
+                    customerId: customerId || 'N/A',
+                    name: customerFullName || 'N/A',
+                    gender: 'Male', // Default or get from form
+                    dob: dob || 'N/A',
+                    fatherName: fatherName || 'N/A',
+                    phone: phone || 'N/A',
+                    email: '', // Email field not available in state
+                    address: {
+                        line1: address || 'N/A',
+                        line2: address2 || 'N/A',
+                        line3: address3 || 'N/A',
+                        city: city || 'N/A',
+                        pinCode: pincode || 'N/A',
+                    },
+                },
+                nominee: {
+                    name: nominee || 'N/A',
+                    age: nomineeAge || 'N/A',
+                    relationship: relationship || 'N/A',
+                },
+                executive: {
+                    id: 'current-user',
+                    profile: {
+                        employeeName: salesOfficer || 'N/A',
+                        phone: phone || 'N/A'
+                    }
+                },
+                vehicle: {
+                    modelName: model || 'N/A',
+                    manufacturerId: 'manufacturer-id',
+                    modelColor: vehicleColor || 'N/A',
+                    rto: 'RTO Area', // Would need to fetch from RTO data
+                    onRoad: parseFloat(finalAmount) || 0,
+                    onRoadDiscount: 0,
+                    netRecieveables: parseFloat(finalAmount) || 0,
+                    refund: null,
+                    hp: 0,
+                    numberPlate: 0,
+                    tr: 0,
+                    affidavit: 0,
+                    specialNoCharges: 0,
+                    accessoryString: '',
+                    accessories: null,
+                },
+                exchange: {
+                    vehicleModel: null,
+                    vehicleManufacturer: null,
+                    vehiclePrice: 0,
+                },
+                branch: {
+                    id: 'branch-id',
+                    name: branch || 'N/A',
+                    address: {
+                        line1: 'Branch Address',
+                        line2: 'Branch Locality',
+                        line3: 'Branch City',
+                        locality: 'Branch Locality',
+                        district: { name: 'District' },
+                        state: { name: 'State' },
+                        country: { name: 'Country' },
+                        pincode: 'Pincode'
+                    }
+                },
+                financer: {
+                    id: null, // Financer ID not available in state
+                    branch: financierBranch || '',
+                    loan: {
+                        downPayment: parseFloat(downPayment) || 0,
+                        emi: parseFloat(emiAmount) || 0,
+                        tenure: tenure || 0,
+                        emiDate: 1, // EMI day not available in state
+                        hypothecation: paymentHypothecation || false,
+                        amount: parseFloat(finalAmount) || 0,
+                        emiStartDate: emiStartDate || new Date().toLocaleDateString('en-GB'),
+                    },
+                },
+                remarks: '',
+            };
+            
+            console.log('📄 PDF Data being sent (sample):', {
+                fileNo: pdfData.fileNo,
+                customerName: pdfData.customer.name,
+                vehicleModel: pdfData.vehicle.modelName,
+                branchName: pdfData.branch.name
+            });
+            console.log('📄 Full PDF data size:', JSON.stringify(pdfData).length, 'characters');
+            
+            const response = await generateBookingPDF(pdfData);
+            console.log('📄 Booking Form Download Response:', response.data);
+            console.log('📄 Full download response structure:', JSON.stringify(response.data, null, 2));
+            
+            if (response.data.code === 200) {
+                toast.success('Booking form downloaded successfully!');
+                // TODO: Handle actual file download if needed
+            } else {
+                const errorMsg = response.data.msg || response.data.message || 'Failed to download booking form';
+                console.error('📄 Download failed:', errorMsg);
+                console.error('📄 Full error response:', JSON.stringify(response.data, null, 2));
+                toast.error(errorMsg);
+            }
+        } catch (error: any) {
+            console.error('📄 Download Error:', error);
+            console.error('📄 Error response data:', error.response?.data);
+            console.error('📄 Error status:', error.response?.status);
+            console.error('📄 Error headers:', error.response?.headers);
+            const errorMsg = error.response?.data?.msg || error.response?.data?.message || 'Failed to download booking form';
+            toast.error(errorMsg);
+        }
+    };
+
+    const handleUploadBookingForm = async () => {
+        if (!bookingId) {
+            toast.error('Booking ID not available');
+            return;
+        }
+
+        try {
+            // Pick a document from the device
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['application/pdf', 'image/*'], // Allow PDFs and images
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled) {
+                return; // User cancelled the picker
+            }
+
+            const file = result.assets[0];
+            
+            // Create FormData for file upload
+            const formData = new FormData();
+            formData.append('file', {
+                uri: file.uri,
+                type: file.mimeType,
+                name: file.name,
+            } as any);
+            formData.append('bookingId', bookingId);
+            formData.append('documentType', 'bookingForm');
+
+            const response = await uploadBookingDocument(formData);
+            console.log('📄 Upload Response:', response.data);
+            
+            if (response.data.code === 200) {
+                toast.success('Booking form uploaded successfully!');
+            } else {
+                toast.error('Failed to upload booking form');
+            }
+        } catch (error: any) {
+            console.error('📄 Upload Error:', error);
+            toast.error('Failed to upload booking form');
+        }
+    };
+
+    // Booking status options (same as web)
+    const bookingStatusOptions = [
+        { key: "ACCEPTED", title: "Accept" },
+        { key: "PENDING", title: "Pending" },
+        { key: "REJECTED", title: "Reject" },
+    ];
+
+    const sendConfirmationSMS = async () => {
+        try {
+            const smsData = {
+                link: "", // Will be populated if needed
+                cname: customerFullNameRef.current || customerFullName,
+                slex: { profile: { employeeName: salesOfficerRef.current }, phone: phoneRef.current },
+                bkid: bookingId,
+                vname: model,
+                dlr: { name: branch }
+            };
+            
+            const response = await sendBookingConfirmationSMS(
+                phoneRef.current || registeredPhone, 
+                "WhatsApp", 
+                smsData
+            );
+            console.log('📱 Confirmation SMS Response:', response.data);
+            
+            if (response.data.code === 200) {
+                toast.success('Confirmation SMS sent successfully!');
+            }
+        } catch (error: any) {
+            console.error('📱 SMS Error:', error);
+            // Don't show error for SMS failure as authorization is successful
+        }
+    };
+
+    // Set booking ID when we have the booking response
+    useEffect(() => {
+        // This will be set when booking is created in handleSaveComplete
+        // For now, we'll use a placeholder or get it from route params if available
+        if (route.params?.bookingId) {
+            setBookingId(route.params.bookingId);
+        }
+    }, [route.params?.bookingId]);
 
     // ─────────────────────────────────────────────────────────────────────
     // Render
@@ -2416,87 +2839,109 @@ export default function BookingActivityScreen({
 
                         {/* ── AUTH TAB ──────────────────────────────────── */}
                         {activeTab === 'auth' && (
-                            <View>
-
-                                <View className="space-y-8">
-                                    {/* Digital Authentication */}
-                                    <View>
-                                        <Text className="text-base font-medium text-gray-700 mb-4">Digital Authentication</Text>
-                                        
-                                        <View className="space-y-4">
-                                            <View className="mb-4">
-                                                <Text className="text-sm text-gray-600 mb-2">Registered Phone Number</Text>
-                                                <TextInput
-                                                    value={registeredPhone}
-                                                    onChangeText={setRegisteredPhone}
-                                                    placeholder="Registered Phone Number"
-                                                    className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
-                                                />
-                                            </View>
-
-                                            <View className="mb-4">
-                                                <TouchableOpacity 
-                                                    onPress={() => setAuthStatus('Sent')}
-                                                    className="h-12 bg-teal-600 rounded-lg items-center justify-center"
-                                                >
-                                                    <Text className="text-white font-medium">Generate OTP and Link</Text>
-                                                </TouchableOpacity>
-                                            </View>
-
-                                            <View className="mb-4">
-                                                <Text className="text-sm text-gray-600 mb-2">Enter OTP</Text>
-                                                <TextInput
-                                                    value={otp}
-                                                    onChangeText={setOtp}
-                                                    placeholder="Enter OTP"
-                                                    className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
-                                                />
-                                            </View>
-
-                                            <View className="mb-4">
-                                                <TouchableOpacity 
-                                                    onPress={() => setAuthStatus('Verified')}
-                                                    className="h-12 bg-teal-600 rounded-lg items-center justify-center"
-                                                >
-                                                    <Text className="text-white font-medium">Verify</Text>
-                                                </TouchableOpacity>
-                                            </View>
-
-                                            <View className="flex justify-end">
-                                                <View className="flex-row items-center mb-4">
-                                                    <Text className="text-sm text-gray-600">Authentication Status: </Text>
-                                                    <Text className="text-sm font-medium text-gray-700">{authStatus}</Text>
-                                                </View>
-                                            </View>
+                            <View className="space-y-8">
+                                {/* Booking Authorization */}
+                                <View>
+                                    <Text className="text-base font-medium text-gray-700 mb-4">Booking Authorization</Text>
+                                    
+                                    <View className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+                                        <Text className="text-sm text-gray-600 mb-2">I hereby authorise the Booking of the Vehicle.</Text>
+                                        <View className="flex-row mb-2">
+                                            <Text className="text-sm font-medium text-gray-700">Vehicle Model: </Text>
+                                            <Text className="text-sm text-gray-600">{model || 'N/A'}</Text>
+                                        </View>
+                                        <View className="flex-row mb-2">
+                                            <Text className="text-sm font-medium text-gray-700">Customer: </Text>
+                                            <Text className="text-sm text-gray-600">{customerFullName || 'N/A'}</Text>
+                                        </View>
+                                        <View className="flex-row">
+                                            <Text className="text-sm font-medium text-gray-700">Phone: </Text>
+                                            <Text className="text-sm text-gray-600">{phone || 'N/A'}</Text>
                                         </View>
                                     </View>
+                                    
+                                    {/* Booking Status */}
+                                    <View className="mb-4">
+                                        <Text className="text-sm text-gray-600 mb-2">Booking Status</Text>
+                                        <TouchableOpacity
+                                            onPress={() => setShowBookingStatusModal(true)}
+                                            className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
+                                        >
+                                            <Text className="text-gray-800 flex-1">
+                                                {bookingStatusOptions.find(option => option.key === bookingStatus)?.title || 'Select Status'}
+                                            </Text>
+                                            <ChevronRight size={16} color={COLORS.gray[400]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                    
+                                    {/* Authorization Password */}
+                                    <View className="mb-4">
+                                        <Text className="text-sm text-gray-600 mb-2">Authorization Password</Text>
+                                        <TextInput
+                                            value={authPassword}
+                                            onChangeText={setAuthPassword}
+                                            placeholder="Enter authorization password"
+                                            secureTextEntry
+                                            className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
+                                        />
+                                    </View>
+                                    
+                                    {/* Authorize Button */}
+                                    <TouchableOpacity 
+                                        onPress={handleAuthorizeBooking}
+                                        disabled={isAuthorizing || !authPassword}
+                                        className={`h-12 rounded-lg items-center justify-center ${
+                                            isAuthorizing || !authPassword ? 'bg-gray-400' : 'bg-green-600'
+                                        }`}
+                                    >
+                                        <Text className="text-white font-medium">
+                                            {isAuthorizing ? 'Authorizing...' : 'Authorize Booking'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    
+                                    {/* Authorization Status */}
+                                    {authStatus === 'Authorized' && (
+                                        <View className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                            <Text className="text-sm text-green-800">
+                                                Booking Authorized Successfully
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
 
-                                    {/* Manual Authentication */}
-                                    <View className="border-t border-gray-200 pt-8">
-                                        <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
-                                        
-                                        <View className="space-y-4">
-                                            <View className="mb-4">
-                                                <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
-                                                <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
-                                                    <View className="flex-row items-center gap-2">
-                                                        <Ionicons name="download-outline" size={16} color="#6B7280" />
-                                                        <Text className="text-sm text-gray-700">Click to download</Text>
-                                                    </View>
-                                                    <ChevronRight size={16} color={COLORS.gray[400]} />
-                                                </TouchableOpacity>
-                                            </View>
+                                {/* Manual Authentication */}
+                                <View className="border-t border-gray-200 pt-8">
+                                    <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
+                                    
+                                    <View className="space-y-4">
+                                        {/* Download Booking Form */}
+                                        <View className="mb-4">
+                                            <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
+                                            <TouchableOpacity 
+                                                onPress={handleDownloadBookingForm}
+                                                className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
+                                            >
+                                                <View className="flex-row items-center gap-2">
+                                                    <Ionicons name="download-outline" size={16} color="#6B7280" />
+                                                    <Text className="text-sm text-gray-700">Click to download</Text>
+                                                </View>
+                                                <ChevronRight size={16} color={COLORS.gray[400]} />
+                                            </TouchableOpacity>
+                                        </View>
 
-                                            <View className="mb-4">
-                                                <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
-                                                <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
-                                                    <View className="flex-row items-center gap-2">
-                                                        <Ionicons name="cloud-upload-outline" size={16} color="#6B7280" />
-                                                        <Text className="text-sm text-gray-700">Upload Booking Form</Text>
-                                                    </View>
-                                                    <ChevronRight size={16} color={COLORS.gray[400]} />
-                                                </TouchableOpacity>
-                                            </View>
+                                        {/* Upload Booking Form */}
+                                        <View className="mb-4">
+                                            <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
+                                            <TouchableOpacity 
+                                                onPress={handleUploadBookingForm}
+                                                className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
+                                            >
+                                                <View className="flex-row items-center gap-2">
+                                                    <Ionicons name="cloud-upload-outline" size={16} color="#6B7280" />
+                                                    <Text className="text-sm text-gray-700">Upload Booking Form</Text>
+                                                </View>
+                                                <ChevronRight size={16} color={COLORS.gray[400]} />
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
                                 </View>
@@ -2696,6 +3141,30 @@ export default function BookingActivityScreen({
                     </View>
                 </View>
             </Modal>
+
+            {/* Booking Status */}
+            <CustomModal visible={showBookingStatusModal} onClose={() => setShowBookingStatusModal(false)}>
+                <View className="p-4 border-b border-gray-200"><Text className="text-lg font-semibold">Select Booking Status</Text></View>
+                <ScrollView>
+                    {bookingStatusOptions.map((option) => (
+                        <TouchableOpacity
+                            key={option.key}
+                            onPress={() => {
+                                setBookingStatus(option.key);
+                                setShowBookingStatusModal(false);
+                            }}
+                            className="p-4 border-b border-gray-100"
+                        >
+                            <Text className={`text-gray-800 ${bookingStatus === option.key ? 'font-bold text-teal-700' : ''}`}>
+                                {option.title}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+                <TouchableOpacity onPress={() => setShowBookingStatusModal(false)} className="p-4 border-t border-gray-200">
+                    <Text className="text-center text-gray-600">Cancel</Text>
+                </TouchableOpacity>
+            </CustomModal>
 
             {/* EMI Start Date Calendar */}
             <Modal visible={showEmiStartDateModal} transparent animationType="fade" onRequestClose={() => setShowEmiStartDateModal(false)}>
