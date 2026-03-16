@@ -2,6 +2,9 @@
 
 # dependencies
 node_modules/
+autoinn-fe/
+FigmaDesign2/
+autoinn-be-old/
 
 # Expo
 .expo/
@@ -32,6 +35,7 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env.dev
 
 # typescript
 *.tsbuildinfo

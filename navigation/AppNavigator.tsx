@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -12,9 +13,20 @@ import QuotationFormScreen from '../screens/quotation/QuotationFormScreen';
 import QuotationViewScreen from '../screens/quotation/QuotationViewScreen';
 import FollowUpDetailScreen from '../screens/follow-ups/FollowUpDetailScreen';
 import FollowUpFiltersScreen from '../screens/follow-ups/FollowUpFiltersScreen';
+import FollowUpsScreen from '../screens/follow-ups/FollowUpsScreen';
 import BookingRegisterScreen from '../screens/booking/BookingRegisterScreen';
-import CustomerDetailsScreen from '../screens/customer/CustomerDetailsScreen';
-
+import CustomerDetailsScreen from '../screens/cunstomerNew/CustomerDetailsScreen';
+import BookingActivityScreen from '../screens/follow-ups/BookingActivityScreen';
+import BookingConfirmActivityScreen from '../screens/follow-ups/BookingConfirmActivityScreen';
+import WalkInActivityScreen from '../screens/follow-ups/WalkInActivityScreen';
+import CallActivityScreen from '../screens/follow-ups/CallActivityScreen';
+import ActivityViewEditScreen from '../screens/follow-ups/ActivityViewEditScreen';
+import SelectVehicleForBookingScreen from '../screens/vehicle-selection/SelectVehicleForBookingScreen';
+import SelectVehicleColorScreen from '../screens/vehicle-selection/SelectVehicleColorScreen';
+import ColorSelectionScreen from '../screens/vehicle-selection/ColorSelectionScreen';
+import VehicleDetailsScreen from '../screens/customer/VehicleDetailsScreen';
+import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
+import ConfirmBookingScreen from '../screens/customer/ConfirmBookingScreen';
 import { RootStackParamList } from './types';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -38,9 +50,21 @@ export default function AppNavigator() {
             <Stack.Screen name="AddQuotation" component={AddQuotationScreen} />
             <Stack.Screen name="AdvancedFilters" component={AdvancedFiltersScreen} />
             <Stack.Screen name="FollowUpFilters" component={FollowUpFiltersScreen} />
-            <Stack.Screen name="FollowUpDetail" component={FollowUpDetailScreen} />
             <Stack.Screen name="BookingRegister" component={BookingRegisterScreen} />
             <Stack.Screen name="CustomerDetails" component={CustomerDetailsScreen} />
+            <Stack.Screen name="ConfirmBooking" component={ConfirmBookingScreen} />
+            <Stack.Screen name="BookingActivity" component={BookingActivityScreen} />
+            <Stack.Screen name="BookingConfirmActivity" component={BookingConfirmActivityScreen} />
+            <Stack.Screen name="WalkInActivity" component={WalkInActivityScreen} />
+            <Stack.Screen name="CallActivity" component={CallActivityScreen} />
+            <Stack.Screen name="ActivityViewEdit" component={ActivityViewEditScreen} />
+            <Stack.Screen name="SelectVehicleForBooking" component={SelectVehicleForBookingScreen} />
+            <Stack.Screen name="SelectVehicleColor" component={SelectVehicleColorScreen} />
+            <Stack.Screen name="ColorSelection" component={ColorSelectionScreen} />
+            <Stack.Screen name="VehicleDetails" component={VehicleDetailsScreen} />
+            <Stack.Screen name="AdvancedBooking" component={AdvancedBookingScreen} />
+            <Stack.Screen name="FollowUps" component={FollowUpsScreen} />
+            <Stack.Screen name="FollowUpDetail" component={FollowUpDetailScreen} />
         </Stack.Navigator>
     );
 }

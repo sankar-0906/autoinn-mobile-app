@@ -7,13 +7,42 @@ import { StatusBar } from 'expo-status-bar';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+// Debug: Catch AttachQuotationModal errors
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (args[0] && typeof args[0] === 'string' && args[0].includes('AttachQuotationModal')) {
+    console.log('🐛 AttachQuotationModal Error Caught:', args);
+    console.log('🐛 Stack Trace:', new Error().stack);
+  }
+  originalConsoleError(...args);
+};
+
+// React Native error handling
+import { LogBox } from 'react-native';
+
+LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
+
+// Custom error handler for React Native
+const originalErrorHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error, isFatal) => {
+  if (error.message && error.message.includes('AttachQuotationModal')) {
+    console.log('🐛 React Native AttachQuotationModal Error:', error);
+    console.log('🐛 Error Stack:', error.stack);
+  }
+  originalErrorHandler(error, isFatal);
+});
+
+import { ToastProvider } from './src/ToastContext';
+
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <AppNavigator />
-        </NavigationContainer>
+        <ToastProvider>
+          <NavigationContainer>
+            <AppNavigator />
+          </NavigationContainer>
+        </ToastProvider>
         <StatusBar style="auto" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

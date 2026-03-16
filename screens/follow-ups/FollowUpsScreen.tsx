@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     TextInput,
     Image,
+    DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, Calendar, User, Smartphone } from 'lucide-react-native';
@@ -93,14 +94,22 @@ export default function FollowUpsScreen({ navigation }: { navigation: FollowUpsN
     }, [currentPage, itemsPerPage, searchQuery, activeTab]);
 
     useEffect(() => {
-        fetchFollowUps();
+        setCurrentPage(1);
+    }, [searchQuery, activeTab, itemsPerPage]);
+
+    // Listen for quotation status updates to refresh FollowUps
+    useEffect(() => {
+        const subscription = DeviceEventEmitter.addListener('refreshFollowUps', () => {
+            console.log('📡 Received refreshFollowUps event, refreshing data...');
+            fetchFollowUps();
+        });
+
+        return () => {
+            subscription.remove();
+        };
     }, [fetchFollowUps]);
 
     const totalPages = Math.max(1, Math.ceil(count / itemsPerPage));
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [searchQuery, activeTab, itemsPerPage]);
 
     const paginationWindow = useMemo(() => {
         let start = Math.max(1, currentPage - 2);

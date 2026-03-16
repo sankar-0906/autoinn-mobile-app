@@ -1,32 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
-    ScrollView,
-    TouchableOpacity,
     TextInput,
+    TouchableOpacity,
+    Modal,
+    ScrollView,
     KeyboardAvoidingView,
     Platform,
+    Alert,
     RefreshControl,
-    Modal,
-    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../navigation/types';
-import {
-    Calendar,
-    FileText,
-    ChevronDown,
-    Clock,
-    ChevronLeft,
-} from 'lucide-react-native';
+import { RouteProp } from '@react-navigation/native';
+import { useToast } from '../../src/ToastContext';
+import { Search, ChevronRight, Plus, FileText, X, Calendar, ChevronDown, Clock, ChevronLeft, Edit2 } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getBranches, getCustomerByPhoneNo, getUsers } from '../../src/api';
+import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQuotationId } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
+import { TimePickerModal } from '../../components/TimePickerModal';
+import { RootStackParamList } from '../../navigation/types';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -42,6 +38,34 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
 const ErrorText = ({ message }: { message?: string }) =>
     message ? <Text className="text-xs text-red-600 mt-1">⚠ {message}</Text> : null;
 
+// Custom Modal component (same as CallActivityScreen)
+const CustomModal = ({
+    visible,
+    children,
+    onClose,
+}: {
+    visible: boolean;
+    children: React.ReactNode;
+    onClose: () => void;
+}) => {
+    if (!visible) return null;
+
+    return (
+        <Modal
+            visible={visible}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={onClose}
+        >
+            <View className="flex-1 bg-black/40 justify-center items-center px-4">
+                <View className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+                    {children}
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
 // Reusable picker/select field
 const SelectField = ({
     placeholder,
@@ -50,6 +74,8 @@ const SelectField = ({
     onSelect,
     disabled = false,
     error,
+    modalVisible,
+    setModalVisible,
 }: {
     placeholder: string;
     value: string;
@@ -57,16 +83,16 @@ const SelectField = ({
     onSelect: (val: string) => void;
     disabled?: boolean;
     error?: string;
+    modalVisible: boolean;
+    setModalVisible: (visible: boolean) => void;
 }) => {
-    const [open, setOpen] = useState(false);
     const selectedLabel = options.find((o) => o.value === value)?.label || '';
-    const listHeight = Math.min(options.length, 5) * 44 + 8;
 
     return (
-        <View style={{ position: 'relative', zIndex: open ? 50 : 1 }}>
+        <>
             <TouchableOpacity
                 onPress={() => {
-                    if (!disabled) setOpen(!open);
+                    if (!disabled) setModalVisible(true);
                 }}
                 className={`rounded-xl px-4 h-12 flex-row items-center justify-between border ${disabled ? 'bg-gray-100 border-gray-200' : error ? 'bg-white border-red-500' : 'bg-white border-gray-200'}`}
             >
@@ -75,36 +101,32 @@ const SelectField = ({
                 </Text>
                 <ChevronDown size={18} color={COLORS.gray[400]} />
             </TouchableOpacity>
-            {open && (
-                <View
-                    style={{
-                        position: 'absolute',
-                        top: 52,
-                        left: 0,
-                        right: 0,
-                        zIndex: 100,
-                        elevation: 10,
-                    }}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-                >
-                    {options.map((opt) => (
-                        <TouchableOpacity
-                            key={opt.value}
-                            onPress={() => {
-                                onSelect(opt.value);
-                                setOpen(false);
-                            }}
-                            className={`px-4 py-3 border-b border-gray-50 ${value === opt.value ? 'bg-teal-50' : ''}`}
-                        >
-                            <Text className={`text-sm ${value === opt.value ? 'text-teal-700 font-bold' : 'text-gray-700'}`}>
-                                {opt.label}
-                            </Text>
+
+            <CustomModal visible={modalVisible} onClose={() => setModalVisible(false)}>
+                <View className="p-4">
+                    <View className="flex-row items-center justify-between mb-4">
+                        <Text className="text-gray-900 font-bold text-base">{placeholder}</Text>
+                        <TouchableOpacity onPress={() => setModalVisible(false)} className="p-1">
+                            <ChevronDown size={20} color="#6b7280" style={{ transform: [{ rotate: '180deg' }] }} />
                         </TouchableOpacity>
-                    ))}
+                    </View>
+                    <ScrollView className="max-h-64">
+                        {options.map((opt) => (
+                            <TouchableOpacity
+                                key={opt.value}
+                                onPress={() => {
+                                    onSelect(opt.value);
+                                    setModalVisible(false);
+                                }}
+                                className="py-3 border-b border-gray-50 last:border-b-0"
+                            >
+                                <Text className="text-gray-900">{opt.label}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
                 </View>
-            )}
-            {open && <View style={{ height: listHeight }} />}
-        </View>
+            </CustomModal>
+        </>
     );
 };
 
@@ -131,7 +153,7 @@ const RadioOption = ({
 );
 
 export default function AddQuotationScreen({ navigation, route }: any) {
-    const selectedVehicle = route.params?.selectedVehicle;
+    const initialSelectedVehicle = route.params?.selectedVehicle;
 
     // Form state
     const [branch, setBranch] = useState('');
@@ -142,7 +164,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [customerType, setCustomerType] = useState('');
     const [locality, setLocality] = useState('');
     const [followUpDate, setFollowUpDate] = useState('');
-    const [followUpTime, setFollowUpTime] = useState('');
+    const [followUpTime, setFollowUpTime] = useState('12:00');
     const [followUpDateError, setFollowUpDateError] = useState('');
     const [expectedPurchaseDateError, setExpectedPurchaseDateError] = useState('');
     const [leadSource, setLeadSource] = useState('');
@@ -151,8 +173,18 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [enquiryType, setEnquiryType] = useState('');
     const [remarks, setRemarks] = useState('');
     const [localityEditable, setLocalityEditable] = useState(false);
+    const [foundCustomerId, setFoundCustomerId] = useState<string | null>(null);
     const [lookupStatus, setLookupStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const lastLookupRef = useRef('');
+
+    // Multi-vehicle state (like web app)
+    const [selectedVehicles, setSelectedVehicles] = useState<any[]>(() => 
+        initialSelectedVehicle ? [initialSelectedVehicle] : []
+    );
+    const [editingVehicleIndex, setEditingVehicleIndex] = useState<number | null>(null);
+    
+    // Associated vehicles state (like web app) - from customer.purchasedVehicle
+    const [associatedVehicles, setAssociatedVehicles] = useState<any[]>([]);
 
     const [branchOptions, setBranchOptions] = useState<Array<{ label: string; value: string }>>([]);
     const [executiveOptions, setExecutiveOptions] = useState<Array<{ label: string; value: string }>>([]);
@@ -164,25 +196,159 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [refreshing, setRefreshing] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+    const [saving, setSaving] = useState(false);
+    const toast = useToast();
+
     const clearFieldError = (key: string) => setFieldErrors(prev => ({ ...prev, [key]: '' }));
+
+    // Multi-vehicle management functions (like web app)
+    const addVehicle = (vehicle: any) => {
+        console.log('🚀 Adding vehicle with paymentDetails:', vehicle.paymentDetails);
+        
+        const vehicleData = {
+            ...vehicle,
+            vehicleDetail: { id: vehicle.id, modelName: vehicle.name },
+            // Preserve original price structure for colors and images
+            originalPrice: vehicle.price, // Store original price with colors
+            price: vehicle.priceDetails?.breakdown || {},
+            priceDetails: vehicle.priceDetails,
+            // Preserve payment details properly - don't override with defaults
+            paymentDetails: vehicle.paymentDetails || {
+                paymentType: 'cash',
+                financerId: null,
+                downPayment: null,
+                financerTenure: { data: [] },
+            },
+        };
+        
+        console.log('✅ Final vehicleData paymentDetails:', vehicleData.paymentDetails);
+        setSelectedVehicles([...selectedVehicles, vehicleData]);
+    };
+
+    const removeVehicle = (index: number) => {
+        const newVehicles = [...selectedVehicles];
+        newVehicles.splice(index, 1);
+        setSelectedVehicles(newVehicles);
+    };
+
+    const editVehicle = (index: number) => {
+        setEditingVehicleIndex(index);
+        const vehicle = selectedVehicles[index];
+        // Open in VIEW MODE (like web) - read-only with Price → Payment steps
+        // Ensure we pass complete vehicle data including original price for colors
+        navigation.navigate('SelectPrice', {
+            vehicleId: vehicle.vehicleDetail?.id || vehicle.id,
+            vehicleData: {
+                ...vehicle,
+                // Preserve original price structure for colors/image
+                price: vehicle.originalPrice || vehicle.price,
+                // Keep existing data
+                priceDetails: vehicle.priceDetails,
+                paymentDetails: vehicle.paymentDetails,
+                vehicleDetail: vehicle.vehicleDetail,
+            },
+            returnTo: 'AddQuotation',
+            viewMode: true, // View mode like web
+            paymentDetails: vehicle.paymentDetails,
+        });
+    };
+
+    const editVehicleInEditMode = (index: number) => {
+        setEditingVehicleIndex(index);
+        const vehicle = selectedVehicles[index];
+        // Open in EDIT MODE - full editing capabilities
+        // Ensure we pass complete vehicle data including original price for colors
+        navigation.navigate('SelectPrice', {
+            vehicleId: vehicle.vehicleDetail?.id || vehicle.id,
+            vehicleData: {
+                ...vehicle,
+                // Preserve original price structure for colors/image
+                price: vehicle.originalPrice || vehicle.price,
+                // Keep existing data
+                priceDetails: vehicle.priceDetails,
+                paymentDetails: vehicle.paymentDetails,
+                vehicleDetail: vehicle.vehicleDetail,
+            },
+            returnTo: 'AddQuotation',
+            viewMode: false, // Edit mode
+            paymentDetails: vehicle.paymentDetails,
+        });
+    };
+
+    const handleVehicleSelectionReturn = (route: any) => {
+        const { selectedVehicle: returnedVehicle, vehicleData, paymentDetails: returnedPaymentDetails } = route.params || {};
+        console.log('🔄 AddQuotation - Vehicle selection return:', {
+            returnedVehicle,
+            vehicleData,
+            returnedPaymentDetails
+        });
+        
+        if (returnedVehicle || vehicleData) {
+            const vehicle = returnedVehicle || vehicleData;
+            
+            // Ensure paymentDetails are properly attached to the vehicle
+            const updatedVehicle = {
+                ...vehicle,
+                paymentDetails: returnedPaymentDetails || vehicle.paymentDetails
+            };
+            
+            console.log('🚀 AddQuotation - Final vehicle with paymentDetails:', updatedVehicle);
+            
+            if (editingVehicleIndex !== null) {
+                // Update existing vehicle
+                const newVehicles = [...selectedVehicles];
+                newVehicles[editingVehicleIndex] = updatedVehicle;
+                setSelectedVehicles(newVehicles);
+                setEditingVehicleIndex(null);
+            } else {
+                // Add new vehicle
+                addVehicle(updatedVehicle);
+            }
+        }
+    };
+
+    // Handle vehicle selection return from navigation
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            handleVehicleSelectionReturn(route);
+        });
+        return unsubscribe;
+    }, [route.params]);
 
     const validate = () => {
         const errors: Record<string, string> = {};
+
         if (!branch) errors.branch = 'Branch is required';
         if (!salesExecutive) errors.salesExecutive = 'Sales Executive is required';
-        if (!customerPhone || customerPhone.replace(/\D/g, '').length !== 10) errors.customerPhone = 'Valid 10-digit phone is required';
+        if (!customerPhone || customerPhone.replace(/\D/g, '').length !== 10) {
+            errors.customerPhone = 'Valid 10-digit phone is required';
+        }
         if (!customerName.trim()) errors.customerName = 'Customer Name is required';
         if (!locality.trim()) errors.locality = 'Locality is required';
-        if (!followUpDate.trim()) errors.followUpDate = 'Follow-Up Date is required';
-        if (followUpDate.trim() && isPastDate(followUpDate)) errors.followUpDate = 'Past date not allowed';
-        if (!followUpTime.trim()) errors.followUpTime = 'Follow-Up Time is required';
+        if (!followUpDate.trim()) {
+            errors.followUpDate = 'Follow-Up Date is required';
+        } else if (isPastDate(followUpDate)) {
+            errors.followUpDate = 'Past follow-up date not allowed';
+        }
+        if (!followUpTime.trim()) setFollowUpTime('12:00');
         if (!leadSource) errors.leadSource = 'Lead Source is required';
-        if (!expectedPurchaseDate.trim()) errors.expectedPurchaseDate = 'Expected Purchase Date is required';
-        if (expectedPurchaseDate.trim() && isPastDate(expectedPurchaseDate)) errors.expectedPurchaseDate = 'Past date not allowed';
+        if (!expectedPurchaseDate.trim()) {
+            errors.expectedPurchaseDate = 'Expected Purchase Date is required';
+        } else if (isPastDate(expectedPurchaseDate)) {
+            errors.expectedPurchaseDate = 'Past purchase date not allowed';
+        }
         if (!enquiryType) errors.enquiryType = 'Enquiry Type is required';
-        if (!selectedVehicle) errors.vehicleName = 'Please select a vehicle';
+        if (selectedVehicles.length === 0) errors.vehicleName = 'Please select at least one vehicle';
+
         setFieldErrors(errors);
-        return Object.keys(errors).every(k => !errors[k]);
+
+        const errorKeys = Object.keys(errors).filter(k => !!errors[k]);
+        if (errorKeys.length > 0) {
+            const firstError = errors[errorKeys[0]];
+            toast.error(firstError);
+            return false;
+        }
+        return true;
     };
 
     const leadSources = useMemo(
@@ -218,13 +384,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     );
 
     const followUpEnabled = !!followUpDate?.trim();
-    const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
-    const [selectedHour, setSelectedHour] = useState<number | null>(null);
-    const [selectedMinute, setSelectedMinute] = useState<number | null>(null);
-    const timeFieldRef = useRef<View | null>(null);
-    const [timeDropdownLayout, setTimeDropdownLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [showFollowUpPicker, setShowFollowUpPicker] = useState(false);
     const [showExpectedPicker, setShowExpectedPicker] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    const [showExecutiveModal, setShowExecutiveModal] = useState(false);
+    const [showCustomerTypeModal, setShowCustomerTypeModal] = useState(false);
+    const [showLeadSourceModal, setShowLeadSourceModal] = useState(false);
+    const [showEnquiryTypeModal, setShowEnquiryTypeModal] = useState(false);
 
     const parseDateInput = (value: string) => {
         const parts = value.split(/[\/\-]/).map((p) => p.trim());
@@ -249,25 +416,10 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     };
 
     const buildHourOptions = () => {
-        const now = new Date();
-        const currentHour = now.getHours();
-        const start = currentHour === 0 ? 1 : currentHour;
-        return Array.from({ length: 23 - start }, (_, idx) => start + idx);
+        return Array.from({ length: 14 }, (_, idx) => idx + 1);
     };
 
-    const minuteOptions = [15, 30, 45];
 
-    const openTimeDropdown = () => {
-        if (!followUpEnabled) return;
-        if (timeFieldRef.current && typeof (timeFieldRef.current as any).measureInWindow === 'function') {
-            (timeFieldRef.current as any).measureInWindow((x: number, y: number, width: number, height: number) => {
-                setTimeDropdownLayout({ x, y, width, height });
-                setTimeDropdownOpen(true);
-            });
-        } else {
-            setTimeDropdownOpen(true);
-        }
-    };
 
     const autoSelectExecutive = (execId?: string, execName?: string) => {
         if (execId && executiveOptions.some((e) => e.value === execId)) {
@@ -337,6 +489,20 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         value: user.id,
                     }));
                 setExecutiveOptions(filtered);
+                // Auto-select the first executive if none is selected or matches pending
+                if (filtered.length > 0) {
+                    if (pendingExecutive?.id) {
+                        const match = filtered.find((o: any) => o.value === pendingExecutive.id);
+                        if (match) setSalesExecutive(match.value);
+                        else setSalesExecutive(filtered[0].value);
+                    } else if (pendingExecutive?.name) {
+                        const match = filtered.find((o: any) => o.label.includes(pendingExecutive.name!));
+                        if (match) setSalesExecutive(match.value);
+                        else setSalesExecutive(filtered[0].value);
+                    } else if (!salesExecutive) {
+                        setSalesExecutive(filtered[0].value);
+                    }
+                }
             } else {
                 setExecutiveOptions([]);
             }
@@ -349,7 +515,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
     const hydrateCustomer = (cust: any) => {
         if (!cust) return;
-        setCustomerName(cust.name || '');
+        setFoundCustomerId(cust.id || null);
+        setCustomerName(cust.name || cust.customerName || '');
         const g = String(cust.gender || '').toLowerCase();
         if (g === 'female' || g === 'male') setGender(g);
         const custType = cust.customerType || cust.type;
@@ -362,6 +529,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         }
         setLocality(cust.address?.locality || cust.locality || '');
         if (cust.leadSource) setLeadSource(cust.leadSource);
+
+        const vehiclesRaw = cust.purchasedVehicle || cust.vehicle || [];
+        const mappedVehicles = Array.isArray(vehiclesRaw) ? vehiclesRaw.map((v: any) => ({
+            regNo: v?.registerNo || v?.regNo || v?.registrationNo || '-',
+            name: v?.vehicle?.vehicleDetail?.modelName || v?.vehicleDetail?.modelName || v?.modelName || '-',
+        })) : [];
+        setAssociatedVehicles(mappedVehicles);
+
         setLocalityEditable(false);
 
         const execId =
@@ -379,12 +554,13 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     };
 
     const clearCustomerFields = () => {
+        setFoundCustomerId(null);
         setCustomerName('');
         setCustomerType('');
         setLocality('');
         setLeadSource('');
-        setPendingExecutive(null);
         setGender('male');
+        setAssociatedVehicles([]);
     };
 
     const lookupCustomerByPhone = async (phone: string) => {
@@ -541,11 +717,12 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={branchOptions}
                                 onSelect={(v) => { setBranch(v); clearFieldError('branch'); }}
                                 error={fieldErrors.branch}
+                                modalVisible={showBranchModal}
+                                setModalVisible={setShowBranchModal}
                             />
                             {loadingBranches && (
                                 <Text className="text-xs text-gray-400 mt-1">Loading branches...</Text>
                             )}
-                            <ErrorText message={fieldErrors.branch} />
                         </View>
 
                         <View>
@@ -556,6 +733,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={executiveOptions}
                                 onSelect={(v) => { setSalesExecutive(v); clearFieldError('salesExecutive'); }}
                                 error={fieldErrors.salesExecutive}
+                                modalVisible={showExecutiveModal}
+                                setModalVisible={setShowExecutiveModal}
                             />
                             {loadingExecutives && (
                                 <Text className="text-xs text-gray-400 mt-1">Loading executives...</Text>
@@ -648,7 +827,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 value={customerType}
                                 options={customerTypes}
                                 onSelect={setCustomerType}
-                                disabled
+                                modalVisible={showCustomerTypeModal}
+                                setModalVisible={setShowCustomerTypeModal}
                             />
                         </View>
 
@@ -708,20 +888,20 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         {/* Follow-Up Time */}
                         <View className="mb-4">
                             <FormLabel label="Schedule Follow-Up Time" required />
-                            <View ref={timeFieldRef} className="relative" style={{ zIndex: timeDropdownOpen ? 60 : 1 }}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        openTimeDropdown();
-                                    }}
-                                    activeOpacity={0.7}
-                                    className={`border rounded-xl px-3 h-11 flex-row items-center justify-between ${followUpEnabled ? (fieldErrors.followUpTime ? 'bg-white border-red-500' : 'bg-white border-gray-200') : 'bg-gray-100 border-gray-200'}`}
-                                >
-                                    <Text className={followUpTime ? 'text-gray-900' : 'text-gray-400'}>
-                                        {followUpTime || 'Select hour'}
-                                    </Text>
-                                    <Clock size={18} color={COLORS.gray[400]} />
-                                </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (followUpEnabled) {
+                                        setShowTimePicker(true);
+                                    }
+                                }}
+                                activeOpacity={0.7}
+                                className={`border rounded-xl px-3 h-11 flex-row items-center justify-between ${followUpEnabled ? (fieldErrors.followUpTime ? 'bg-white border-red-500' : 'bg-white border-gray-200') : 'bg-gray-100 border-gray-200'}`}
+                            >
+                                <Text className={followUpTime ? 'text-gray-900' : 'text-gray-400'}>
+                                    {followUpTime || 'Select time'}
+                                </Text>
+                                <Clock size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
                             <ErrorText message={fieldErrors.followUpTime} />
                         </View>
 
@@ -734,6 +914,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 options={leadSources}
                                 onSelect={(v) => { setLeadSource(v); clearFieldError('leadSource'); }}
                                 error={fieldErrors.leadSource}
+                                modalVisible={showLeadSourceModal}
+                                setModalVisible={setShowLeadSourceModal}
                             />
                             <ErrorText message={fieldErrors.leadSource} />
                         </View>
@@ -806,23 +988,103 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 placeholder="Enquiry Type"
                                 value={enquiryType}
                                 options={enquiryTypes}
+                                modalVisible={showEnquiryTypeModal}
+                                setModalVisible={setShowEnquiryTypeModal}
                                 onSelect={(v) => { setEnquiryType(v); clearFieldError('enquiryType'); }}
                                 error={fieldErrors.enquiryType}
                             />
                             <ErrorText message={fieldErrors.enquiryType} />
                         </View>
 
-                        {/* Vehicle Name */}
+                        {/* Vehicle Name - Multi-vehicle Tag Display */}
                         <View className="mb-4">
                             <FormLabel label="Vehicle Name" required />
+                            
+                            {/* Vehicle Tags Display (like web app) */}
+                            <View className="flex-row flex-wrap gap-2 mb-3">
+                                {selectedVehicles.length > 0 ? (
+                                    selectedVehicles.map((vehicle, index) => {
+                                        // Get the model name from various possible fields
+                                        const modelName = vehicle.name || 
+                                                         vehicle.vehicleDetail?.modelName || 
+                                                         vehicle.modelName || 
+                                                         vehicle.model?.modelName ||
+                                                         `Vehicle ${index + 1}`;
+                                        
+                                        console.log(`🏷️ Tag ${index}:`, { modelName, vehicle });
+                                        
+                                        return (
+                                            <View 
+                                                key={index}
+                                                className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 flex-row items-center min-w-[120px]"
+                                            >
+                                                {/* Main tag text - VIEW MODE (like web) */}
+                                                <TouchableOpacity
+                                                    onPress={() => editVehicle(index)}
+                                                    className="flex-1 min-w-[80px]"
+                                                >
+                                                    <Text 
+                                                        className="text-teal-800 font-bold text-sm" 
+                                                        numberOfLines={2}
+                                                        ellipsizeMode="tail"
+                                                        style={{ minWidth: 80 }}
+                                                    >
+                                                        {modelName}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                                
+                                                {/* Edit button - EDIT MODE (like web) */}
+                                                <TouchableOpacity
+                                                    onPress={() => editVehicleInEditMode(index)}
+                                                    className="ml-1 bg-blue-500 rounded-full w-5 h-5 items-center justify-center flex-shrink-0"
+                                                >
+                                                    <Edit2 size={12} color="white" />
+                                                </TouchableOpacity>
+                                                
+                                                {/* Delete button */}
+                                                <TouchableOpacity
+                                                    onPress={() => removeVehicle(index)}
+                                                    className="ml-1 bg-teal-600 rounded-full w-5 h-5 items-center justify-center flex-shrink-0"
+                                                >
+                                                    <Text className="text-white text-xs leading-none">×</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        );
+                                    })
+                                ) : (
+                                    <Text className="text-gray-400 text-sm italic">No vehicles selected</Text>
+                                )}
+                            </View>
+
+                            {/* Instructions */}
+                            <View className="mb-3 flex-row gap-4">
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-teal-600 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Tap to view</Text>
+                                </View>
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-blue-500 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Edit</Text>
+                                </View>
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-red-500 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Remove</Text>
+                                </View>
+                            </View>
+
+                            {/* Add Vehicle Button */}
                             <TouchableOpacity
-                                onPress={() => { navigation.navigate('SelectModel'); clearFieldError('vehicleName'); }}
+                                onPress={() => {
+                                    setEditingVehicleIndex(null);
+                                    navigation.navigate('SelectModel', { returnTo: 'AddQuotation' });
+                                    clearFieldError('vehicleName');
+                                }}
                                 className={`bg-white border rounded-xl px-4 h-12 flex-row items-center justify-center ${fieldErrors.vehicleName ? 'border-red-500' : 'border-gray-200'}`}
                                 activeOpacity={0.7}
                             >
-                                <FileText size={16} color={COLORS.primary} />
+                                <Plus size={16} color={COLORS.primary} />
                                 <Text className="text-teal-600 font-bold ml-2">
-                                    {selectedVehicle ? selectedVehicle.name : 'Select Vehicle'}
+                                    Add Vehicle
                                 </Text>
                             </TouchableOpacity>
                             <ErrorText message={fieldErrors.vehicleName} />
@@ -836,9 +1098,19 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                     <Text className="text-white text-sm font-bold flex-1">Reg No.</Text>
                                     <Text className="text-white text-sm font-bold flex-1">Vehicle</Text>
                                 </View>
-                                <View className="py-8 items-center justify-center">
-                                    <Text className="text-gray-400 text-sm">No Data</Text>
-                                </View>
+                                {associatedVehicles.length > 0 ? (
+                                    associatedVehicles.map((vehicle, index) => (
+                                        <View key={`${vehicle.regNo || 'assoc'}-${index}`} className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
+                                            <Text className="text-gray-600 text-sm flex-1">{vehicle.regNo || '-'}</Text>
+                                            <Text className="text-gray-900 text-sm flex-1 font-medium">{vehicle.name || '-'}</Text>
+                                            <View className="w-4" />
+                                        </View>
+                                    ))
+                                ) : (
+                                    <View className="py-8 items-center justify-center">
+                                        <Text className="text-gray-400 text-sm">No Data</Text>
+                                    </View>
+                                )}
                             </View>
                         </View>
                     </View>
@@ -916,11 +1188,126 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                     onPress={() => navigation.navigate('Main', { screen: 'Quotations' })}
                 />
                 <Button
-                    title="Save"
+                    title={saving ? "Saving..." : "Save"}
                     className="flex-1"
-                    onPress={() => {
-                        if (validate()) {
-                            navigation.navigate('Main', { screen: 'Quotations' });
+                    disabled={saving}
+                    onPress={async () => {
+
+                        if (!validate()) return;
+                        setSaving(true);
+                        try {
+                            const genRes = await generateQuotationId(branch);
+                            const genData = genRes.data;
+                            if (genData.code !== 200 || genData.response?.code !== 200) {
+                                throw new Error('Failed to generate Quotation ID');
+                            }
+                            const { QuotationId, id: seqId, customerId } = genData.response.data;
+
+                            const finalFollowUpTime = followUpTime.trim() || '12:00';
+                            
+                            // Build vehicle array matching autoinn-fe flat format (multi-vehicle support)
+                            // autoinn-fe sends: { vehicleDetail: modelId, price: priceObj, paymentDetails: {...}, financer, downPayment, financerTenure }
+                            const vehicleArr = selectedVehicles.map((vehicle) => {
+                                // Use paymentDetails from SelectPayment (correct structure)
+                                const paymentDetails = vehicle.paymentDetails || {};
+                                const tenureData = paymentDetails?.financerTenure || { data: [] };
+
+                                const priceObj = {
+                                    showroomPrice: Number(vehicle.priceDetails?.breakdown?.showroomPrice || vehicle.priceDetails?.totalAmount || 0),
+                                    roadTax: Number(vehicle.priceDetails?.breakdown?.roadTax || 0),
+                                    handlingCharges: Number(vehicle.priceDetails?.breakdown?.handlingCharges || 0),
+                                    registrationFee: Number(vehicle.priceDetails?.breakdown?.registrationFee || 0),
+                                    tcs: Number(vehicle.priceDetails?.breakdown?.tcs || 0),
+                                    insuranceVId: null,
+                                    totalAmount: Number(vehicle.priceDetails?.totalAmount || 0),
+                                    insurance1plus5: Number(vehicle.priceDetails?.breakdown?.insurance1plus5 || 0),
+                                    insurance5plus5: Number(vehicle.priceDetails?.breakdown?.insurance5plus5 || 0),
+                                    insurance1plus5ZD: Number(vehicle.priceDetails?.breakdown?.insurance1plus5ZD || 0),
+                                    insurance5plus5ZD: Number(vehicle.priceDetails?.breakdown?.insurance5plus5ZD || 0),
+                                    warrantyPrice: Number(vehicle.priceDetails?.breakdown?.warrantyPrice || 0),
+                                    amc: Number(vehicle.priceDetails?.breakdown?.amc || 0),
+                                    rsa: Number(vehicle.priceDetails?.breakdown?.rsa || 0),
+                                    otherCharges: Number(vehicle.priceDetails?.breakdown?.otherCharges || 0),
+                                    discount: Number(vehicle.priceDetails?.breakdown?.discount || 0),
+                                };
+
+                                console.log('🚀 Building vehicle with paymentDetails:', paymentDetails);
+
+                                return {
+                                    vehicleDetail: { id: String(vehicle.vehicleDetail?.id || vehicle.id), modelName: vehicle.vehicleDetail?.modelName || vehicle.name || '' },
+                                    price: priceObj,
+                                    paymentDetails: {
+                                        paymentType: paymentDetails?.paymentType || 'cash',
+                                        financerId: paymentDetails?.financerId || null,
+                                        downPayment: paymentDetails?.downPayment || null,
+                                        financerTenure: tenureData,
+                                    },
+                                    financer: paymentDetails?.paymentType === 'finance' ? (paymentDetails?.financerId || null) : null,
+                                    downPayment: paymentDetails?.paymentType === 'finance' ? (paymentDetails?.downPayment || null) : null,
+                                    financerTenure: paymentDetails?.paymentType === 'finance' ? tenureData : { data: [] },
+                                };
+                            });
+
+                            // Build quotation matching autoinn-fe structure exactly
+                            // autoinn-fe spreads ...provisional (proCustomer data) into the quotation
+                            const quotationObj: any = {
+                                // ProCustomer fields (spread like ...provisional in autoinn-fe)
+                                name: customerName.trim().toUpperCase(),
+                                gender: gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase(),
+                                locality: locality.trim().toUpperCase(),
+                                phone: customerPhone,
+                                // Quotation fields
+                                quotationId: QuotationId,
+                                id: seqId,
+                                branch: branch,
+                                quotationPhone: customerPhone,
+                                customerName: customerName.trim().toUpperCase(),
+                                leadSource: leadSource,
+                                testDriveTaken: testDriveTaken === 'yes',
+                                enquiryType: enquiryType.charAt(0).toUpperCase() + enquiryType.slice(1).toLowerCase(),
+                                remarks: remarks,
+                                executive: salesExecutive,
+                                customerType: customerType || 'Non Customer',
+                                scheduleDate: followUpDate.replace(/\//g, '-'),
+                                scheduleTime: finalFollowUpTime + ':00',
+                                expectedDateOfPurchase: expectedPurchaseDate.replace(/\//g, '-'),
+                                vehicle: vehicleArr,
+                            };
+
+
+
+                            if (lookupStatus?.type === 'success' && foundCustomerId) {
+                                quotationObj.customer = foundCustomerId;
+                                quotationObj.customerId = null;
+                            } else {
+                                quotationObj.customer = null;
+                                quotationObj.customerId = customerId;
+                            }
+
+
+                            const formData = new FormData();
+                            formData.append('finalData', JSON.stringify(quotationObj));
+
+                            const createRes = await createQuotation(formData);
+
+                            if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
+                                toast.success('Quotation saved successfully');
+                                
+                                // Go back to QuotationList page (correct flow)
+                                console.log('🚀 Quotation saved, going back to QuotationList');
+                                navigation.navigate('Main', { screen: 'Quotations' });
+                            } else {
+                                const errMsg = createRes.data.response?.message || createRes.data.message || 'Unable to save quotation';
+                                toast.error(errMsg);
+                            }
+                        } catch (err: any) {
+
+                            let errMsg = err.message || 'Something went wrong while saving';
+                            if (err.response?.data?.response?.message) errMsg = err.response.data.response.message;
+                            else if (err.response?.data?.message) errMsg = err.response.data.message;
+                            toast.error(errMsg);
+                        } finally {
+                            setSaving(false);
                         }
                     }}
                 />
@@ -1010,95 +1397,14 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                 </View>
             </Modal>
 
-            <Modal visible={timeDropdownOpen} transparent animationType="fade" onRequestClose={() => setTimeDropdownOpen(false)}>
-                <TouchableOpacity
-                    activeOpacity={1}
-                    onPress={() => setTimeDropdownOpen(false)}
-                    style={{ flex: 1, backgroundColor: 'transparent' }}
-                >
-                    {timeDropdownLayout && (
-                        <View
-                            style={{
-                                position: 'absolute',
-                                left: Math.max(16, Math.min(timeDropdownLayout.x, Dimensions.get('window').width - timeDropdownLayout.width - 16)),
-                                top: timeDropdownLayout.y + timeDropdownLayout.height + 8,
-                                width: Math.min(timeDropdownLayout.width, Dimensions.get('window').width - 32),
-                                backgroundColor: 'white',
-                                borderWidth: 1,
-                                borderColor: '#e5e7eb',
-                                borderRadius: 12,
-                                overflow: 'hidden',
-                                elevation: 10,
-                            }}
-                        >
-                            <View style={{ flexDirection: 'row' }}>
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {buildHourOptions()
-                                        .filter((hour) => hour <= 22)
-                                        .map((hour) => (
-                                            <TouchableOpacity
-                                                key={`h-${hour}`}
-                                                onPress={() => setSelectedHour(hour)}
-                                                style={{
-                                                    paddingHorizontal: 16,
-                                                    paddingVertical: 12,
-                                                    borderBottomWidth: 1,
-                                                    borderBottomColor: '#f3f4f6',
-                                                    backgroundColor: selectedHour === hour ? '#f0fdfa' : 'white',
-                                                }}
-                                            >
-                                                <Text style={{ fontSize: 12, color: selectedHour === hour ? '#0f766e' : '#374151', fontWeight: selectedHour === hour ? '600' : '400' }}>
-                                                    {String(hour).padStart(2, '0')}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                </ScrollView>
-                                <View style={{ width: 1, backgroundColor: '#e5e7eb' }} />
-                                <ScrollView style={{ maxHeight: 200, flex: 1 }}>
-                                    {minuteOptions.map((minute) => (
-                                        <TouchableOpacity
-                                            key={`m-${minute}`}
-                                            onPress={() => setSelectedMinute(minute)}
-                                            style={{
-                                                paddingHorizontal: 16,
-                                                paddingVertical: 12,
-                                                borderBottomWidth: 1,
-                                                borderBottomColor: '#f3f4f6',
-                                                backgroundColor: selectedMinute === minute ? '#f0fdfa' : 'white',
-                                            }}
-                                        >
-                                            <Text style={{ fontSize: 12, color: selectedMinute === minute ? '#0f766e' : '#374151', fontWeight: selectedMinute === minute ? '600' : '400' }}>
-                                                {String(minute).padStart(2, '0')}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f3f4f6' }}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        if (selectedHour === null || selectedMinute === null) return;
-                                        const label = `${String(selectedHour).padStart(2, '0')}:${String(selectedMinute).padStart(2, '0')}`;
-                                        setFollowUpTime(label);
-                                        setTimeDropdownOpen(false);
-                                    }}
-                                    style={{
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        borderRadius: 8,
-                                        backgroundColor: selectedHour !== null && selectedMinute !== null ? '#0d9488' : '#e5e7eb',
-                                    }}
-                                    disabled={selectedHour === null || selectedMinute === null}
-                                >
-                                    <Text style={{ fontSize: 12, fontWeight: '600', color: selectedHour !== null && selectedMinute !== null ? 'white' : '#6b7280' }}>
-                                        Select
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </Modal>
+            <TimePickerModal
+                visible={showTimePicker}
+                onClose={() => setShowTimePicker(false)}
+                onSelect={(time: string) => {
+                    setFollowUpTime(time);
+                    setShowTimePicker(false);
+                }}
+            />
         </SafeAreaView>
     );
 }

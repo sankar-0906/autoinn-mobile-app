@@ -11,11 +11,13 @@ import { RootStackParamList } from '../../navigation/types';
 import { User, LogOut, ChevronRight, Phone, Mail, Building2 } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useToast } from '../../src/ToastContext'; // Ensure this is the only useToast import
 
 type AccountNavigationProp = StackNavigationProp<RootStackParamList, 'Main'>;
 
 export default function AccountScreen({ navigation }: { navigation: AccountNavigationProp }) {
     const [loggingOut, setLoggingOut] = useState(false);
+    const toast = useToast(); // Ensure this is the only useToast hook call
 
     const handleLogout = () => {
         Alert.alert(
@@ -35,7 +37,7 @@ export default function AccountScreen({ navigation }: { navigation: AccountNavig
                                 routes: [{ name: 'Login' }],
                             });
                         } catch (error) {
-                            Alert.alert('Error', 'Failed to sign out. Please try again.');
+                            toast.error('Failed to sign out. Please try again.');
                         } finally {
                             setLoggingOut(false);
                         }

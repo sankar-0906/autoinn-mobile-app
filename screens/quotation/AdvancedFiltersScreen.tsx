@@ -10,9 +10,11 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { Calendar as RNCalendar } from 'react-native-calendars';
+import moment from 'moment';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { X, ChevronDown, Check } from 'lucide-react-native';
+import { X, ChevronDown, Check, Calendar } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { getUsers, getVehicleMaster } from '../../src/api';
@@ -135,6 +137,16 @@ function MultiSelectField({
                                 );
                             })}
                         </ScrollView>
+                        
+                        <View className="pt-3 mt-3 border-t border-gray-200">
+                            <TouchableOpacity
+                                onPress={() => setOpen(false)}
+                                className="bg-teal-600 rounded-lg py-3 items-center"
+                                activeOpacity={0.8}
+                            >
+                                <Text className="text-white font-semibold text-sm">OK</Text>
+                            </TouchableOpacity>
+                        </View>
                     </Pressable>
                 </Pressable>
             </Modal>
@@ -160,6 +172,18 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
     const [filters, setFilters] = useState<FilterState>(defaultFilters);
     const [modelOptions, setModelOptions] = useState<Option[]>([]);
     const [executiveOptions, setExecutiveOptions] = useState<Option[]>([]);
+
+    // Date picker states
+    const [showExpectedStartPicker, setShowExpectedStartPicker] = useState(false);
+    const [showExpectedEndPicker, setShowExpectedEndPicker] = useState(false);
+    const [showIssuedStartPicker, setShowIssuedStartPicker] = useState(false);
+    const [showIssuedEndPicker, setShowIssuedEndPicker] = useState(false);
+    
+    // Calendar date objects
+    const [expectedStartDate, setExpectedStartDate] = useState<Date | null>(null);
+    const [expectedEndDate, setExpectedEndDate] = useState<Date | null>(null);
+    const [issuedStartDate, setIssuedStartDate] = useState<Date | null>(null);
+    const [issuedEndDate, setIssuedEndDate] = useState<Date | null>(null);
 
     const enquiryTypes = useMemo<Option[]>(
         () => [
@@ -245,6 +269,39 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
             }
         })();
     }, []);
+
+    // Date picker handlers
+    const handleExpectedStartDateSelect = (day: any) => {
+        const date = new Date(day.dateString);
+        setExpectedStartDate(date);
+        const formattedDate = moment(date).format('DD/MM/YYYY');
+        setFilters((prev) => ({ ...prev, expectedPurchaseStart: formattedDate }));
+        setShowExpectedStartPicker(false);
+    };
+
+    const handleExpectedEndDateSelect = (day: any) => {
+        const date = new Date(day.dateString);
+        setExpectedEndDate(date);
+        const formattedDate = moment(date).format('DD/MM/YYYY');
+        setFilters((prev) => ({ ...prev, expectedPurchaseEnd: formattedDate }));
+        setShowExpectedEndPicker(false);
+    };
+
+    const handleIssuedStartDateSelect = (day: any) => {
+        const date = new Date(day.dateString);
+        setIssuedStartDate(date);
+        const formattedDate = moment(date).format('DD/MM/YYYY');
+        setFilters((prev) => ({ ...prev, quotationIssuedStart: formattedDate }));
+        setShowIssuedStartPicker(false);
+    };
+
+    const handleIssuedEndDateSelect = (day: any) => {
+        const date = new Date(day.dateString);
+        setIssuedEndDate(date);
+        const formattedDate = moment(date).format('DD/MM/YYYY');
+        setFilters((prev) => ({ ...prev, quotationIssuedEnd: formattedDate }));
+        setShowIssuedEndPicker(false);
+    };
 
     useEffect(() => {
         (async () => {
@@ -418,36 +475,48 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                         <FormLabel text="Expected Purchase Date (ex: DD/MM/YYYY)" />
                         <View className="flex-row gap-3">
-                            <TextInput
-                                placeholder="Start date"
-                                value={filters.expectedPurchaseStart}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseStart: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                            <TextInput
-                                placeholder="End date"
-                                value={filters.expectedPurchaseEnd}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseEnd: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
+                            <TouchableOpacity
+                                onPress={() => setShowExpectedStartPicker(true)}
+                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 flex-row items-center justify-between"
+                            >
+                                <Text className={filters.expectedPurchaseStart ? 'text-gray-900' : 'text-gray-400'}>
+                                    {filters.expectedPurchaseStart || 'Start date'}
+                                </Text>
+                                <Calendar size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => setShowExpectedEndPicker(true)}
+                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 flex-row items-center justify-between"
+                            >
+                                <Text className={filters.expectedPurchaseEnd ? 'text-gray-900' : 'text-gray-400'}>
+                                    {filters.expectedPurchaseEnd || 'End date'}
+                                </Text>
+                                <Calendar size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
                         </View>
                     </View>
 
                     <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                         <FormLabel text="Quotation Issued Date (ex: DD/MM/YYYY)" />
                         <View className="flex-row gap-3">
-                            <TextInput
-                                placeholder="Start date"
-                                value={filters.quotationIssuedStart}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedStart: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                            <TextInput
-                                placeholder="End date"
-                                value={filters.quotationIssuedEnd}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedEnd: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
+                            <TouchableOpacity
+                                onPress={() => setShowIssuedStartPicker(true)}
+                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 flex-row items-center justify-between"
+                            >
+                                <Text className={filters.quotationIssuedStart ? 'text-gray-900' : 'text-gray-400'}>
+                                    {filters.quotationIssuedStart || 'Start date'}
+                                </Text>
+                                <Calendar size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => setShowIssuedEndPicker(true)}
+                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 flex-row items-center justify-between"
+                            >
+                                <Text className={filters.quotationIssuedEnd ? 'text-gray-900' : 'text-gray-400'}>
+                                    {filters.quotationIssuedEnd || 'End date'}
+                                </Text>
+                                <Calendar size={18} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
                         </View>
                     </View>
 
@@ -457,6 +526,175 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* Calendar Modals */}
+            <Modal visible={showExpectedStartPicker} transparent animationType="fade" onRequestClose={() => setShowExpectedStartPicker(false)}>
+                <Pressable className="flex-1 bg-black/40 justify-center" onPress={() => setShowExpectedStartPicker(false)}>
+                    <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-gray-900 font-bold text-lg">Select Expected Purchase Start Date</Text>
+                            <TouchableOpacity onPress={() => setShowExpectedStartPicker(false)}>
+                                <X size={20} color={COLORS.gray[700]} />
+                            </TouchableOpacity>
+                        </View>
+                        <RNCalendar
+                            current={expectedStartDate ? expectedStartDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                            onDayPress={handleExpectedStartDateSelect}
+                            theme={{
+                                todayTextColor: COLORS.primary,
+                                selectedDayBackgroundColor: COLORS.primary,
+                                selectedDayTextColor: '#fff',
+                                arrowColor: COLORS.primary,
+                                textSectionTitleColor: '#6b7280',
+                            }}
+                            markedDates={
+                                expectedStartDate
+                                    ? {
+                                        [expectedStartDate.toISOString().split('T')[0]]: {
+                                            selected: true,
+                                            selectedColor: COLORS.primary,
+                                        },
+                                    }
+                                    : undefined
+                            }
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity
+                                onPress={() => setShowExpectedStartPicker(false)}
+                                className="px-4 py-2 rounded-lg bg-teal-600"
+                            >
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
+
+            <Modal visible={showExpectedEndPicker} transparent animationType="fade" onRequestClose={() => setShowExpectedEndPicker(false)}>
+                <Pressable className="flex-1 bg-black/40 justify-center" onPress={() => setShowExpectedEndPicker(false)}>
+                    <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-gray-900 font-bold text-lg">Select Expected Purchase End Date</Text>
+                            <TouchableOpacity onPress={() => setShowExpectedEndPicker(false)}>
+                                <X size={20} color={COLORS.gray[700]} />
+                            </TouchableOpacity>
+                        </View>
+                        <RNCalendar
+                            current={expectedEndDate ? expectedEndDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                            onDayPress={handleExpectedEndDateSelect}
+                            theme={{
+                                todayTextColor: COLORS.primary,
+                                selectedDayBackgroundColor: COLORS.primary,
+                                selectedDayTextColor: '#fff',
+                                arrowColor: COLORS.primary,
+                                textSectionTitleColor: '#6b7280',
+                            }}
+                            markedDates={
+                                expectedEndDate
+                                    ? {
+                                        [expectedEndDate.toISOString().split('T')[0]]: {
+                                            selected: true,
+                                            selectedColor: COLORS.primary,
+                                        },
+                                    }
+                                    : undefined
+                            }
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity
+                                onPress={() => setShowExpectedEndPicker(false)}
+                                className="px-4 py-2 rounded-lg bg-teal-600"
+                            >
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
+
+            <Modal visible={showIssuedStartPicker} transparent animationType="fade" onRequestClose={() => setShowIssuedStartPicker(false)}>
+                <Pressable className="flex-1 bg-black/40 justify-center" onPress={() => setShowIssuedStartPicker(false)}>
+                    <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-gray-900 font-bold text-lg">Select Quotation Issued Start Date</Text>
+                            <TouchableOpacity onPress={() => setShowIssuedStartPicker(false)}>
+                                <X size={20} color={COLORS.gray[700]} />
+                            </TouchableOpacity>
+                        </View>
+                        <RNCalendar
+                            current={issuedStartDate ? issuedStartDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                            onDayPress={handleIssuedStartDateSelect}
+                            theme={{
+                                todayTextColor: COLORS.primary,
+                                selectedDayBackgroundColor: COLORS.primary,
+                                selectedDayTextColor: '#fff',
+                                arrowColor: COLORS.primary,
+                                textSectionTitleColor: '#6b7280',
+                            }}
+                            markedDates={
+                                issuedStartDate
+                                    ? {
+                                        [issuedStartDate.toISOString().split('T')[0]]: {
+                                            selected: true,
+                                            selectedColor: COLORS.primary,
+                                        },
+                                    }
+                                    : undefined
+                            }
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity
+                                onPress={() => setShowIssuedStartPicker(false)}
+                                className="px-4 py-2 rounded-lg bg-teal-600"
+                            >
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
+
+            <Modal visible={showIssuedEndPicker} transparent animationType="fade" onRequestClose={() => setShowIssuedEndPicker(false)}>
+                <Pressable className="flex-1 bg-black/40 justify-center" onPress={() => setShowIssuedEndPicker(false)}>
+                    <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-gray-900 font-bold text-lg">Select Quotation Issued End Date</Text>
+                            <TouchableOpacity onPress={() => setShowIssuedEndPicker(false)}>
+                                <X size={20} color={COLORS.gray[700]} />
+                            </TouchableOpacity>
+                        </View>
+                        <RNCalendar
+                            current={issuedEndDate ? issuedEndDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                            onDayPress={handleIssuedEndDateSelect}
+                            theme={{
+                                todayTextColor: COLORS.primary,
+                                selectedDayBackgroundColor: COLORS.primary,
+                                selectedDayTextColor: '#fff',
+                                arrowColor: COLORS.primary,
+                                textSectionTitleColor: '#6b7280',
+                            }}
+                            markedDates={
+                                issuedEndDate
+                                    ? {
+                                        [issuedEndDate.toISOString().split('T')[0]]: {
+                                            selected: true,
+                                            selectedColor: COLORS.primary,
+                                        },
+                                    }
+                                    : undefined
+                            }
+                        />
+                        <View className="flex-row justify-end mt-4">
+                            <TouchableOpacity
+                                onPress={() => setShowIssuedEndPicker(false)}
+                                className="px-4 py-2 rounded-lg bg-teal-600"
+                            >
+                                <Text className="text-white font-semibold">Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
         </SafeAreaView>
     );
 }

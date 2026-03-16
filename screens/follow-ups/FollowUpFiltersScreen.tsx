@@ -9,7 +9,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronDown, Check, ChevronLeft } from 'lucide-react-native';
+import { ChevronDown, Check, ChevronLeft, Calendar } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 
@@ -47,20 +47,30 @@ function SelectField({
             </TouchableOpacity>
             {open && (
                 <View className="mt-1 bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    {options.map((option) => (
+                    <ScrollView className="max-h-48">
+                        {options.map((option) => (
+                            <TouchableOpacity
+                                key={option.value}
+                                onPress={() => {
+                                    onSelect(option.value);
+                                }}
+                                className={`px-4 py-3 border-b border-gray-50 ${value === option.value ? 'bg-teal-50' : ''}`}
+                            >
+                                <Text className={value === option.value ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
+                                    {option.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                    <View className="p-3 border-t border-gray-100 bg-gray-50">
                         <TouchableOpacity
-                            key={option.value}
-                            onPress={() => {
-                                onSelect(option.value);
-                                setOpen(false);
-                            }}
-                            className={`px-4 py-3 border-b border-gray-50 ${value === option.value ? 'bg-teal-50' : ''}`}
+                            onPress={() => setOpen(false)}
+                            className="bg-teal-600 rounded-lg py-2 px-4 items-center"
+                            activeOpacity={0.8}
                         >
-                            <Text className={value === option.value ? 'text-teal-700 font-semibold' : 'text-gray-700'}>
-                                {option.label}
-                            </Text>
+                            <Text className="text-white font-semibold text-sm">OK</Text>
                         </TouchableOpacity>
-                    ))}
+                    </View>
                 </View>
             )}
         </View>
@@ -277,36 +287,48 @@ export default function FollowUpFiltersScreen({ navigation }: any) {
                     <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                         <FormLabel text="Expected Purchase Date : (ex : DD/MM/YYYY)" />
                         <View className="flex-row gap-3">
-                            <TextInput
-                                placeholder="Start date"
-                                value={filters.expectedPurchaseStart}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseStart: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                            <TextInput
-                                placeholder="End date"
-                                value={filters.expectedPurchaseEnd}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseEnd: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
+                            <View className="flex-1 relative">
+                                <TextInput
+                                    placeholder="Start date"
+                                    value={filters.expectedPurchaseStart}
+                                    onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseStart: value }))}
+                                    className="h-12 bg-white border border-gray-200 rounded-xl pl-4 pr-10 text-gray-900"
+                                />
+                                <Calendar size={18} color={COLORS.gray[400]} className="absolute right-3 top-3" />
+                            </View>
+                            <View className="flex-1 relative">
+                                <TextInput
+                                    placeholder="End date"
+                                    value={filters.expectedPurchaseEnd}
+                                    onChangeText={(value) => setFilters((prev) => ({ ...prev, expectedPurchaseEnd: value }))}
+                                    className="h-12 bg-white border border-gray-200 rounded-xl pl-4 pr-10 text-gray-900"
+                                />
+                                <Calendar size={18} color={COLORS.gray[400]} className="absolute right-3 top-3" />
+                            </View>
                         </View>
                     </View>
 
                     <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                         <FormLabel text="Quotation Issued Date : (ex : DD/MM/YYYY)" />
                         <View className="flex-row gap-3">
-                            <TextInput
-                                placeholder="Start date"
-                                value={filters.quotationIssuedStart}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedStart: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
-                            <TextInput
-                                placeholder="End date"
-                                value={filters.quotationIssuedEnd}
-                                onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedEnd: value }))}
-                                className="flex-1 h-12 bg-white border border-gray-200 rounded-xl px-4 text-gray-900"
-                            />
+                            <View className="flex-1 relative">
+                                <TextInput
+                                    placeholder="Start date"
+                                    value={filters.quotationIssuedStart}
+                                    onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedStart: value }))}
+                                    className="h-12 bg-white border border-gray-200 rounded-xl pl-4 pr-10 text-gray-900"
+                                />
+                                <Calendar size={18} color={COLORS.gray[400]} className="absolute right-3 top-3" />
+                            </View>
+                            <View className="flex-1 relative">
+                                <TextInput
+                                    placeholder="End date"
+                                    value={filters.quotationIssuedEnd}
+                                    onChangeText={(value) => setFilters((prev) => ({ ...prev, quotationIssuedEnd: value }))}
+                                    className="h-12 bg-white border border-gray-200 rounded-xl pl-4 pr-10 text-gray-900"
+                                />
+                                <Calendar size={18} color={COLORS.gray[400]} className="absolute right-3 top-3" />
+                            </View>
                         </View>
                     </View>
 

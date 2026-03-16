@@ -10,19 +10,21 @@ import {
     RefreshControl,
     Modal,
     Alert,
+    Linking,
+    NativeModules,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
-import { Calendar, Clock, Share2, ChevronLeft } from 'lucide-react-native';
+import { Calendar, Clock, Share2, ChevronLeft, ArrowRight, Download } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { ENDPOINT, getQuotationById } from '../../src/api';
+import { ENDPOINT, getQuotationById, generateQuotationPDF } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useToast } from '../../src/ToastContext';
 
 type QuotationFormRouteProp = RouteProp<RootStackParamList, 'QuotationForm'>;
 type QuotationFormNavigationProp = StackNavigationProp<RootStackParamList, 'QuotationForm'>;
@@ -38,7 +40,20 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
 const STATUS_STEPS = ['Quoted', 'Booked', 'Sold'];
 
 export default function QuotationFormScreen({ navigation, route }: { navigation: QuotationFormNavigationProp; route: QuotationFormRouteProp }) {
-    const { id, selectedVehicle, paymentDetails } = route.params;
+    const { id, selectedVehicle, paymentDetails, viewMode } = route.params;
+    const isViewMode = viewMode !== undefined ? !!viewMode : true;
+
+    console.log('🚀 QuotationFormScreen - Route params:', {
+        id,
+        selectedVehicle: selectedVehicle ? {
+            id: selectedVehicle.id,
+            name: selectedVehicle.name,
+            paymentDetails: selectedVehicle.paymentDetails,
+            priceDetails: selectedVehicle.priceDetails
+        } : null,
+        paymentDetails,
+        viewMode
+    });
 
     const [gender, setGender] = useState('male');
     const [testDrive, setTestDrive] = useState('yes');
@@ -49,7 +64,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
     const [showExpectedPicker, setShowExpectedPicker] = useState(false);
     const [scheduleDateValue, setScheduleDateValue] = useState<Date | null>(null);
     const [expectedDateValue, setExpectedDateValue] = useState<Date | null>(null);
-    const [pdfLoading, setPdfLoading] = useState(false);
+    const toast = useToast();
 
     const formatDate = (value?: string) => {
         if (!value) return '-';
@@ -77,19 +92,45 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
     useEffect(() => {
         if (!id) return;
+        
+        console.log('📋 QuotationFormScreen - selectedVehicle exists:', !!selectedVehicle);
+        console.log('📋 QuotationFormScreen - paymentDetails exists:', !!paymentDetails);
+        
+        // Always fetch quotation data for customer details, even if we have selectedVehicle
+        // This ensures we have all the quotation metadata
+        console.log('📋 Fetching quotation data for metadata');
         getQuotationById(id)
             .then((res) => {
                 const data = res?.data;
                 const quotationData = data?.response?.data || null;
+
+                console.log('📋 Quotation data received:', {
+                    hasQuotation: !!quotationData,
+                    hasCustomer: !!quotationData?.customer,
+                    hasVehicle: !!(quotationData?.vehicle?.length > 0)
+                });
+
+                // Log the complete vehicle structure for debugging
+                if (quotationData?.vehicle?.length > 0) {
+                    console.log('📋 Complete vehicle structure from API:', JSON.stringify(quotationData.vehicle[0], null, 2));
+                }
+
                 setQuotation(quotationData);
-                if (quotationData?.customer?.gender) {
-                    const g = String(quotationData.customer.gender).toLowerCase();
+
+                // Gender: check quotation-level, then customer, then proCustomer
+                const genderRaw = quotationData?.gender || quotationData?.customer?.gender || quotationData?.proCustomer?.gender;
+                if (genderRaw) {
+                    const g = String(genderRaw).toLowerCase();
                     setGender(g === 'female' ? 'female' : 'male');
                 }
-                if (typeof quotationData?.testDriven !== 'undefined') {
-                    const td = quotationData.testDriven === true || quotationData.testDriven === 'YES' || quotationData.testDriven === 'yes';
+
+                // Test drive: check both possible field names
+                const tdRaw = quotationData?.testDriveTaken ?? quotationData?.testDriven;
+                if (typeof tdRaw !== 'undefined') {
+                    const td = tdRaw === true || tdRaw === 'YES' || tdRaw === 'yes';
                     setTestDrive(td ? 'yes' : 'no');
                 }
+
                 setStatus(statusIndex(quotationData?.quotationStatus));
                 const scheduleRaw = quotationData?.scheduleDateAndTime || quotationData?.scheduleDate;
                 const scheduleDate = scheduleRaw ? new Date(scheduleRaw) : null;
@@ -98,77 +139,170 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
                 setExpectedDateValue(expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : null);
             })
-            .catch(() => {
+            .catch((err) => {
+                console.error('[QuotationForm] Fetch error:', err);
                 setQuotation(null);
-            })
-            .finally(() => { });
-    }, [id]);
+                toast.error('Failed to load quotation details');
+            });
+    }, [id, selectedVehicle, paymentDetails]); // Remove selectedVehicle from dependency array - always fetch
 
     const derived = useMemo(() => {
-        const branchName =
-            quotation?.branch?.name ||
-            (Array.isArray(quotation?.branch) ? quotation?.branch?.[0]?.name : undefined) ||
-            '-';
-        const executiveName =
-            quotation?.executive?.profile?.employeeName ||
-            quotation?.assignedExecutive?.profile?.employeeName ||
-            '-';
-        const customerPhone =
-            quotation?.quotationPhone ||
-            quotation?.customer?.contacts?.[0]?.phone ||
-            '-';
-        const customerName = quotation?.customerName || quotation?.customer?.name || '-';
-        const locality =
-            quotation?.customer?.address?.locality ||
-            quotation?.customer?.locality ||
-            '-';
-        const scheduleDate =
-            scheduleDateValue ||
-            quotation?.scheduleDateAndTime ||
-            quotation?.scheduleDate ||
-            undefined;
+        console.log('🎯 Computing derived data with:', {
+            hasQuotation: !!quotation,
+            hasSelectedVehicle: !!selectedVehicle,
+            hasPaymentDetails: !!paymentDetails,
+            selectedVehicleId: selectedVehicle?.id,
+            paymentDetailsType: paymentDetails?.paymentType
+        });
+
+        // Get customer information from quotation data (always available now)
+        const branchName = quotation?.branch?.name || quotation?.assignedBranch?.name || '-';
+        const executiveName = quotation?.assignedExecutive?.profile?.employeeName || quotation?.executive?.profile?.employeeName || '-';
+        const customerPhone = quotation?.quotationPhone || quotation?.proCustomer?.phone || quotation?.customer?.contacts?.[0]?.phone || '-';
+        const rawName = quotation?.customerName || (quotation?.customer ? quotation.customer.name : quotation?.proCustomer?.name) || '';
+        const customerName = rawName || '-';
+        const locality = quotation?.locality || (quotation?.proCustomer ? quotation.proCustomer.locality : quotation?.customer?.address?.locality) || '-';
+        const scheduleDate = scheduleDateValue || quotation?.scheduleDateAndTime || quotation?.scheduleDate;
+        
+        // Extract time from ISO string if it's an ISO format, otherwise use as-is
+        let scheduleTime = quotation?.scheduleTime || '';
+        if (scheduleTime && scheduleTime.includes('T') && scheduleTime.includes('Z')) {
+            // Extract time from ISO string like "2026-03-16T04:04:00.000Z"
+            const timeMatch = scheduleTime.match(/T(\d{2}:\d{2}):\d{2}/);
+            if (timeMatch) {
+                scheduleTime = timeMatch[1];
+            }
+        } else if (scheduleTime && scheduleTime.includes(':')) {
+            // Extract just HH:MM from time string
+            const timeMatch = scheduleTime.match(/(\d{2}:\d{2})/);
+            if (timeMatch) {
+                scheduleTime = timeMatch[1];
+            }
+        }
+        
+        const customerType = quotation?.customerType || quotation?.customer?.customerType || '-';
+        const enquiryType = quotation?.enquiryType || '-';
+        const remarks = quotation?.remarks || '';
         const expectedPurchase = expectedDateValue || quotation?.expectedPurchaseDate || quotation?.expectedDateOfPurchase;
         const leadSource = quotation?.leadSource || '-';
-        const vehicleName =
-            selectedVehicle?.name ||
-            (Array.isArray(quotation?.vehicle) && quotation?.vehicle.length
-                ? quotation.vehicle
-                    .map((v: any) => v?.vehicleDetail?.modelName || v?.vehicleDetail?.modelCode)
-                    .filter(Boolean)
-                    .join(', ')
-                : 'Select Vehicle');
+        const createdOn = formatDate(quotation?.createdAt);
 
-        const associatedVehiclesRaw =
-            quotation?.customer?.purchasedVehicle ||
-            quotation?.customer?.vehicle ||
-            [];
-        const associatedVehicles = Array.isArray(associatedVehiclesRaw)
-            ? associatedVehiclesRaw.map((vehicle: any) => ({
-                regNo: vehicle?.registerNo || vehicle?.regNo || vehicle?.registrationNo || '-',
-                name:
-                    vehicle?.vehicle?.vehicleDetail?.modelName ||
-                    vehicle?.vehicle?.vehicleDetail?.modelCode ||
-                    vehicle?.vehicle?.model?.modelName ||
-                    vehicle?.vehicle?.model?.modelCode ||
-                    vehicle?.vehicle?.modelName ||
-                    vehicle?.vehicle?.modelCode ||
-                    vehicle?.vehicleDetail?.modelName ||
-                    vehicle?.vehicleDetail?.modelCode ||
-                    vehicle?.modelName ||
-                    vehicle?.modelCode ||
-                    '-',
-            }))
-            : [];
+        // Handle vehicle data - prioritize selectedVehicle from navigation
+        let viewVehicleData = null;
+        let viewPaymentDetails = null;
+        let viewVehicleId = null;
+        let vehicleName = 'Select Vehicle';
+        let hasVehicle = false;
+        let associatedVehicles = [];
 
-        const fallbackVehicle = Array.isArray(quotation?.vehicle) ? quotation?.vehicle?.[0] : quotation?.vehicle;
-        const viewVehicleData = selectedVehicle || {
-            id: fallbackVehicle?.id || fallbackVehicle?.vehicleDetail?.id,
-            name:
-                fallbackVehicle?.vehicleDetail?.modelName ||
-                fallbackVehicle?.vehicleDetail?.modelCode ||
-                vehicleName,
-            price: fallbackVehicle?.price || fallbackVehicle?.vehicleDetail?.price || quotation?.priceDetails,
-        };
+        if (selectedVehicle) {
+            // Use selectedVehicle from navigation (this has the finance data)
+            console.log('🎯 Using selectedVehicle from navigation for display');
+            console.log('🎯 selectedVehicle paymentDetails:', selectedVehicle.paymentDetails);
+            console.log('🎯 selectedVehicle priceDetails:', selectedVehicle.priceDetails);
+            
+            viewVehicleData = selectedVehicle;
+            
+            // Priority: paymentDetails from route params > selectedVehicle.paymentDetails > default
+            viewPaymentDetails = paymentDetails || selectedVehicle.paymentDetails || {
+                paymentType: 'cash',
+                financerId: null,
+                downPayment: null,
+                financerTenure: { data: [] },
+                priceDetails: selectedVehicle.priceDetails || selectedVehicle.price
+            };
+            
+            viewVehicleId = selectedVehicle.id;
+            vehicleName = selectedVehicle.name || selectedVehicle.modelName || 'Selected Vehicle';
+            hasVehicle = true;
+            
+            console.log('🎯 Final viewPaymentDetails:', viewPaymentDetails);
+        } else {
+            // Fall back to API data
+            console.log('📋 No selectedVehicle, falling back to API data');
+            const fallbackVehicle = Array.isArray(quotation?.vehicle) && quotation.vehicle.length > 0 
+                ? quotation.vehicle[0] 
+                : null;
+
+            if (fallbackVehicle) {
+                console.log('📋 Found fallback vehicle from API');
+                console.log('📋 Full fallbackVehicle structure:', JSON.stringify(fallbackVehicle, null, 2));
+                console.log('📋 fallbackVehicle.financer:', fallbackVehicle.financer);
+                console.log('📋 fallbackVehicle.downPayment:', fallbackVehicle.downPayment);
+                console.log('📋 fallbackVehicle.financerTenure:', fallbackVehicle.financerTenure);
+                console.log('📋 fallbackVehicle.paymentDetails:', fallbackVehicle.paymentDetails);
+                
+                hasVehicle = true;
+                vehicleName = fallbackVehicle.vehicleDetail?.modelName || fallbackVehicle.vehicleDetail?.modelCode || 'Vehicle';
+                
+                const junctionPrice = fallbackVehicle?.price;
+                const resolvedPrice = Array.isArray(junctionPrice) ? junctionPrice[0] : junctionPrice;
+                const vehicleMasterId = fallbackVehicle?.vehicleDetail?.id || null;
+
+                // Build payment details from fallback data
+                if (fallbackVehicle?.paymentDetails) {
+                    viewPaymentDetails = fallbackVehicle.paymentDetails;
+                } else if (fallbackVehicle?.financer || fallbackVehicle?.downPayment || fallbackVehicle?.financerTenure) {
+                    // Handle stringified financerTenure from API
+                    let parsedTenure = { data: [] };
+                    if (fallbackVehicle.financerTenure) {
+                        try {
+                            if (typeof fallbackVehicle.financerTenure === 'string') {
+                                parsedTenure = JSON.parse(fallbackVehicle.financerTenure);
+                            } else {
+                                parsedTenure = fallbackVehicle.financerTenure;
+                            }
+                        } catch (e) {
+                            console.warn(' Failed to parse financerTenure:', fallbackVehicle.financerTenure);
+                            parsedTenure = { data: [] };
+                        }
+                    }
+                    
+                    viewPaymentDetails = {
+                        paymentType: fallbackVehicle.financer ? 'finance' : 'cash',
+                        financerId: fallbackVehicle.financer,
+                        downPayment: fallbackVehicle.downPayment,
+                        financerTenure: parsedTenure,
+                        priceDetails: resolvedPrice
+                    };
+                } else if (resolvedPrice) {
+                    viewPaymentDetails = {
+                        paymentType: 'cash',
+                        financerId: null,
+                        downPayment: null,
+                        financerTenure: { data: [] },
+                        priceDetails: resolvedPrice
+                    };
+                }
+
+                viewVehicleData = {
+                    id: vehicleMasterId || fallbackVehicle.id,
+                    name: fallbackVehicle.vehicleDetail?.modelName || fallbackVehicle.vehicleDetail?.modelCode || vehicleName,
+                    modelName: fallbackVehicle.vehicleDetail?.modelName,
+                    modelCode: fallbackVehicle.vehicleDetail?.modelCode,
+                    image: fallbackVehicle.vehicleDetail?.image,
+                    manufacturer: fallbackVehicle.vehicleDetail?.manufacturer,
+                    color: fallbackVehicle.color,
+                    price: resolvedPrice,
+                    insuranceType: fallbackVehicle.insuranceType,
+                    optionalType: fallbackVehicle.optionalType,
+                    financer: fallbackVehicle.financer,
+                    downPayment: fallbackVehicle.downPayment,
+                    financerTenure: fallbackVehicle.financerTenure,
+                    paymentDetails: viewPaymentDetails
+                };
+                viewVehicleId = vehicleMasterId || fallbackVehicle.id;
+            }
+
+            // Handle associated vehicles
+            const associatedVehiclesRaw = quotation?.customer?.purchasedVehicle || quotation?.customer?.vehicle || [];
+            associatedVehicles = Array.isArray(associatedVehiclesRaw)
+                ? associatedVehiclesRaw.map((vehicle: any) => ({
+                    regNo: vehicle?.registerNo || vehicle?.regNo || vehicle?.registrationNo || '-',
+                    name: vehicle?.vehicle?.vehicleDetail?.modelName || vehicle?.vehicle?.vehicleDetail?.modelCode || '-',
+                }))
+                : [];
+        }
 
         return {
             branchName,
@@ -176,30 +310,35 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             customerPhone,
             customerName,
             locality,
+            customerType,
+            enquiryType,
+            remarks,
             scheduleDate,
+            scheduleTime,
             expectedPurchase,
             leadSource,
             vehicleName,
-            createdOn: formatDate(quotation?.createdAt),
+            createdOn,
             associatedVehicles,
             viewVehicleData,
-            viewVehicleId: fallbackVehicle?.id || fallbackVehicle?.vehicleDetail?.id || selectedVehicle?.id,
+            viewPaymentDetails,
+            viewVehicleId,
+            hasVehicle,
         };
-    }, [quotation, selectedVehicle]);
+    }, [quotation, selectedVehicle, paymentDetails]);
 
     const onRefresh = () => {
         setRefreshing(true);
-        setQuotation(null);
-        setGender('male');
-        setTestDrive('yes');
-        setStatus(0);
-        setScheduleDateValue(null);
-        setExpectedDateValue(null);
+        
+        // If we have selectedVehicle, we should still refresh the quotation metadata
+        // but preserve the selectedVehicle data
         getQuotationById(id)
             .then((res) => {
                 const data = res?.data;
                 const quotationData = data?.response?.data || null;
                 setQuotation(quotationData);
+                
+                // Update form fields from quotation data
                 if (quotationData?.customer?.gender) {
                     const g = String(quotationData.customer.gender).toLowerCase();
                     setGender(g === 'female' ? 'female' : 'male');
@@ -215,69 +354,62 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 const expectedRaw = quotationData?.expectedPurchaseDate || quotationData?.expectedDateOfPurchase;
                 const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
                 setExpectedDateValue(expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : null);
+                
+                if (selectedVehicle) {
+                    toast.success('Refreshed quotation details, vehicle data preserved');
+                }
+            })
+            .catch((err) => {
+                console.error('[QuotationForm] Refresh error:', err);
+                toast.error('Failed to refresh quotation details');
             })
             .finally(() => setRefreshing(false));
     };
 
-    const buildPdfUrl = (withBrochure: boolean) => {
-        const qid = quotation?.id || id;
-        const base = ENDPOINT.endsWith('/') ? ENDPOINT.slice(0, -1) : ENDPOINT;
-        return `${base}/api/quotation/generatePdf/${encodeURIComponent(qid)}${withBrochure ? '?withBrochure=true' : ''}`;
-    };
-
-    const normalizePdfUrl = (url?: string | null) => {
-        if (!url) return null;
-        if (url.startsWith('http://') || url.startsWith('https://')) return url;
-        const base = ENDPOINT.endsWith('/') ? ENDPOINT.slice(0, -1) : ENDPOINT;
-        const path = url.startsWith('/') ? url : `/${url}`;
-        return `${base}${path}`;
-    };
-
-    const sharePdf = async () => {
+    const handleShareOnWhatsApp = async () => {
         try {
-            setPdfLoading(true);
-            const token = await AsyncStorage.getItem('token');
-            const directUrl = normalizePdfUrl(quotation?.pdfWithBrochure || quotation?.pdfWithOutBrochure);
-            const primaryUrl = directUrl || buildPdfUrl(true);
-            const fallbackUrl = directUrl ? null : buildPdfUrl(false);
-            console.log('[PDF] action: share');
-            console.log('[PDF] token:', token ? 'present' : 'missing');
-            console.log('[PDF] primaryUrl:', primaryUrl);
-            const safeId = String(quotation?.quotationId || id).replace(/[^a-zA-Z0-9_-]/g, '_');
-            const fileName = `Quotation_${safeId}_${Date.now()}.pdf`;
-            const dirUri = `${FileSystem.documentDirectory}quotations/`;
-            await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
-            const fileUri = `${dirUri}${fileName}`;
-            const headers = token ? { 'x-access-token': token, Accept: 'application/pdf' } : { Accept: 'application/pdf' };
-            let result = await FileSystem.downloadAsync(primaryUrl, fileUri, { headers });
-            console.log('[PDF] primary result:', result?.status, result?.uri);
-            if (result?.status && result.status !== 200 && fallbackUrl) {
-                result = await FileSystem.downloadAsync(fallbackUrl, fileUri, { headers });
-                console.log('[PDF] fallback result:', result?.status, result?.uri);
+            // Get customer phone number
+            const customerPhone = derived.customerPhone.replace(/\D/g, ''); // Remove non-digits
+            
+            if (customerPhone && customerPhone !== '-') {
+                // Open WhatsApp directly to customer's chat with personalized message
+                const message = `Dear ${derived.customerName},\n\n📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n🔹 *Sales Executive*: ${derived.executiveName}\n\n📋 Thank you for your interest! We will send you the complete quotation PDF shortly with all pricing details and specifications.\n\n🤝 Feel free to call us if you have any questions.\n\n📞 *Contact*: +91${derived.customerPhone || 'Contact Number'}`;
+                
+                const whatsappUrl = `https://wa.me/91${customerPhone}?text=${encodeURIComponent(message)}`;
+                
+                await Linking.openURL(whatsappUrl);
+                toast.success('Opening WhatsApp chat with quotation details...');
+                
+            } else {
+                // Fallback to general WhatsApp if no customer number
+                const message = `📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Customer*: ${derived.customerName}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n\n✅ Ready to share quotation with customer!`;
+                
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+                await Linking.openURL(whatsappUrl);
+                toast.success('Opening WhatsApp with quotation details...');
             }
-            if (!result?.uri) {
-                Alert.alert('Error', 'Unable to download PDF');
-                return;
-            }
-            if (result?.status && result.status !== 200) {
-                Alert.alert('Error', 'Unable to generate PDF');
-                return;
-            }
-            const canShare = await Sharing.isAvailableAsync();
-            if (!canShare) {
-                Alert.alert('Share not available', 'Sharing is not available on this device.');
-                return;
-            }
-            await Sharing.shareAsync(result.uri, {
-                mimeType: 'application/pdf',
-                UTI: 'com.adobe.pdf',
-            });
-            console.log('[PDF] share complete');
-        } catch (e) {
-            console.log('[PDF] error:', e);
-            Alert.alert('Error', 'Unable to generate PDF.');
-        } finally {
-            setPdfLoading(false);
+            
+        } catch (error) {
+            console.error('Error sharing on WhatsApp:', error);
+            toast.error('Failed to open WhatsApp. Please try again.');
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        try {
+            toast.success('Preparing PDF download...');
+            
+            // Construct the PDF URL directly to match web endpoint
+            const baseUrl = ENDPOINT.replace(/\/$/, ''); // Remove trailing slash
+            const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
+            
+            // Open the PDF URL for download - this will show PDF in browser like web
+            await Linking.openURL(pdfUrl);
+            toast.success('Opening PDF for download...');
+            
+        } catch (error) {
+            console.error('Error downloading PDF:', error);
+            toast.error('Failed to download PDF. Please try again.');
         }
     };
 
@@ -290,17 +422,15 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                     </TouchableOpacity>
                     <Text className="text-gray-900 text-lg font-bold text-xl">Quotations</Text>
                 </View>
-                <TouchableOpacity
-                    onPress={sharePdf}
-                    disabled={pdfLoading}
-                    className="flex-row items-center px-3 py-2 rounded-lg bg-teal-50 border border-teal-100"
-                    activeOpacity={0.7}
-                >
-                    <Share2 size={16} color={COLORS.primary} />
-                    <Text className="ml-2 text-teal-700 font-semibold text-sm">
-                        {pdfLoading ? 'Sharing...' : 'PDF'}
-                    </Text>
-                </TouchableOpacity>
+                <View className="flex-row items-center gap-2">
+                    <TouchableOpacity onPress={handleShareOnWhatsApp} className="flex-row items-center px-3 py-2 bg-teal-100 rounded-full">
+                        <Share2 size={18} color="#0d9488" />
+                        <Text className="text-teal-600 text-sm font-medium ml-2"> WhatsApp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleDownloadPDF} className="p-2 bg-blue-100 rounded-full">
+                        <Download size={18} color="#2563eb" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
@@ -327,7 +457,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
                         <View className="mb-4">
                             <FormLabel label="Branch" required />
-                            <TextInput value={derived.branchName} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                            <TextInput value={derived.branchName} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                         </View>
 
                         <View className="mb-4">
@@ -341,13 +471,13 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                                 <View className="h-12 w-16 bg-gray-100 border border-gray-200 rounded-xl items-center justify-center">
                                     <Text className="text-gray-700">+91</Text>
                                 </View>
-                                <TextInput value={derived.customerPhone} editable={false} className="flex-1 h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                                <TextInput value={derived.customerPhone} editable={!isViewMode} className="flex-1 h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                             </View>
                         </View>
 
                         <View className="mb-4">
                             <FormLabel label="Customer Name" required />
-                            <TextInput value={derived.customerName} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                            <TextInput value={derived.customerName} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                         </View>
 
                         <View className="mb-4">
@@ -370,22 +500,29 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
                         <View className="mb-4">
                             <FormLabel label="Locality" required />
-                            <TextInput value={derived.locality} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                            <TextInput value={derived.locality} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                        </View>
+
+                        <View className="mb-4">
+                            <FormLabel label="Customer Type" />
+                            <TextInput value={derived.customerType} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                         </View>
 
                         <View className="mb-4">
                             <FormLabel label="Schedule Follow-Up Date" required />
                             <View className="relative">
-                                <TextInput value={formatDate(derived.scheduleDate)} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800" />
+                                <TextInput value={formatDate(derived.scheduleDate)} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800" />
                                 <TouchableOpacity
+                                    disabled={isViewMode}
                                     onPressIn={() => {
+                                        if (isViewMode) return;
                                         setScheduleDateValue(scheduleDateValue || new Date());
                                         setShowSchedulePicker(true);
                                     }}
                                     className="absolute right-4 top-3.5"
                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 >
-                                    <Calendar size={18} color={COLORS.gray[400]} />
+                                    <Calendar size={18} color={isViewMode ? COLORS.gray[300] : COLORS.gray[400]} />
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -393,7 +530,11 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         <View className="mb-4">
                             <FormLabel label="Schedule Follow-Up Time" required />
                             <View className="relative">
-                                <TextInput value={formatTime(derived.scheduleDate)} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800" />
+                                <TextInput
+                                    value={derived.scheduleTime ? (derived.scheduleTime.includes(':') ? derived.scheduleTime.substring(0, 5) : derived.scheduleTime) : (derived.scheduleDate ? derived.scheduleDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-')}
+                                    editable={!isViewMode}
+                                    className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800"
+                                />
                                 <View className="absolute right-4 top-3.5">
                                     <Clock size={18} color={COLORS.gray[400]} />
                                 </View>
@@ -406,18 +547,25 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         </View>
 
                         <View className="mb-4">
+                            <FormLabel label="Enquiry Type" required />
+                            <TextInput value={derived.enquiryType} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                        </View>
+
+                        <View className="mb-4">
                             <FormLabel label="Expected Date of Purchase" required />
                             <View className="relative">
                                 <TextInput value={formatDate(derived.expectedPurchase)} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800" />
                                 <TouchableOpacity
+                                    disabled={isViewMode}
                                     onPressIn={() => {
+                                        if (isViewMode) return;
                                         setExpectedDateValue(expectedDateValue || new Date());
                                         setShowExpectedPicker(true);
                                     }}
                                     className="absolute right-4 top-3.5"
                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 >
-                                    <Calendar size={18} color={COLORS.gray[400]} />
+                                    <Calendar size={18} color={isViewMode ? COLORS.gray[300] : COLORS.gray[400]} />
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -446,62 +594,56 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                             <Text className="text-gray-900 font-bold text-base">Vehicle Information</Text>
                         </View>
 
-                        <TouchableOpacity
-                            onPress={() =>
-                                navigation.navigate('SelectPrice', {
-                                    vehicleId: derived.viewVehicleId || derived.viewVehicleData?.id || id,
-                                    vehicleData: derived.viewVehicleData,
-                                    returnTo: 'QuotationForm',
-                                    quotationId: id,
-                                    viewMode: true,
-                                    paymentDetails: paymentDetails || { priceDetails: derived.viewVehicleData?.price },
-                                })
-                            }
-                            className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3"
-                            activeOpacity={0.7}
-                        >
-                            <Text className="text-blue-800 font-semibold text-sm">
-                                {derived.vehicleName}
-                            </Text>
-                            {selectedVehicle?.id && (
-                                <Text className="text-blue-700 text-xs mt-1">Model ID: {selectedVehicle.id}</Text>
-                            )}
-                        </TouchableOpacity>
-
-                        {(paymentDetails || selectedVehicle?.priceDetails) && (
-                            <View className="mt-3 bg-white border border-gray-100 rounded-xl px-4 py-3">
-                                <Text className="text-gray-500 text-xs">Price & Payment</Text>
-                                <Text className="text-gray-900 text-sm font-semibold mt-1">
-                                    {paymentDetails?.paymentType === 'finance' ? 'Finance' : 'Cash'}
-                                </Text>
-                                <View className="mt-2">
-                                    <Text className="text-gray-500 text-xs">Total Amount</Text>
-                                    <Text className="text-gray-900 text-sm font-semibold">
-                                        ₹ {paymentDetails?.priceDetails?.totalAmount ?? selectedVehicle?.priceDetails?.totalAmount ?? '—'}
+                        {derived.hasVehicle ? (
+                            <>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        
+                                        // Use actual customer payment details
+                                        const actualPaymentDetails = derived.viewPaymentDetails || {
+                                            paymentType: 'cash',
+                                            financerId: null,
+                                            downPayment: null,
+                                            financerTenure: { data: [] },
+                                            priceDetails: derived.viewPaymentDetails?.priceDetails
+                                        };
+                                        
+                                        console.log('🚀 Using actual payment details:', actualPaymentDetails);
+                                        
+                                        navigation.navigate('SelectPrice', {
+                                            vehicleId: derived.viewVehicleId!,
+                                            vehicleData: {
+                                                ...derived.viewVehicleData,
+                                                // Preserve payment details like AddQuotation
+                                                paymentDetails: actualPaymentDetails,
+                                            },
+                                            returnTo: 'QuotationForm',
+                                            quotationId: id,
+                                            viewMode: true,
+                                            paymentDetails: actualPaymentDetails,
+                                        });
+                                    }}
+                                    className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3"
+                                    activeOpacity={0.7}
+                                >
+                                    <Text className="text-blue-800 font-semibold text-sm">
+                                        {derived.vehicleName}
                                     </Text>
-                                </View>
-                                {!!paymentDetails?.priceDetails?.insurance && (
-                                    <Text className="text-gray-600 text-xs mt-1">
-                                        Insurance: {paymentDetails.priceDetails.insurance}
-                                    </Text>
-                                )}
-                                {!!paymentDetails?.priceDetails?.others?.length && (
-                                    <Text className="text-gray-600 text-xs mt-1">
-                                        Others: {paymentDetails.priceDetails.others.join(', ')}
-                                    </Text>
-                                )}
-                                {paymentDetails?.paymentType === 'finance' && paymentDetails?.financeDetails && (
-                                    <View className="mt-2">
-                                        <Text className="text-gray-500 text-xs">Finance Details</Text>
-                                        <Text className="text-gray-700 text-xs mt-1">Financer: {paymentDetails.financeDetails.financer || '—'}</Text>
-                                        <Text className="text-gray-700 text-xs mt-1">Down Payment: {paymentDetails.financeDetails.downPayment || '—'}</Text>
-                                        <Text className="text-gray-700 text-xs mt-1">Tenure: {paymentDetails.financeDetails.tenure || '—'}</Text>
-                                        <Text className="text-gray-700 text-xs mt-1">EMI: {paymentDetails.financeDetails.emi || '—'}</Text>
-                                    </View>
-                                )}
+                                    {selectedVehicle?.id && (
+                                        <Text className="text-blue-700 text-xs mt-1">Model ID: {selectedVehicle.id}</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </>
+                        ) : (
+                            <View className="py-6 items-center justify-center bg-gray-50 rounded-xl">
+                                <Text className="text-gray-400 text-sm">No vehicle attached to this quotation</Text>
                             </View>
                         )}
                     </View>
+
 
                     <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                         <Text className="text-gray-900 font-bold text-base mb-3 border-b border-gray-50 pb-2">
@@ -534,6 +676,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         <Text className="text-gray-900 font-bold text-base mb-4 border-b border-gray-50 pb-2">Remarks</Text>
                         <TextInput
                             placeholder="Enter remarks..."
+                            value={derived.remarks}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
@@ -590,13 +733,19 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         </View>
                     </View>
 
+                    {/* follow-up navigation button */}
+                    <View className="mb-4">
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('FollowUpDetail', { id: derived.customerPhone })}
+                            className="border rounded-lg px-4 py-3 bg-teal-600 border-teal-600 flex-row items-center justify-center"
+                        >
+                            <ArrowRight size={16} color="white" />
+                            <Text className="text-white font-semibold text-sm text-center ml-2">Go to Follow-Up</Text>
+                        </TouchableOpacity>
+                    </View>
+
                 </ScrollView>
             </KeyboardAvoidingView>
-
-            <View className="bg-white border-t border-gray-100 p-4 flex-row gap-3">
-                <Button title="Back" variant="outline" className="flex-1" onPress={() => navigation.goBack()} />
-                <Button title="Save" className="flex-1 opacity-50" onPress={() => { }} />
-            </View>
 
             <Modal visible={showSchedulePicker} transparent animationType="fade" onRequestClose={() => setShowSchedulePicker(false)}>
                 <View className="flex-1 bg-black/40 items-center justify-center px-4">

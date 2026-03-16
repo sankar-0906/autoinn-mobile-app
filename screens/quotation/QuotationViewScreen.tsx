@@ -6,7 +6,6 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-    Image,
     ActivityIndicator,
     Alert,
 } from 'react-native';
@@ -14,9 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
-import { X, ChevronLeft } from 'lucide-react-native';
+import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
-import { getQuotationById } from '../../src/api';
+import { ENDPOINT, getQuotationById, getCustomerDetails, getQuotations } from '../../src/api';
+import { Button } from '../../components/ui/Button';
+import { useToast } from '../../src/ToastContext';
 
 type QuotationViewRouteProp = RouteProp<RootStackParamList, 'QuotationView'>;
 type QuotationViewNavigationProp = StackNavigationProp<RootStackParamList, 'QuotationView'>;
@@ -27,9 +28,24 @@ interface QuotationData {
     branch: string;
     customerPhone: string;
     customerName: string;
+    gender: string;
+    locality: string;
+    leadSource: string;
+    testDriveTaken: boolean;
+    enquiryType: string;
+    remarks: string;
+    createdOn: string;
+    salesExecutive: string;
+    customerType: string;
+    scheduleDate: string;
+    scheduleTime: string;
+    expectedDate: string;
     vehicleModel: string;
     vehicleCode: string;
+    vehicleId?: string;
     vehicleColor: string;
+    vehicleImage: string | null;
+    associatedVehicles: AssociatedVehicle[];
     exShowroomPrice: number;
     roadTax: number;
     registrationFee: number;
@@ -40,14 +56,69 @@ interface QuotationData {
     downPayment?: number;
     tenure?: number;
     emi?: number;
+    insuranceType?: InsuranceCharge[];
+    optionalType?: OptionalCharge[];
+    insuranceInfo?: string;
+    insuranceAmount?: number;
+    optionalCharges?: OptionalCharge[];
+    tcs?: number;
 }
 
+interface AssociatedVehicle {
+    regNo: string;
+    registrationNo?: string;
+    modelName: string;
+    vehicleModel: string;
+    vehicleName: string;
+    id: string;
+    dateOfSale?: string;
+    engineNo?: string;
+    vehicleType?: string;
+}
+
+interface InsuranceCharge {
+    id: string;
+    type: string;
+    amount: number;
+    name?: string;
+    price?: number;
+    onRoad?: number;
+}
+
+interface OptionalCharge {
+    id: string;
+    type: string;
+    amount: number;
+    price?: number;
+}
+
+const formatTime = (timeStr: string | undefined) => {
+    if (!timeStr || timeStr === 'N/A') return 'N/A';
+    try {
+        // If it's already in HH:MM format, return it
+        if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr;
+
+        const date = new Date(timeStr);
+        if (isNaN(date.getTime())) return timeStr;
+
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    } catch {
+        return timeStr;
+    }
+};
+
 export default function QuotationViewScreen({ navigation, route }: { navigation: QuotationViewNavigationProp; route: QuotationViewRouteProp }) {
+    // Guard against missing navigation context
+    if (!navigation || !route) {
+        return null;
+    }
+
     const { id } = route.params;
-    const [showVehicleModal, setShowVehicleModal] = useState(false);
-    const [vehicleTab, setVehicleTab] = useState<'price' | 'payment'>('price');
     const [quotation, setQuotation] = useState<QuotationData | null>(null);
     const [loading, setLoading] = useState(true);
+    const toast = useToast();
 
     useEffect(() => {
         fetchQuotationData();
@@ -56,50 +127,245 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
     const fetchQuotationData = async () => {
         setLoading(true);
         try {
-            const response = await getQuotationById(id);
-            const data = response.data?.response?.data;
+            // Use the list API approach like the web version to get complete data
+            const listResponse = await getQuotations({
+                page: 1,
+                size: 10,
+                searchString: id, // Search by quotation ID
+                branch: [], // Empty branch array to get all
+                filter: {},
+                status: null
+            });
+            
+            let data = null;
+            if (listResponse.data?.code === 200 && listResponse.data?.response?.code === 200) {
+                const quotations = listResponse.data.response.data.Quotation || [];
+                const foundQuotation = quotations.find((q: any) => q.id === id || q.quotationId === id);
+                data = foundQuotation;
+            }
+
+            // Fallback to detail API if list approach doesn't work
+            if (!data) {
+                const detailResponse = await getQuotationById(id);
+                data = detailResponse.data?.response?.data;
+            }
 
             if (data) {
+                console.log("=== QUOTATION DATA DEBUG ===");
+                console.log("Fetched quotation data:", data);
+                console.log("Customer data:", data.customer);
+                console.log("Customer purchased vehicles:", data.customer?.purchasedVehicle);
+                console.log("Customer purchased vehicles length:", data.customer?.purchasedVehicle?.length || 0);
+                console.log("==========================");
+                
                 // Extract vehicle information
-                const vehicleInfo = Array.isArray(data.vehicle) && data.vehicle.length > 0
+                // data.vehicle is an array of junction records: { id, vehicleDetail: { id, modelName, ... }, price: {...}, ... }
+                const vehicleJunction = Array.isArray(data.vehicle) && data.vehicle.length > 0
                     ? data.vehicle[0]
-                    : data.vehicleMaster;
+                    : null;
+                // vehicleDetail is the actual VehicleMaster record
+                const vehicleDetail = vehicleJunction?.vehicleDetail || {};
 
-                // Calculate total price
-                const exShowroom = data.exShowroomPrice || 0;
-                const roadTax = data.roadTax || 0;
-                const regFee = data.registrationFee || 0;
-                const handling = data.handlingCharges || 0;
-                const total = exShowroom + roadTax + regFee + handling;
+                const priceData = vehicleJunction?.price || {};
+
+                const exShowroom = priceData.showroomPrice || priceData.exShowroomPrice || 0;
+                const roadTax = priceData.roadTax || 0;
+                const regFee = priceData.registrationFee || 0;
+                const handling = priceData.handlingCharges || 0;
+                const tcs = priceData.tcs || 0;
+                const total = exShowroom + roadTax + regFee + handling + tcs;
+
+                const hasInsurance = Array.isArray(vehicleJunction?.insuranceType) && vehicleJunction.insuranceType.length > 0;
+                const insType = hasInsurance ? vehicleJunction.insuranceType[0] : null;
+
+                const optionalCharges = Array.isArray(vehicleJunction?.optionalType) ? vehicleJunction.optionalType : [];
+
+                // Get image from vehicleDetail (VehicleMaster) - can be array or object
+                const vehicleImage = Array.isArray(vehicleDetail.image)
+                    ? vehicleDetail.image[0]?.url
+                    : (typeof vehicleDetail.image === 'object' ? vehicleDetail.image?.url : vehicleDetail.image);
+
+                // Fetch complete customer details to get purchased vehicles
+                let completeCustomerData = null;
+                if (data.customer?.id) {
+                    try {
+                        const customerResponse = await getCustomerDetails(data.customer.id);
+                        if (customerResponse.data?.code === 200) {
+                            completeCustomerData = customerResponse.data?.response?.data;
+                            console.log('Complete customer data fetched:', completeCustomerData?.purchasedVehicle?.length || 0, 'purchased vehicles found');
+                        }
+                    } catch (customerError) {
+                        console.warn('Failed to fetch complete customer details:', customerError);
+                    }
+                }
 
                 const quotationData: QuotationData = {
                     id: data.id || id,
                     quotationId: data.quotationId || id,
                     branch: data.branch?.name || data.branchName || 'N/A',
-                    customerPhone: data.customerPhone || data.phone || 'N/A',
+                    customerPhone:
+                        data.customerPhone ||
+                        data.phone ||
+                        data.mobile ||
+                        data.phoneNumber ||
+                        data.customer?.phone ||
+                        data.customer?.mobile ||
+                        data.customer?.mobileNo ||
+                        data.customer?.phoneNumber ||
+                        data.customer?.contacts?.[0]?.phone ||
+                        data.proCustomer?.phone ||
+                        data.proCustomer?.mobile ||
+                        data.proCustomer?.mobileNo ||
+                        data.proCustomer?.phoneNumber ||
+                        data.contact?.phone ||
+                        data.contact?.mobile ||
+                        data.contactNumber ||
+                        'N/A',
                     customerName: data.customerName || data.proCustomer?.name || data.customer?.name || 'N/A',
-                    vehicleModel: vehicleInfo?.modelName || data.vehicleModel || 'N/A',
-                    vehicleCode: vehicleInfo?.modelCode || vehicleInfo?.code || 'N/A',
-                    vehicleColor: data.color || vehicleInfo?.color || 'N/A',
+                    gender: data.customer?.gender || data.proCustomer?.gender || data.gender || 'N/A',
+                    locality: data.locality || data.customer?.locality || data.customer?.location || data.location || '',
+                    leadSource: data.leadSource || data.lead_source || '',
+                    testDriveTaken: data.testDriveTaken || false,
+                    enquiryType: data.enquiryType || data.enquiry_type || '',
+                    remarks: data.remarks || '',
+                    createdOn: data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-GB') : 'N/A',
+                    salesExecutive: data.salesExecutive?.name || data.executive?.profile?.employeeName || data.salesExecutiveName || 'N/A',
+                    customerType:
+                        data.customerType ||
+                        data.type ||
+                        data.customer?.type ||
+                        data.proCustomer?.type ||
+                        data.customer?.customerType ||
+                        data.proCustomer?.customerType ||
+                        '',
+                    scheduleDate: data.scheduleDate ? new Date(data.scheduleDate).toLocaleDateString('en-GB') : 'N/A',
+                    scheduleTime: formatTime(data.scheduleTime || data.scheduleDateAndTime),
+                    expectedDate: data.expectedDateOfPurchase ? new Date(data.expectedDateOfPurchase).toLocaleDateString('en-GB') : 'N/A',
+                    // Use vehicleDetail (VehicleMaster) for model info, NOT the junction record
+                    vehicleModel: vehicleDetail.modelName || vehicleDetail.name || 'N/A',
+                    vehicleCode: vehicleDetail.modelCode || vehicleDetail.code || 'N/A',
+                    // Use vehicleDetail.id (VehicleMaster ID), NOT vehicleJunction.id (junction ID)
+                    vehicleId: vehicleDetail.id || null,
+                    vehicleColor: vehicleJunction?.color?.color || (typeof data.color === 'string' ? data.color : data.color?.color) || 'N/A',
+                    vehicleImage: vehicleImage || null,
+                    associatedVehicles: [], // Will be updated below
                     exShowroomPrice: exShowroom,
                     roadTax: roadTax,
                     registrationFee: regFee,
                     handlingCharges: handling,
                     totalPrice: total,
-                    paymentType: data.paymentType === 'finance' ? 'finance' : 'cash',
-                    financeName: data.financerName || data.financer?.name || 'N/A',
-                    downPayment: data.downPayment || 0,
-                    tenure: data.financerTenure || data.tenure || 0,
+                    paymentType: vehicleJunction?.financer ? 'finance' : 'cash',
+                    financeName: vehicleJunction?.financer?.name || 'N/A',
+                    downPayment: vehicleJunction?.downPayment || 0,
+                    tenure: vehicleJunction?.financerTenure || 0,
                     emi: data.emi || 0,
+                    insuranceInfo: insType?.type || insType?.name || 'Basic Insurance',
+                    insuranceAmount: insType?.amount || insType?.price || insType?.onRoad || 0,
+                    insuranceType: vehicleJunction?.insuranceType || [],
+                    optionalType: vehicleJunction?.optionalType || [],
+                    optionalCharges: optionalCharges,
+                    tcs: tcs,
                 };
+
+                // Extract associated vehicles - include both purchased vehicles AND quotation vehicles (like web version)
+                let allVehicles: AssociatedVehicle[] = [];
+                const vehicleIds = new Set(); // Track vehicle IDs to prevent duplicates
+                
+                // 1. Use complete customer data first (has full purchasedVehicle info)
+                if (completeCustomerData && Array.isArray(completeCustomerData.customer?.purchasedVehicle)) {
+                    const purchasedVehicles = completeCustomerData.customer.purchasedVehicle.map((v: any) => ({
+                        regNo: v.registerNo || v.registrationNo || v.regNo || v.vehicleRegNo || v.registration_number || '-', // Fixed: registerNo first
+                        modelName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleModel: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        id: v.vehicle?.id || v.id,
+                        dateOfSale: v.dateOfSale,
+                        engineNo: v.engineNo,
+                        vehicleType: v.vehicleType
+                    }));
+                    purchasedVehicles.forEach((v: any) => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Using complete customer data - found', purchasedVehicles.length, 'purchased vehicles');
+                }
+                // Fallback to quotation customer data for purchased vehicles
+                else if (Array.isArray(data.customer?.purchasedVehicle)) {
+                    const purchasedVehicles = data.customer.purchasedVehicle.map((v: any) => ({
+                        regNo: v.registerNo || v.registrationNo || v.regNo || v.vehicleRegNo || v.registration_number || '-', // Fixed: registerNo first
+                        modelName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleModel: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        vehicleName: v.vehicle?.modelName || v.vehicle?.name || v.modelName || v.vehicleName || '-',
+                        id: v.vehicle?.id || v.id,
+                        dateOfSale: v.dateOfSale,
+                        engineNo: v.engineNo,
+                        vehicleType: v.vehicleType
+                    }));
+                    purchasedVehicles.forEach((v: any) => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Using quotation customer data - found', purchasedVehicles.length, 'purchased vehicles');
+                }
+
+                // 2. ADD QUOTATION VEHICLES (like web version) - show vehicles from current quotation ONLY
+                if (Array.isArray(data.vehicle)) {
+                    const quotationVehicles = data.vehicle.map((v: any) => ({
+                        regNo: '-', // Use '-' for quotation vehicles (no registration yet)
+                        modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        vehicleName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                        id: v.vehicleDetail?.id || v.id
+                    }));
+                    quotationVehicles.forEach(v => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Added quotation vehicles - found', quotationVehicles.length, 'quotation vehicles');
+                }
+
+                // 3. ADD VEHICLES FROM OTHER QUOTATIONS (if available in complete customer data) - but skip current quotation
+                if (completeCustomerData && Array.isArray(completeCustomerData.customer?.quotation)) {
+                    const otherQuotationVehicles = completeCustomerData.customer.quotation.flatMap((q: any) => {
+                        // Skip current quotation to avoid duplicates
+                        if (q.id === data.id) return [];
+                        
+                        return (q.vehicle || []).map((v: any) => ({
+                            regNo: '-', // Use '-' for quotation vehicles
+                            modelName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            vehicleModel: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            vehicleName: v.vehicleDetail?.modelName || v.vehicleDetail?.name || v.modelName || v.vehicleName || '-',
+                            id: v.vehicleDetail?.id || v.id
+                        }));
+                    });
+                    otherQuotationVehicles.forEach(v => {
+                        if (!vehicleIds.has(v.id)) {
+                            allVehicles.push(v);
+                            vehicleIds.add(v.id);
+                        }
+                    });
+                    console.log('Added other quotation vehicles - found', otherQuotationVehicles.length, 'vehicles from other quotations');
+                }
+
+                if (allVehicles.length === 0) {
+                    console.log('No vehicles found in any data source');
+                }
+
+                // Update the associated vehicles in the quotation data
+                quotationData.associatedVehicles = allVehicles;
 
                 setQuotation(quotationData);
             } else {
-                Alert.alert('Error', 'Failed to load quotation data');
+                toast.error('Failed to load quotation data');
             }
         } catch (error) {
             console.error('Error fetching quotation:', error);
-            Alert.alert('Error', 'Failed to load quotation data');
         } finally {
             setLoading(false);
         }
@@ -117,11 +383,13 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
     if (!quotation) {
         return (
             <SafeAreaView className="flex-1 bg-gray-50">
-                <View className="bg-white px-4 py-4 flex-row items-center border-b border-gray-100">
-                    <TouchableOpacity onPress={() => navigation.goBack()} className="mr-2">
-                        <ChevronLeft size={24} color="#111827" />
-                    </TouchableOpacity>
-                    <Text className="text-gray-900 text-lg font-bold">Quotations</Text>
+                <View className="bg-white border-b border-gray-100 px-4 py-4 flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                        <TouchableOpacity onPress={() => navigation?.goBack()} className="mr-3">
+                            <ChevronLeft size={24} color={COLORS.gray[900]} />
+                        </TouchableOpacity>
+                        <Text className="text-gray-900 text-lg font-bold">Quotations</Text>
+                    </View>
                 </View>
                 <View className="flex-1 items-center justify-center">
                     <Text className="text-gray-600">No quotation found</Text>
@@ -131,208 +399,278 @@ export default function QuotationViewScreen({ navigation, route }: { navigation:
     }
 
     const vehicleLabel = `${quotation.vehicleCode} - ${quotation.vehicleModel}`;
+
+    const FormLabel = ({ label, required = false }: { label: string; required?: boolean }) => (
+        <Text className="text-sm text-gray-600 mb-1.5 font-medium">
+            {label}
+            {required && <Text className="text-red-500"> *</Text>}
+        </Text>
+    );
+
     const priceBreakdown = [
         { label: 'Ex-Showroom Price', value: `₹ ${quotation.exShowroomPrice?.toLocaleString() || 0}` },
         { label: 'Road Tax', value: `₹ ${quotation.roadTax?.toLocaleString() || 0}` },
         { label: 'Registration Fee', value: `₹ ${quotation.registrationFee?.toLocaleString() || 0}` },
         { label: 'Handling Charges', value: `₹ ${quotation.handlingCharges?.toLocaleString() || 0}` },
-        { label: 'Total', value: `₹ ${quotation.totalPrice?.toLocaleString() || 0}` },
+        { label: 'Total', value: `₹ ${quotation.totalPrice?.toLocaleString() || 0}`, isTotal: true },
     ];
+
+    const handleViewVehicleDetails = () => {
+        const priceDetails: any = {
+            exShowroomPrice: quotation.exShowroomPrice,
+            handlingCharges: quotation.handlingCharges,
+            roadTax: quotation.roadTax,
+            registrationFee: quotation.registrationFee,
+            tcs: quotation.tcs,
+            total: quotation.totalPrice,
+            insurance: quotation.insuranceInfo ? [quotation.insuranceInfo] : [],
+            others: quotation.optionalCharges?.map((x: any) => x.type) || [],
+            insuranceType: quotation.insuranceType,
+            optionalCharges: quotation.optionalCharges,
+            optionalType: quotation.optionalType,
+        };
+
+        quotation.insuranceType?.forEach((ins: InsuranceCharge) => {
+            if (ins.type) priceDetails[ins.type] = ins.amount || ins.price || ins.onRoad || 0;
+        });
+        quotation.optionalType?.forEach((opt: OptionalCharge) => {
+            if (opt.type) priceDetails[opt.type] = opt.amount || opt.price || 0;
+        });
+
+        if (navigation && quotation) {
+            navigation.navigate('SelectPrice', {
+                vehicleId: quotation.vehicleId || quotation.vehicleCode,
+                vehicleData: {
+                    id: quotation.vehicleId || quotation.vehicleCode,
+                    name: quotation.vehicleModel,
+                    price: priceDetails,
+                    color: { color: quotation.vehicleColor }
+                },
+                returnTo: 'QuotationView',
+                quotationId: quotation.id,
+                viewMode: true,
+                paymentDetails: {
+                    priceDetails: priceDetails,
+                    paymentType: quotation.paymentType,
+                    financeDetails: {
+                        financerName: quotation.financeName,
+                        downPayment: quotation.downPayment,
+                        tenure: quotation.tenure,
+                        emi: quotation.emi,
+                    }
+                }
+            });
+        }
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
-            <View className="bg-white px-4 py-4 flex-row items-center border-b border-gray-100">
-                <TouchableOpacity onPress={() => navigation.goBack()} className="mr-2">
-                    <ChevronLeft size={24} color="#111827" />
-                </TouchableOpacity>
-                <Text className="text-gray-900 text-lg font-bold">Quotations</Text>
+            {/* Header */}
+            <View className="bg-white border-b border-gray-100 px-4 py-4 flex-row items-center justify-between z-20">
+                <View className="flex-row items-center">
+                    <TouchableOpacity onPress={() => navigation?.goBack()} className="mr-3">
+                        <ChevronLeft size={24} color={COLORS.gray[900]} />
+                    </TouchableOpacity>
+                    <Text className="text-gray-900 text-lg font-bold">Quotations</Text>
+                </View>
             </View>
 
-            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 80 }}>
-                <View className="bg-white rounded-xl border border-gray-100 p-4">
-                    <Text className="text-gray-600 text-sm mb-1">Quotation Id</Text>
-                    <TextInput
-                        value={quotation.quotationId}
-                        editable={false}
-                        className="h-11 bg-gray-50 border border-gray-200 rounded-lg px-3 text-gray-600"
-                    />
+            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+                <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                    <View className="flex-row justify-between items-center mb-3">
+                        <Text className="text-gray-500 text-sm">Quotation Id:</Text>
+                        <Text className="text-teal-600 font-bold text-sm">{quotation.quotationId}</Text>
+                    </View>
+                    <View className="flex-row justify-between items-center">
+                        <Text className="text-gray-500 text-sm">Created On</Text>
+                        <Text className="text-gray-900 text-sm font-medium">{quotation.createdOn}</Text>
+                    </View>
+                </View>
 
-                    <View className="mt-4">
-                        <Text className="text-gray-600 text-sm mb-1">Branch</Text>
-                        <TextInput
-                            value={quotation.branch}
-                            editable={false}
-                            className="h-11 bg-gray-50 border border-gray-200 rounded-lg px-3 text-gray-600"
-                        />
+                <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                    <Text className="text-gray-900 font-bold text-base mb-4 border-b border-gray-50 pb-2">Customer Information</Text>
+
+                    <View className="mb-4">
+                        <FormLabel label="Branch" required />
+                        <TextInput value={quotation.branch} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                     </View>
 
-                    <View className="mt-4">
-                        <Text className="text-gray-600 text-sm mb-1">Customer Phone</Text>
-                        <TextInput
-                            value={quotation.customerPhone}
-                            editable={false}
-                            className="h-11 bg-gray-50 border border-gray-200 rounded-lg px-3 text-gray-600"
-                        />
+                    <View className="mb-4">
+                        <FormLabel label="Sales Executive" required />
+                        <TextInput value={quotation.salesExecutive} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                     </View>
 
-                    <View className="mt-4">
-                        <Text className="text-gray-600 text-sm mb-1">Customer Name</Text>
-                        <TextInput
-                            value={quotation.customerName}
-                            editable={false}
-                            className="h-11 bg-gray-50 border border-gray-200 rounded-lg px-3 text-gray-600"
-                        />
+                    <View className="mb-4">
+                        <FormLabel label="Customer Phone" required />
+                        <TextInput value={quotation.customerPhone} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                     </View>
 
-                    <View className="mt-4">
-                        <Text className="text-gray-600 text-sm mb-1">Vehicle Name</Text>
-                        <TouchableOpacity
-                            onPress={() => setShowVehicleModal(true)}
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-3"
-                        >
-                            <Text className="text-gray-800 text-xs font-semibold bg-gray-600 text-white px-2 py-1 rounded w-fit">
-                                {vehicleLabel}
-                            </Text>
-                        </TouchableOpacity>
+                    <View className="mb-4">
+                        <FormLabel label="Customer Name" required />
+                        <TextInput value={quotation.customerName} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
                     </View>
 
-                    <View className="mt-4">
-                        <Text className="text-gray-600 text-sm mb-2">Status</Text>
-                        <View className="bg-teal-50 border border-teal-200 rounded-lg px-4 py-3 mb-4">
-                            <Text className="text-teal-700 font-semibold text-sm">Active</Text>
+                    <View className="mb-4">
+                        <FormLabel label="Gender" required />
+                        <View className="flex-row gap-2">
+                            <TouchableOpacity
+                                disabled
+                                className={`flex-1 h-11 rounded-lg items-center justify-center border ${quotation.gender.toLowerCase() === 'male' ? 'bg-teal-600 border-teal-600' : 'bg-gray-100 border-gray-300'}`}
+                            >
+                                <Text className={quotation.gender.toLowerCase() === 'male' ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>Male</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                disabled
+                                className={`flex-1 h-11 rounded-lg items-center justify-center border ${quotation.gender.toLowerCase() === 'female' ? 'bg-teal-600 border-teal-600' : 'bg-gray-100 border-gray-300'}`}
+                            >
+                                <Text className={quotation.gender.toLowerCase() === 'female' ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>Female</Text>
+                            </TouchableOpacity>
                         </View>
+                    </View>
 
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('FollowUpDetail', { id: quotation.customerPhone })}
-                            className="border border-teal-600 rounded-lg px-4 py-3 bg-white"
-                        >
-                            <Text className="text-teal-600 font-semibold text-sm text-center">Follow-Up</Text>
-                        </TouchableOpacity>
+                    <View className="mb-4">
+                        <FormLabel label="Locality" required />
+                        <TextInput value={quotation.locality} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+
+                    <View className="mb-4">
+                        <FormLabel label="Customer Type" />
+                        <TextInput value={quotation.customerType} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+                </View>
+
+                <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                    <Text className="text-gray-900 font-bold text-base mb-4 border-b border-gray-50 pb-2">Deal Terms</Text>
+
+                    <View className="mb-4">
+                        <FormLabel label="Schedule Follow-up Date" required />
+                        <TextInput value={quotation.scheduleDate} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+                    <View className="mb-4">
+                        <FormLabel label="Schedule Follow-up Time" required />
+                        <TextInput value={quotation.scheduleTime} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+
+                    <View className="mb-4">
+                        <FormLabel label="Lead Source" required />
+                        <TextInput value={quotation.leadSource} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+
+                    <View className="mb-4">
+                        <FormLabel label="Expected Date of Purchase" required />
+                        <TextInput value={quotation.expectedDate} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+
+                    <View className="mb-4">
+                        <FormLabel label="Enquiry Type" required />
+                        <TextInput value={quotation.enquiryType} editable={false} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+                    </View>
+
+                    <View className="mb-4">
+                        <FormLabel label="Test Drive Taken" required />
+                        <View className="flex-row gap-2">
+                            <TouchableOpacity
+                                disabled
+                                className={`flex-1 h-11 rounded-lg items-center justify-center border ${quotation.testDriveTaken ? 'bg-teal-600 border-teal-600' : 'bg-gray-100 border-gray-300'}`}
+                            >
+                                <Text className={quotation.testDriveTaken ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>Yes</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                disabled
+                                className={`flex-1 h-11 rounded-lg items-center justify-center border ${!quotation.testDriveTaken ? 'bg-teal-600 border-teal-600' : 'bg-gray-100 border-gray-300'}`}
+                            >
+                                <Text className={!quotation.testDriveTaken ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>No</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    <View className="mb-2">
+                        <FormLabel label="Remarks" />
+                        <TextInput
+                            value={quotation.remarks}
+                            editable={false}
+                            multiline
+                            numberOfLines={4}
+                            textAlignVertical="top"
+                            className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-xl text-gray-800 min-h-[80px]"
+                        />
+                    </View>
+                </View>
+
+                <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                    <View className="flex-row items-center justify-between mb-4 border-b border-gray-50 pb-2">
+                        <Text className="text-gray-900 font-bold text-base">Vehicle Information</Text>
+                    </View>
+
+                    <TouchableOpacity
+                        onPress={handleViewVehicleDetails}
+                        className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4"
+                        activeOpacity={0.7}
+                    >
+                        <Text className="text-blue-800 font-semibold text-sm">
+                            {vehicleLabel}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <Text className="text-gray-900 font-bold text-base mb-3 border-b border-gray-50 pb-2 mt-2">
+                        Associated vehicles
+                    </Text>
+                    <View className="border border-gray-200 rounded-xl overflow-hidden">
+                        <View className="bg-slate-600 px-4 py-3 flex-row">
+                            <Text className="text-white text-sm font-bold flex-1">Reg No.</Text>
+                            <Text className="text-white text-sm font-bold flex-1">Vehicle</Text>
+                        </View>
+                        {quotation.associatedVehicles.length === 0 ? (
+                            <View className="bg-gray-50 px-4 py-8 items-center">
+                                <Text className="text-gray-400 text-sm">No vehicles found</Text>
+                            </View>
+                        ) : (
+                            quotation.associatedVehicles.map((v, idx) => (
+                                <View key={idx} className={`px-4 py-3 flex-row justify-between ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                                    <Text className="text-gray-700 text-sm flex-1">{v.regNo || v.registrationNo || '-'}</Text>
+                                    <Text className="text-gray-700 text-sm flex-1">{v.modelName || v.vehicleModel || v.vehicleName || '-'}</Text>
+                                </View>
+                            ))
+                        )}
+                    </View>
+                </View>
+
+                <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                    <Text className="text-gray-900 font-bold text-base mb-2">Status Tracker</Text>
+                    <View className="border-t border-gray-200 mt-2 pt-6 pb-2">
+                        <View className="flex-row justify-around items-center px-2">
+                            <View className="items-center">
+                                <View className="w-12 h-12 rounded-full border-2 border-teal-600 flex items-center justify-center mb-2 z-10 bg-white">
+                                    <View className="w-6 h-6 rounded-full bg-teal-600 items-center justify-center">
+                                        <Check size={14} color="#FFF" />
+                                    </View>
+                                </View>
+                                <Text className="text-sm font-medium text-gray-900">Quoted</Text>
+                                <Text className="text-[10px] text-gray-500 text-center w-24 leading-snug mt-1">Customer got Quotation</Text>
+                            </View>
+
+                            {/* Separator Line */}
+                            <View className="absolute top-6 left-[20%] right-[20%] h-[2px] bg-gray-300 -z-10" />
+
+                            <View className="items-center">
+                                <View className="w-12 h-12 rounded-full border-2 border-gray-300 flex items-center justify-center mb-2 z-10 bg-white">
+                                    <View className="w-6 h-6 rounded-full bg-gray-300" />
+                                </View>
+                                <Text className="text-sm font-medium text-gray-700 mt-0.5">Booked</Text>
+                                <Text className="text-[10px] text-gray-500 text-center w-24 leading-snug mt-1">Customer Booked the Vehicle</Text>
+                            </View>
+
+                            <View className="items-center">
+                                <View className="w-12 h-12 rounded-full border-2 border-gray-300 flex items-center justify-center mb-2 z-10 bg-white">
+                                    <View className="w-6 h-6 rounded-full bg-gray-300" />
+                                </View>
+                                <Text className="text-sm font-medium text-gray-700 mt-0.5">Sold</Text>
+                                <Text className="text-[10px] text-gray-500 text-center w-24 leading-snug mt-1">We sold the vehicle</Text>
+                            </View>
+                        </View>
                     </View>
                 </View>
             </ScrollView>
-
-            <View className="bg-white border-t border-gray-100 px-4 py-3 flex-row justify-between">
-                <TouchableOpacity
-                    onPress={() => setShowVehicleModal(true)}
-                    className="px-6 py-2 bg-gray-200 rounded-lg"
-                >
-                    <Text className="text-gray-700 font-semibold text-sm">PDF</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    onPress={() => navigation.goBack()}
-                    className="px-6 py-2 border border-gray-300 rounded-lg"
-                >
-                    <Text className="text-gray-700 font-semibold text-sm">Close</Text>
-                </TouchableOpacity>
-            </View>
-
-            <Modal
-                visible={showVehicleModal}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowVehicleModal(false)}
-            >
-                <View className="flex-1 bg-black/40 justify-center px-3 py-6">
-                    <View className="bg-white rounded-xl overflow-hidden max-h-full">
-                        <View className="bg-gray-500 px-4 py-3 flex-row items-center justify-between">
-                            <Text className="text-white font-semibold text-base">Select Vehicle</Text>
-                            <TouchableOpacity onPress={() => setShowVehicleModal(false)}>
-                                <X size={18} color="white" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="flex-row border-b border-gray-200">
-                            <TouchableOpacity
-                                onPress={() => setVehicleTab('price')}
-                                className={`flex-1 px-4 py-3 border-b-2 ${vehicleTab === 'price' ? 'border-teal-600' : 'border-transparent'}`}
-                            >
-                                <Text className={`text-sm text-center ${vehicleTab === 'price' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Price</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => setVehicleTab('payment')}
-                                className={`flex-1 px-4 py-3 border-b-2 ${vehicleTab === 'payment' ? 'border-teal-600' : 'border-transparent'}`}
-                            >
-                                <Text className={`text-sm text-center ${vehicleTab === 'payment' ? 'text-teal-600 font-semibold' : 'text-gray-600'}`}>Payment</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 20 }}>
-                            {vehicleTab === 'price' ? (
-                                <View>
-                                    <View className="aspect-[4/3] bg-gray-100 rounded-lg mb-4 overflow-hidden items-center justify-center">
-                                        <Image
-                                            source={require('../../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
-                                            style={{ width: '100%', height: '100%' }}
-                                            resizeMode="contain"
-                                        />
-                                    </View>
-                                    <View className="mb-4">
-                                        <Text className="text-gray-600 text-xs">Color</Text>
-                                        <Text className="text-gray-900 text-sm font-semibold mt-1">{quotation.vehicleColor}</Text>
-                                    </View>
-                                    <View className="bg-gray-50 rounded-lg p-3 mb-4">
-                                        <Text className="text-gray-600 text-xs">Model</Text>
-                                        <Text className="text-gray-900 text-sm font-semibold mt-1">{quotation.vehicleModel} - {quotation.vehicleCode}</Text>
-                                    </View>
-
-                                    <View className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                        <View className="bg-gray-200 px-4 py-2 flex-row justify-between">
-                                            <Text className="text-gray-700 font-semibold text-xs">Type</Text>
-                                            <Text className="text-gray-700 font-semibold text-xs">Price</Text>
-                                        </View>
-                                        {priceBreakdown.map((row, idx) => (
-                                            <View key={row.label} className={`px-4 py-2 flex-row justify-between ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                                                <Text className="text-gray-600 text-xs">{row.label}</Text>
-                                                <Text className="text-gray-900 text-xs font-semibold">{row.value}</Text>
-                                            </View>
-                                        ))}
-                                    </View>
-                                </View>
-                            ) : (
-                                <View>
-                                    <Text className="text-gray-600 text-sm mb-2">Payment Type</Text>
-                                    <View className="flex-row gap-3 mb-4">
-                                        <View className={`px-4 py-2 border rounded ${quotation.paymentType === 'cash' ? 'border-teal-600 bg-teal-50' : 'border-gray-300 bg-gray-50'}`}>
-                                            <Text className={quotation.paymentType === 'cash' ? 'text-teal-700 font-semibold text-sm' : 'text-gray-600 text-sm'}>Cash</Text>
-                                        </View>
-                                        <View className={`px-4 py-2 border rounded ${quotation.paymentType === 'finance' ? 'border-teal-600 bg-teal-50' : 'border-gray-300 bg-gray-50'}`}>
-                                            <Text className={quotation.paymentType === 'finance' ? 'text-teal-700 font-semibold text-sm' : 'text-gray-600 text-sm'}>Finance</Text>
-                                        </View>
-                                    </View>
-                                    <View className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
-                                        <Text className="text-gray-600 text-xs">Finance Name</Text>
-                                        <Text className="text-gray-900 text-sm mt-1">{quotation.financeName || 'N/A'}</Text>
-                                    </View>
-                                    <View className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
-                                        <Text className="text-gray-600 text-xs">Down Payment</Text>
-                                        <Text className="text-gray-900 text-sm mt-1">₹ {quotation.downPayment?.toLocaleString() || '0'}</Text>
-                                    </View>
-                                    <View className="flex-row gap-3">
-                                        <View className="flex-1 bg-white border border-gray-200 rounded-lg p-3">
-                                            <Text className="text-gray-600 text-xs">Tenure</Text>
-                                            <Text className="text-gray-900 text-sm mt-1">{quotation.tenure ? `${quotation.tenure} months` : 'N/A'}</Text>
-                                        </View>
-                                        <View className="flex-1 bg-white border border-gray-200 rounded-lg p-3">
-                                            <Text className="text-gray-600 text-xs">EMI</Text>
-                                            <Text className="text-gray-900 text-sm mt-1">₹ {quotation.emi?.toLocaleString() || '0'}</Text>
-                                        </View>
-                                    </View>
-                                </View>
-                            )}
-                        </ScrollView>
-
-                        <View className="border-t border-gray-100 p-4">
-                            <TouchableOpacity
-                                onPress={() => setShowVehicleModal(false)}
-                                className="px-6 py-2 border border-gray-300 rounded-lg self-end"
-                            >
-                                <Text className="text-gray-700 font-semibold text-sm">Close</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 }
