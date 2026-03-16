@@ -138,10 +138,10 @@ export default function BookingActivityScreen({
         const currentRoute = routes[routes.length - 1];
         const previousRoute = routes[routes.length - 2]; // Get previous route
         const previousPreviousRoute = routes[routes.length - 3]; // Get route before previous
-        
+
         // Also check the route params for explicit cameFrom information
         const cameFrom = route.params?.cameFrom;
-        
+
         console.log('🔍 Navigation state check:', {
             totalRoutes: routes.length,
             currentRoute: currentRoute?.name,
@@ -151,16 +151,16 @@ export default function BookingActivityScreen({
             fullStack: routes.map((r, i) => `${i}: ${r.name}`),
             routeKeys: routes.map(r => r.key)
         });
-        
+
         // If we came from FollowUpDetail, always go back to it
         if (cameFrom === 'FollowUpDetail' || previousRoute?.name === 'FollowUpDetail') {
             console.log('🔍 Came from FollowUpDetail, using goBack()');
             return { screen: 'FollowUpDetail' as const, params: undefined, useGoBack: true };
         }
-        
+
         // Otherwise, navigate to FollowUpDetail (from FollowUpDetail flow)
         const phoneForFollowUp = customerPhone || phone || '';
-        
+
         if (phoneForFollowUp) {
             console.log('🔍 Navigating to FollowUpDetail with phone:', phoneForFollowUp);
             return { screen: 'FollowUpDetail' as const, params: { id: phoneForFollowUp }, useGoBack: false };
@@ -176,7 +176,7 @@ export default function BookingActivityScreen({
         onBackPress: () => {
             const target = getBackNavigationTarget();
             console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}, useGoBack: ${target.useGoBack}`);
-            
+
             if (target.useGoBack) {
                 console.log('🔍 Using navigation.goBack()');
                 navigation.goBack();
@@ -198,38 +198,38 @@ export default function BookingActivityScreen({
     const processedVehicleRef = useRef<string | null>(null); // Track processed vehicle ID
 
     // ── Payload-critical field refs (always in sync, no stale-closure risk) ─
-    const customerFullNameRef   = useRef(customerName ? String(customerName) : '');
-    const phoneRef              = useRef(customerPhone ? String(customerPhone) : '');
-    const fatherNameRef         = useRef('');
-    const addressRef            = useRef('');
-    const address2Ref           = useRef('');
-    const address3Ref           = useRef('');
-    const localityRef           = useRef('');
-    const pincodeRef            = useRef('');
-    const countryRef            = useRef('');
-    const stateValRef           = useRef('');
-    const cityRef               = useRef('');
-    const customerGenderRef     = useRef('Male');
-    const emailRef              = useRef('');
-    const dobRef                = useRef('');
-    const ageRef                = useRef('');
-    const salesOfficerRef       = useRef('');
-    const quotationsRef         = useRef('');
-    const remarksRef            = useRef('');
-    const expectedDeliveryRef   = useRef('');
-    const nomineeRef            = useRef('');
-    const nomineeAgeRef         = useRef('');
-    const relationshipRef       = useRef('');
-    const referredByRef         = useRef<any>(null);
-    const paymentModeRef        = useRef('cash');
-    const customerDataRef       = useRef<any>(null);
-    const customerFetchedRef    = useRef(false); // prevent re-fetching on focus regain
+    const customerFullNameRef = useRef(customerName ? String(customerName) : '');
+    const phoneRef = useRef(customerPhone ? String(customerPhone) : '');
+    const fatherNameRef = useRef('');
+    const addressRef = useRef('');
+    const address2Ref = useRef('');
+    const address3Ref = useRef('');
+    const localityRef = useRef('');
+    const pincodeRef = useRef('');
+    const countryRef = useRef('');
+    const stateValRef = useRef('');
+    const cityRef = useRef('');
+    const customerGenderRef = useRef('Male');
+    const emailRef = useRef('');
+    const dobRef = useRef('');
+    const ageRef = useRef('');
+    const salesOfficerRef = useRef('');
+    const quotationsRef = useRef('');
+    const remarksRef = useRef('');
+    const expectedDeliveryRef = useRef('');
+    const nomineeRef = useRef('');
+    const nomineeAgeRef = useRef('');
+    const relationshipRef = useRef('');
+    const referredByRef = useRef<any>(null);
+    const paymentModeRef = useRef('cash');
+    const customerDataRef = useRef<any>(null);
+    const customerFetchedRef = useRef(false); // prevent re-fetching on focus regain
 
     // ── UI State ───────────────────────────────────────────────────────────
-    const [dataLoaded, setDataLoaded]                               = useState(false);
+    const [dataLoaded, setDataLoaded] = useState(false);
     const [isVehicleSelectionInProgress, setIsVehicleSelectionInProgress] = useState(false);
-    const [hasEverSelectedVehicle, setHasEverSelectedVehicle]       = useState(false);
-    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
+    const [hasEverSelectedVehicle, setHasEverSelectedVehicle] = useState(false);
+    const [activeTab, setActiveTab] = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
     const [registeredPhone, setRegisteredPhone] = useState('');
     const [otp, setOtp] = useState('');
     const [authStatus, setAuthStatus] = useState('Pending');
@@ -244,131 +244,131 @@ export default function BookingActivityScreen({
     const [showBookingStatusModal, setShowBookingStatusModal] = useState(false);
 
     // ── Customer fields ────────────────────────────────────────────────────
-    const [branch, setBranch]                     = useState('');
-    const [phone, setPhone]                       = useState(customerPhone ? String(customerPhone) : '');
+    const [branch, setBranch] = useState('');
+    const [phone, setPhone] = useState(customerPhone ? String(customerPhone) : '');
     const [customerFullName, setCustomerFullName] = useState(customerName ? String(customerName) : '');
-    const [fatherName, setFatherName]             = useState('');
-    const [address, setAddress]                   = useState('');
-    const [address2, setAddress2]                 = useState('');
-    const [address3, setAddress3]                 = useState('');
-    const [locality, setLocality]                 = useState('');
-    const [country, setCountry]                   = useState('');
-    const [stateVal, setStateVal]                 = useState('');
-    const [city, setCity]                         = useState('');
-    const [pincode, setPincode]                   = useState('');
-    const [email, setEmail]                       = useState('');
-    const [dob, setDob]                           = useState('');
-    const [age, setAge]                           = useState('');
-    const [referredBy, setReferredBy]             = useState('');
-    const [relationship, setRelationship]         = useState('');
-    const [nominee, setNominee]                   = useState('');
-    const [nomineeAge, setNomineeAge]             = useState('');
-    const [salesOfficer, setSalesOfficer]         = useState('');
+    const [fatherName, setFatherName] = useState('');
+    const [address, setAddress] = useState('');
+    const [address2, setAddress2] = useState('');
+    const [address3, setAddress3] = useState('');
+    const [locality, setLocality] = useState('');
+    const [country, setCountry] = useState('');
+    const [stateVal, setStateVal] = useState('');
+    const [city, setCity] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [email, setEmail] = useState('');
+    const [dob, setDob] = useState('');
+    const [age, setAge] = useState('');
+    const [referredBy, setReferredBy] = useState('');
+    const [relationship, setRelationship] = useState('');
+    const [nominee, setNominee] = useState('');
+    const [nomineeAge, setNomineeAge] = useState('');
+    const [salesOfficer, setSalesOfficer] = useState('');
     const [quotationsAssociated, setQuotationsAssociated] = useState('');
-    const [customerGender, setCustomerGender]     = useState('Male');
-    const [customerDob, setCustomerDob]           = useState('');
+    const [customerGender, setCustomerGender] = useState('Male');
+    const [customerDob, setCustomerDob] = useState('');
     const [generatedCustomerId, setGeneratedCustomerId] = useState('');
-    const [customerData, setCustomerData]         = useState<any>(null);
+    const [customerData, setCustomerData] = useState<any>(null);
 
-    const [selectedFinancerId, setSelectedFinancerId]             = useState('');
+    const [selectedFinancerId, setSelectedFinancerId] = useState('');
 
     // ── Dropdown data ──────────────────────────────────────────────────────
-    const [countries, setCountries]               = useState<any[]>([]);
-    const [states, setStates]                     = useState<any[]>([]);
-    const [cities, setCities]                     = useState<any[]>([]);
-    const [rtos, setRtos]                         = useState<any[]>([]);
-    const [manufacturers, setManufacturers]       = useState<any[]>([]);
-    const [models, setModels]                     = useState<any[]>([]);
-    const [colors, setColors]                     = useState<any[]>([]);
-    const [salesOfficers, setSalesOfficers]       = useState<any[]>([]);
+    const [countries, setCountries] = useState<any[]>([]);
+    const [states, setStates] = useState<any[]>([]);
+    const [cities, setCities] = useState<any[]>([]);
+    const [rtos, setRtos] = useState<any[]>([]);
+    const [manufacturers, setManufacturers] = useState<any[]>([]);
+    const [models, setModels] = useState<any[]>([]);
+    const [colors, setColors] = useState<any[]>([]);
+    const [salesOfficers, setSalesOfficers] = useState<any[]>([]);
     const [referredByOptions, setReferredByOptions] = useState<any[]>([]);
     const [relationshipOptions, setRelationshipOptions] = useState<any[]>([]);
-    const [branches, setBranches]                 = useState<any[]>([]);
+    const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchObj, setSelectedBranchObj] = useState<any>(null);
     const [selectedVehicleObj, setSelectedVehicleObj] = useState<any>(null);
 
     // ── Vehicle fields ─────────────────────────────────────────────────────
     const [manufacturer, setManufacturer] = useState('India Yamaha Motors Private Limited');
-    const [model, setModel]               = useState('');
+    const [model, setModel] = useState('');
     const currentModelRef = useRef(model);
-    const [rto, setRto]                   = useState('');
+    const [rto, setRto] = useState('');
     const [vehicleColor, setVehicleColor] = useState('');
-    const [accessories, setAccessories]   = useState<Accessory[]>([]);
-    const [totalDiscount, setTotalDiscount]           = useState('');
-    const [accessoriesTotal, setAccessoriesTotal]     = useState('');
+    const [accessories, setAccessories] = useState<Accessory[]>([]);
+    const [totalDiscount, setTotalDiscount] = useState('');
+    const [accessoriesTotal, setAccessoriesTotal] = useState('');
     const [accessoriesAfterDiscount, setAccessoriesAfterDiscount] = useState('');
-    const [exchangeModel, setExchangeModel]           = useState('');
-    const [exchangePrice, setExchangePrice]           = useState('');
-    const [onRoadPrice, setOnRoadPrice]               = useState('');
-    const [tempRegCharges, setTempRegCharges]         = useState('');
+    const [exchangeModel, setExchangeModel] = useState('');
+    const [exchangePrice, setExchangePrice] = useState('');
+    const [onRoadPrice, setOnRoadPrice] = useState('');
+    const [tempRegCharges, setTempRegCharges] = useState('');
     const [hypothecationCharges, setHypothecationCharges] = useState('');
     const [numberPlateCharges, setNumberPlateCharges] = useState('');
-    const [affidavitAmount, setAffidavitAmount]       = useState('');
-    const [specialNoCharges, setSpecialNoCharges]     = useState('');
-    const [onRoadDiscount, setOnRoadDiscount]         = useState('');
-    const [finalAmount, setFinalAmount]               = useState('');
-    const [showroomPrice, setShowroomPrice]           = useState('');
-    const [insuranceAmount, setInsuranceAmount]       = useState('');
-    const [roadTax, setRoadTax]                       = useState('');
-    const [warrantyPrice, setWarrantyPrice]           = useState('');
-    const [registrationFee, setRegistrationFee]       = useState('');
-    const [handlingCharges, setHandlingCharges]       = useState('');
-    const [insuranceType, setInsuranceType]           = useState('');
-    const [expectedDelivery, setExpectedDelivery]     = useState('');
+    const [affidavitAmount, setAffidavitAmount] = useState('');
+    const [specialNoCharges, setSpecialNoCharges] = useState('');
+    const [onRoadDiscount, setOnRoadDiscount] = useState('');
+    const [finalAmount, setFinalAmount] = useState('');
+    const [showroomPrice, setShowroomPrice] = useState('');
+    const [insuranceAmount, setInsuranceAmount] = useState('');
+    const [roadTax, setRoadTax] = useState('');
+    const [warrantyPrice, setWarrantyPrice] = useState('');
+    const [registrationFee, setRegistrationFee] = useState('');
+    const [handlingCharges, setHandlingCharges] = useState('');
+    const [insuranceType, setInsuranceType] = useState('');
+    const [expectedDelivery, setExpectedDelivery] = useState('');
 
     // ── Payment fields ─────────────────────────────────────────────────────
-    const [paymentMode, setPaymentMode]               = useState('cash');
-    const [financer, setFinancer]                     = useState('');
-    const [loanType, setLoanType]                     = useState('');
-    const [financierBranch, setFinancierBranch]       = useState('');
+    const [paymentMode, setPaymentMode] = useState('cash');
+    const [financer, setFinancer] = useState('');
+    const [loanType, setLoanType] = useState('');
+    const [financierBranch, setFinancierBranch] = useState('');
     const [paymentHypothecation, setPaymentHypothecation] = useState<boolean>(false);
-    const [remarks, setRemarks]                       = useState('');
-    const [netReceivables, setNetReceivables]         = useState('');
-    const [downPayment, setDownPayment]               = useState('');
-    const [tenure, setTenure]                         = useState('');
-    const [loanAmount, setLoanAmount]                 = useState('');
-    const [emiAmount, setEmiAmount]                   = useState('');
-    const [emiDay, setEmiDay]                         = useState('');
-    const [emiStartDate, setEmiStartDate]             = useState('');
+    const [remarks, setRemarks] = useState('');
+    const [netReceivables, setNetReceivables] = useState('');
+    const [downPayment, setDownPayment] = useState('');
+    const [tenure, setTenure] = useState('');
+    const [loanAmount, setLoanAmount] = useState('');
+    const [emiAmount, setEmiAmount] = useState('');
+    const [emiDay, setEmiDay] = useState('');
+    const [emiStartDate, setEmiStartDate] = useState('');
     const [loanDisbursementAmount, setLoanDisbursementAmount] = useState('');
     const [showroomFinanceCharges, setShowroomFinanceCharges] = useState('');
 
     // ── Modal visibility ───────────────────────────────────────────────────
-    const [showBranchModal, setShowBranchModal]                   = useState(false);
-    const [showAccessoryModal, setShowAccessoryModal]             = useState(false);
-    const [showInsuranceTypeModal, setShowInsuranceTypeModal]     = useState(false);
-    const [showCountryModal, setShowCountryModal]                 = useState(false);
-    const [showStateModal, setShowStateModal]                     = useState(false);
-    const [showCityModal, setShowCityModal]                       = useState(false);
-    const [showRtoModal, setShowRtoModal]                         = useState(false);
-    const [showManufacturerModal, setShowManufacturerModal]       = useState(false);
-    const [showModelModal, setShowModelModal]                     = useState(false);
-    const [showColorModal, setShowColorModal]                     = useState(false);
-    const [showSalesOfficerModal, setShowSalesOfficerModal]       = useState(false);
-    const [showReferredByModal, setShowReferredByModal]           = useState(false);
-    const [showRelationshipModal, setShowRelationshipModal]       = useState(false);
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    const [showAccessoryModal, setShowAccessoryModal] = useState(false);
+    const [showInsuranceTypeModal, setShowInsuranceTypeModal] = useState(false);
+    const [showCountryModal, setShowCountryModal] = useState(false);
+    const [showStateModal, setShowStateModal] = useState(false);
+    const [showCityModal, setShowCityModal] = useState(false);
+    const [showRtoModal, setShowRtoModal] = useState(false);
+    const [showManufacturerModal, setShowManufacturerModal] = useState(false);
+    const [showModelModal, setShowModelModal] = useState(false);
+    const [showColorModal, setShowColorModal] = useState(false);
+    const [showSalesOfficerModal, setShowSalesOfficerModal] = useState(false);
+    const [showReferredByModal, setShowReferredByModal] = useState(false);
+    const [showRelationshipModal, setShowRelationshipModal] = useState(false);
     const [showAttachQuotationModal, setShowAttachQuotationModal] = useState(false);
-    const [showCalendarModal, setShowCalendarModal]               = useState(false);
+    const [showCalendarModal, setShowCalendarModal] = useState(false);
     const [showExpectedDeliveryModal, setShowExpectedDeliveryModal] = useState(false);
-    const [showLoanTypeModal, setShowLoanTypeModal]               = useState(false);
-    const [showTenureModal, setShowTenureModal]                   = useState(false);
-    const [showEmiDayModal, setShowEmiDayModal]                   = useState(false);
-    const [showFinancerModal, setShowFinancerModal]               = useState(false);
-    const [showEmiStartDateModal, setShowEmiStartDateModal]       = useState(false);
-    const [financerOptions, setFinancerOptions]                   = useState<any[]>([]);
-    const [selectedDate, setSelectedDate]                         = useState(new Date());
-    const [dobCalendarStep, setDobCalendarStep]                   = useState<'year' | 'month' | 'day'>('year');
-    const [dobPickYear, setDobPickYear]                           = useState(new Date().getFullYear());
-    const [dobPickMonth, setDobPickMonth]                         = useState(new Date().getMonth());
+    const [showLoanTypeModal, setShowLoanTypeModal] = useState(false);
+    const [showTenureModal, setShowTenureModal] = useState(false);
+    const [showEmiDayModal, setShowEmiDayModal] = useState(false);
+    const [showFinancerModal, setShowFinancerModal] = useState(false);
+    const [showEmiStartDateModal, setShowEmiStartDateModal] = useState(false);
+    const [financerOptions, setFinancerOptions] = useState<any[]>([]);
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [dobCalendarStep, setDobCalendarStep] = useState<'year' | 'month' | 'day'>('year');
+    const [dobPickYear, setDobPickYear] = useState(new Date().getFullYear());
+    const [dobPickMonth, setDobPickMonth] = useState(new Date().getMonth());
 
     // ── Validation errors ──────────────────────────────────────────────────
-    const [nameError, setNameError]               = useState('');
-    const [phoneError, setPhoneError]             = useState('');
+    const [nameError, setNameError] = useState('');
+    const [phoneError, setPhoneError] = useState('');
     const [salesOfficerError, setSalesOfficerError] = useState('');
-    const [addressError, setAddressError]         = useState('');
-    const [localityError, setLocalityError]       = useState('');
-    const [pincodeError, setPincodeError]         = useState('');
-    const [modelError, setModelError]             = useState('');
+    const [addressError, setAddressError] = useState('');
+    const [localityError, setLocalityError] = useState('');
+    const [pincodeError, setPincodeError] = useState('');
+    const [modelError, setModelError] = useState('');
 
     // ─────────────────────────────────────────────────────────────────────
     // Derived booleans
@@ -382,29 +382,29 @@ export default function BookingActivityScreen({
     // Ref sync helpers — set both state (UI) and ref (payload) atomically
     // ─────────────────────────────────────────────────────────────────────
     const setCustomerFullNameSync = (v: string) => { customerFullNameRef.current = v; setCustomerFullName(v); };
-    const setPhoneSync            = (v: string) => { phoneRef.current = v; setPhone(v); };
-    const setFatherNameSync       = (v: string) => { fatherNameRef.current = v; setFatherName(v); };
-    const setAddressSync          = (v: string) => { addressRef.current = v; setAddress(v); };
-    const setAddress2Sync         = (v: string) => { address2Ref.current = v; setAddress2(v); };
-    const setAddress3Sync         = (v: string) => { address3Ref.current = v; setAddress3(v); };
-    const setLocalitySync         = (v: string) => { localityRef.current = v; setLocality(v); };
-    const setPincodeSync          = (v: string) => { pincodeRef.current = v; setPincode(v); };
-    const setCountrySync          = (v: string) => { countryRef.current = v; setCountry(v); };
-    const setStateValSync         = (v: string) => { stateValRef.current = v; setStateVal(v); };
-    const setCitySync             = (v: string) => { cityRef.current = v; setCity(v); };
-    const setCustomerGenderSync   = (v: string) => { customerGenderRef.current = v; setCustomerGender(v); };
-    const setEmailSync            = (v: string) => { emailRef.current = v; setEmail(v); };
-    const setDobSync              = (v: string) => { dobRef.current = v; setDob(v); };
-    const setAgeSync              = (v: string) => { ageRef.current = v; setAge(v); };
-    const setSalesOfficerSync     = (v: string) => { salesOfficerRef.current = v; setSalesOfficer(v); };
-    const setQuotationsSync       = (v: string) => { quotationsRef.current = v; setQuotationsAssociated(v); };
-    const setRemarksSync          = (v: string) => { remarksRef.current = v; setRemarks(v); };
+    const setPhoneSync = (v: string) => { phoneRef.current = v; setPhone(v); };
+    const setFatherNameSync = (v: string) => { fatherNameRef.current = v; setFatherName(v); };
+    const setAddressSync = (v: string) => { addressRef.current = v; setAddress(v); };
+    const setAddress2Sync = (v: string) => { address2Ref.current = v; setAddress2(v); };
+    const setAddress3Sync = (v: string) => { address3Ref.current = v; setAddress3(v); };
+    const setLocalitySync = (v: string) => { localityRef.current = v; setLocality(v); };
+    const setPincodeSync = (v: string) => { pincodeRef.current = v; setPincode(v); };
+    const setCountrySync = (v: string) => { countryRef.current = v; setCountry(v); };
+    const setStateValSync = (v: string) => { stateValRef.current = v; setStateVal(v); };
+    const setCitySync = (v: string) => { cityRef.current = v; setCity(v); };
+    const setCustomerGenderSync = (v: string) => { customerGenderRef.current = v; setCustomerGender(v); };
+    const setEmailSync = (v: string) => { emailRef.current = v; setEmail(v); };
+    const setDobSync = (v: string) => { dobRef.current = v; setDob(v); };
+    const setAgeSync = (v: string) => { ageRef.current = v; setAge(v); };
+    const setSalesOfficerSync = (v: string) => { salesOfficerRef.current = v; setSalesOfficer(v); };
+    const setQuotationsSync = (v: string) => { quotationsRef.current = v; setQuotationsAssociated(v); };
+    const setRemarksSync = (v: string) => { remarksRef.current = v; setRemarks(v); };
     const setExpectedDeliverySync = (v: string) => { expectedDeliveryRef.current = v; setExpectedDelivery(v); };
-    const setNomineeSync          = (v: string) => { nomineeRef.current = v; setNominee(v); };
-    const setNomineeAgeSync       = (v: string) => { nomineeAgeRef.current = v; setNomineeAge(v); };
-    const setRelationshipSync     = (v: string) => { relationshipRef.current = v; setRelationship(v); };
-    const setReferredBySync       = (v: any) => { referredByRef.current = v; setReferredBy(v && (v.name || v.display) ? v.name || v.display : v); };
-    const setPaymentModeSync      = (v: string) => { paymentModeRef.current = v; setPaymentMode(v); };
+    const setNomineeSync = (v: string) => { nomineeRef.current = v; setNominee(v); };
+    const setNomineeAgeSync = (v: string) => { nomineeAgeRef.current = v; setNomineeAge(v); };
+    const setRelationshipSync = (v: string) => { relationshipRef.current = v; setRelationship(v); };
+    const setReferredBySync = (v: any) => { referredByRef.current = v; setReferredBy(v && (v.name || v.display) ? v.name || v.display : v); };
+    const setPaymentModeSync = (v: string) => { paymentModeRef.current = v; setPaymentMode(v); };
 
     // ─────────────────────────────────────────────────────────────────────
     // Net receivables recalculation
@@ -646,13 +646,13 @@ export default function BookingActivityScreen({
 
     // ─────────────────────────────────────────────────────────────────────
     // Auto-fill — Customer fields from database:
-// Phone, Customer Name, Locality, Quotations, Gender, Father Name, Email, 
-// Address Lines, Pincode, Country, State, City, Referred By
-// ─────────────────────────────────────────────────────────────────────
+    // Phone, Customer Name, Locality, Quotations, Gender, Father Name, Email, 
+    // Address Lines, Pincode, Country, State, City, Referred By
+    // ─────────────────────────────────────────────────────────────────────
     const autoFillCustomerFields = (customer: any) => {
         console.log('🔍 autoFillCustomerFields — filling fields');
         console.log('👤 Customer data structure:', JSON.stringify(customer, null, 2));
-        
+
         // Auto-fill summary log
         console.log('🎯 AUTO-FILL SUMMARY - Checking all fields:');
         let fieldsFilled = 0;
@@ -700,7 +700,7 @@ export default function BookingActivityScreen({
         }
 
         // 4. Associated Quotations — only set if current quotations is empty
-        console.log('📄 Quotations check:', { 
+        console.log('📄 Quotations check:', {
             quotationIds: customer.quotation?.map((q: any) => q.quotationId || q.id),
             currentQuotations: quotationsRef.current
         });
@@ -737,8 +737,8 @@ export default function BookingActivityScreen({
         }
 
         // 8. Address Lines — only set if current address lines are empty
-        console.log('🏠 Address check:', { 
-            customerAddress: customer.address, 
+        console.log('🏠 Address check:', {
+            customerAddress: customer.address,
             currentAddr: addressRef.current,
             currentAddr2: address2Ref.current,
             currentAddr3: address3Ref.current
@@ -790,13 +790,13 @@ export default function BookingActivityScreen({
         console.log('👥 Referred By check:', { customerReferredBy: customer.refferedBy, currentReferredBy: referredByRef.current });
         if (customer.refferedBy && !referredByRef.current) {
             // Handle both object and string formats
-            const referredByData = typeof customer.refferedBy === 'object' && customer.refferedBy.id 
-                ? customer.refferedBy 
+            const referredByData = typeof customer.refferedBy === 'object' && customer.refferedBy.id
+                ? customer.refferedBy
                 : { name: String(customer.refferedBy) };
             setReferredBySync(referredByData);
             console.log('✅ Referred By set to:', referredByData);
         }
-        
+
         // Final Auto-fill Summary
         console.log('🎯 AUTO-FILL SUMMARY COMPLETE:');
         console.log(`📊 Fields Filled: ${fieldsFilled}`);
@@ -827,13 +827,13 @@ export default function BookingActivityScreen({
             }
 
             console.log('🔍 fetchCustomerData — proceeding with fetch for:', phoneToUse);
-            
+
             // Mark as fetched immediately to prevent race conditions
             customerFetchedRef.current = true;
 
             const customerRes = await getCustomerByPhoneNo(phoneToUse);
             const customers = (customerRes.data?.response?.data?.customers as any[]) || [];
-            
+
             console.log('🔍 Customer API response:', {
                 phoneToUse,
                 customersFound: customers.length,
@@ -861,15 +861,15 @@ export default function BookingActivityScreen({
     // handlePhoneChange — pass value directly to avoid stale state
     // ─────────────────────────────────────────────────────────────────────
     const handlePhoneChange = (value: string) => {
-        
+
         setPhoneSync(value);
-        
+
         // Only proceed if value is actually different from current ref
         if (value === phoneRef.current) {
             console.log('🔍 handlePhoneChange — same value, skipping');
             return;
         }
-        
+
         // If user is changing to a completely different phone number, reset fetch guard
         if (value.length === 10 && phoneRef.current && value !== phoneRef.current) {
             console.log('🔍 handlePhoneChange — resetting fetch guard for new phone');
@@ -926,32 +926,32 @@ export default function BookingActivityScreen({
         const saved = route.params?.savedFormData;
         if (saved) {
             console.log('🔄 Restoring saved form data from route params');
-            if (saved.fatherName)       setFatherNameSync(saved.fatherName);
-            if (saved.address)          setAddressSync(saved.address);
-            if (saved.address2)         setAddress2Sync(saved.address2);
-            if (saved.address3)         setAddress3Sync(saved.address3);
-            if (saved.locality)         setLocalitySync(saved.locality);
-            if (saved.pincode)          setPincodeSync(saved.pincode);
-            if (saved.country)          setCountrySync(saved.country);
-            if (saved.stateVal)         setStateValSync(saved.stateVal);
-            if (saved.city)             setCitySync(saved.city);
-            if (saved.email)            setEmailSync(saved.email);
-            if (saved.dob)              setDobSync(saved.dob);
-            if (saved.age)              setAgeSync(saved.age);
-            if (saved.salesOfficer)     setSalesOfficerSync(saved.salesOfficer);
-            if (saved.quotations)       setQuotationsSync(saved.quotations);
-            if (saved.remarks)          setRemarksSync(saved.remarks);
-            if (saved.customerGender)   setCustomerGenderSync(saved.customerGender);
-            if (saved.nominee)          setNomineeSync(saved.nominee);
-            if (saved.nomineeAge)       setNomineeAgeSync(saved.nomineeAge);
-            if (saved.relationship)     setRelationshipSync(saved.relationship);
-            if (saved.referredBy)       setReferredBySync(saved.referredBy);
+            if (saved.fatherName) setFatherNameSync(saved.fatherName);
+            if (saved.address) setAddressSync(saved.address);
+            if (saved.address2) setAddress2Sync(saved.address2);
+            if (saved.address3) setAddress3Sync(saved.address3);
+            if (saved.locality) setLocalitySync(saved.locality);
+            if (saved.pincode) setPincodeSync(saved.pincode);
+            if (saved.country) setCountrySync(saved.country);
+            if (saved.stateVal) setStateValSync(saved.stateVal);
+            if (saved.city) setCitySync(saved.city);
+            if (saved.email) setEmailSync(saved.email);
+            if (saved.dob) setDobSync(saved.dob);
+            if (saved.age) setAgeSync(saved.age);
+            if (saved.salesOfficer) setSalesOfficerSync(saved.salesOfficer);
+            if (saved.quotations) setQuotationsSync(saved.quotations);
+            if (saved.remarks) setRemarksSync(saved.remarks);
+            if (saved.customerGender) setCustomerGenderSync(saved.customerGender);
+            if (saved.nominee) setNomineeSync(saved.nominee);
+            if (saved.nomineeAge) setNomineeAgeSync(saved.nomineeAge);
+            if (saved.relationship) setRelationshipSync(saved.relationship);
+            if (saved.referredBy) setReferredBySync(saved.referredBy);
             if (saved.expectedDelivery) setExpectedDeliverySync(saved.expectedDelivery);
             if (saved.customerFullName) setCustomerFullNameSync(saved.customerFullName);
             // Clear savedFormData from params to prevent re-restoring
             navigation.setParams({ savedFormData: undefined } as any);
         }
-        
+
         // Also restore booking mode flags if they're passed in params
         if (route.params?.isConfirmBooking !== undefined) {
             setPersistedIsConfirmBooking(route.params.isConfirmBooking);
@@ -994,18 +994,18 @@ export default function BookingActivityScreen({
                 vehicleId: route.params?.selectedVehicle?.vehicleId || route.params?.selectedVehicle?.id,
                 processedVehicleRef: processedVehicleRef.current
             });
-            
+
             // Only proceed if we have vehicle data AND haven't processed it yet
             if (route.params?.selectedVehicle && !isVehicleSelectionInProgressRef.current) {
                 const vehicleData = route.params.selectedVehicle;
                 const vehicleId = vehicleData.vehicleId || vehicleData.id;
-                
+
                 // Check if we've already processed this specific vehicle
                 if (processedVehicleRef.current === vehicleId) {
                     console.log('🔍 useFocusEffect — vehicle already processed:', vehicleId);
                     return;
                 }
-                
+
                 console.log('🔍 useFocusEffect — processing new vehicle:', vehicleId);
                 processedVehicleRef.current = vehicleId;
 
@@ -1069,37 +1069,37 @@ export default function BookingActivityScreen({
         let hasCustomerError = false;
 
         // Read from state (always up-to-date by the time user reaches Save & Complete)
-        const n   = customerFullName.trim();
-        const p   = phone.trim();
-        const so  = salesOfficer.trim();
+        const n = customerFullName.trim();
+        const p = phone.trim();
+        const so = salesOfficer.trim();
         const addr = address.trim();
-        const loc  = locality.trim();
-        const pin  = pincode.trim();
-        const a    = age.trim();
-        const g    = customerGender.trim();
+        const loc = locality.trim();
+        const pin = pincode.trim();
+        const a = age.trim();
+        const g = customerGender.trim();
 
-        if (!n)   { setNameError('Customer name is required'); hasCustomerError = true; }
-        if (!p)   { setPhoneError('Phone number is required'); hasCustomerError = true; }
+        if (!n) { setNameError('Customer name is required'); hasCustomerError = true; }
+        if (!p) { setPhoneError('Phone number is required'); hasCustomerError = true; }
         else if (p.length !== 10 || !/^\d+$/.test(p)) { setPhoneError('Enter a valid 10-digit phone'); hasCustomerError = true; }
-        if (!so)  { setSalesOfficerError('Sales officer is required'); hasCustomerError = true; }
-        if (!a)   { toast.error('Age is required'); hasCustomerError = true; }
-        if (!g)   { toast.error('Gender is required'); hasCustomerError = true; }
-        if (!addr){ setAddressError('Address is required'); hasCustomerError = true; }
+        if (!so) { setSalesOfficerError('Sales officer is required'); hasCustomerError = true; }
+        if (!a) { toast.error('Age is required'); hasCustomerError = true; }
+        if (!g) { toast.error('Gender is required'); hasCustomerError = true; }
+        if (!addr) { setAddressError('Address is required'); hasCustomerError = true; }
         if (!loc) { setLocalityError('Locality is required'); hasCustomerError = true; }
         if (!pin) { setPincodeError('Pincode is required'); hasCustomerError = true; }
         else if (!/^\d{6}$/.test(pin)) { setPincodeError('Enter a valid 6-digit pincode'); hasCustomerError = true; }
 
         if (hasCustomerError) {
-            if (!n)             toast.error('Customer name is required');
-            else if (!p)        toast.error('Phone number is required');
+            if (!n) toast.error('Customer name is required');
+            else if (!p) toast.error('Phone number is required');
             else if (p.length !== 10) toast.error('Enter a valid 10-digit phone');
-            else if (!so)       toast.error('Sales officer is required');
-            else if (!a)        toast.error('Age is required');
-            else if (!g)        toast.error('Gender is required');
-            else if (!addr)     toast.error('Address is required');
-            else if (!loc)      toast.error('Locality is required');
-            else if (!pin)      toast.error('Pincode is required');
-            else                toast.error('Enter a valid 6-digit pincode');
+            else if (!so) toast.error('Sales officer is required');
+            else if (!a) toast.error('Age is required');
+            else if (!g) toast.error('Gender is required');
+            else if (!addr) toast.error('Address is required');
+            else if (!loc) toast.error('Locality is required');
+            else if (!pin) toast.error('Pincode is required');
+            else toast.error('Enter a valid 6-digit pincode');
             return 'customer';
         }
 
@@ -1120,9 +1120,9 @@ export default function BookingActivityScreen({
             if (!financer.trim()) { toast.error('Financer name is required'); return 'payment'; }
             if (loanType === 'Company Assisted') {
                 if (!downPayment) { toast.error('Down payment is required'); return 'payment'; }
-                if (!tenure)      { toast.error('Tenure is required'); return 'payment'; }
-                if (!loanAmount)  { toast.error('Loan amount is required'); return 'payment'; }
-                if (!emiAmount)   { toast.error('EMI amount is required'); return 'payment'; }
+                if (!tenure) { toast.error('Tenure is required'); return 'payment'; }
+                if (!loanAmount) { toast.error('Loan amount is required'); return 'payment'; }
+                if (!emiAmount) { toast.error('EMI amount is required'); return 'payment'; }
             }
         }
 
@@ -1153,37 +1153,37 @@ export default function BookingActivityScreen({
             generateBookingId(branchId),
             generateEReceiptId(branchId),
         ]);
-        const baseBookingId  = bookingIdRes.data?.response?.data  || bookingIdRes.data?.data  || 'BK';
-        const baseReceiptId  = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
+        const baseBookingId = bookingIdRes.data?.response?.data || bookingIdRes.data?.data || 'BK';
+        const baseReceiptId = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
         const stamp = `${Date.now()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-        const bookingId  = `${baseBookingId}-${stamp}`;
+        const bookingId = `${baseBookingId}-${stamp}`;
         const eReceiptId = `${baseReceiptId}-${stamp}`;
 
         // ── Read all values from refs ──
-        const snap           = customerDataRef.current;
-        const currentName    = customerFullNameRef.current;
-        const currentPhone   = phoneRef.current;
-        const currentFather  = fatherNameRef.current;
-        const currentAddr    = addressRef.current;
-        const currentAddr2   = address2Ref.current;
-        const currentAddr3   = address3Ref.current;
-        const currentLoc     = localityRef.current;
+        const snap = customerDataRef.current;
+        const currentName = customerFullNameRef.current;
+        const currentPhone = phoneRef.current;
+        const currentFather = fatherNameRef.current;
+        const currentAddr = addressRef.current;
+        const currentAddr2 = address2Ref.current;
+        const currentAddr3 = address3Ref.current;
+        const currentLoc = localityRef.current;
         const currentCountry = countryRef.current;
-        const currentState   = stateValRef.current;
-        const currentCity    = cityRef.current;
-        const currentPin     = pincodeRef.current;
-        const currentEmail   = emailRef.current;
-        const currentDob     = dobRef.current;
-        const currentGender  = customerGenderRef.current;
-        const currentSales   = salesOfficerRef.current;
-        const currentQuotes  = quotationsRef.current;
+        const currentState = stateValRef.current;
+        const currentCity = cityRef.current;
+        const currentPin = pincodeRef.current;
+        const currentEmail = emailRef.current;
+        const currentDob = dobRef.current;
+        const currentGender = customerGenderRef.current;
+        const currentSales = salesOfficerRef.current;
+        const currentQuotes = quotationsRef.current;
         const currentRemarks = remarksRef.current;
         const currentPayMode = paymentModeRef.current;
         const currentNominee = nomineeRef.current;
-        const currentNomAge  = nomineeAgeRef.current;
+        const currentNomAge = nomineeAgeRef.current;
         const currentRelation = relationshipRef.current;
         const currentReferred = referredByRef.current;
-        const currentExpDel  = expectedDeliveryRef.current;
+        const currentExpDel = expectedDeliveryRef.current;
 
         console.log('📦 Payload ref values:', {
             name: currentName, phone: currentPhone, address: currentAddr,
@@ -1191,16 +1191,16 @@ export default function BookingActivityScreen({
         });
 
         const vehicleData = selectedVehicleObj ? {
-            id:        selectedVehicleObj.modelId || selectedVehicleObj.vehicleId || selectedVehicleObj.id,
+            id: selectedVehicleObj.modelId || selectedVehicleObj.vehicleId || selectedVehicleObj.id,
             modelName: selectedVehicleObj.name || selectedVehicleObj.displayName,
             modelCode: selectedVehicleObj.model || selectedVehicleObj.modelCode,
             color: {
-                id:       selectedVehicleObj.selectedColor?.price?.colors?.[0]?.colorId ||
-                          selectedVehicleObj.selectedColor?.id || null,
-                name:     selectedVehicleObj.selectedColor?.name || selectedVehicleObj.selectedColor?.colorName,
-                code:     selectedVehicleObj.selectedColor?.code || '#000000',
+                id: selectedVehicleObj.selectedColor?.price?.colors?.[0]?.colorId ||
+                    selectedVehicleObj.selectedColor?.id || null,
+                name: selectedVehicleObj.selectedColor?.name || selectedVehicleObj.selectedColor?.colorName,
+                code: selectedVehicleObj.selectedColor?.code || '#000000',
                 imageUrl: selectedVehicleObj.selectedColor?.price?.colors?.[0]?.imageDetails?.[0]?.url ||
-                          selectedVehicleObj.selectedColor?.imageUrl || null,
+                    selectedVehicleObj.selectedColor?.imageUrl || null,
             },
         } : null;
 
@@ -1218,23 +1218,23 @@ export default function BookingActivityScreen({
             : null;
 
         const loanPayload = {
-            hypothecation:          isFinance ? paymentHypothecation : false,
-            financerBranch:         isFinance ? financierBranch : '',
-            financer:               isFinance && selectedFinancerId ? { id: selectedFinancerId, name: financer } : null,
-            downPayment:            isFinance ? (parseFloat(downPayment) || 0) : 0,
-            loanAmount:             isFinance ? (parseFloat(loanAmount) || 0) : 0,
-            tenure:                 isFinance ? (parseInt(tenure) || 0) : 0,
-            emiDate:                isFinance ? (parseInt(emiDay) || 0) : 0,
-            emiStartDate:           isFinance && emiStartDate ? (() => {
+            hypothecation: isFinance ? paymentHypothecation : false,
+            financerBranch: isFinance ? financierBranch : '',
+            financer: isFinance && selectedFinancerId ? { id: selectedFinancerId, name: financer } : null,
+            downPayment: isFinance ? (parseFloat(downPayment) || 0) : 0,
+            loanAmount: isFinance ? (parseFloat(loanAmount) || 0) : 0,
+            tenure: isFinance ? (parseInt(tenure) || 0) : 0,
+            emiDate: isFinance ? (parseInt(emiDay) || 0) : 0,
+            emiStartDate: isFinance && emiStartDate ? (() => {
                 if (emiStartDate.includes('/')) {
                     const [dd, mm, yyyy] = emiStartDate.split('/');
                     return `${yyyy}-${mm}-${dd}`;
                 }
                 return emiStartDate;
             })() : null,
-            loanType:               normalizedLoanType,
-            emiAmount:              isFinance ? (parseFloat(emiAmount) || 0) : 0,
-            disbursementAmount:     isFinance ? (parseFloat(loanDisbursementAmount) || 0) : 0,
+            loanType: normalizedLoanType,
+            emiAmount: isFinance ? (parseFloat(emiAmount) || 0) : 0,
+            disbursementAmount: isFinance ? (parseFloat(loanDisbursementAmount) || 0) : 0,
             showroomFinanceCharges: isFinance ? (parseFloat(showroomFinanceCharges) || 0) : 0,
         };
 
@@ -1263,96 +1263,96 @@ export default function BookingActivityScreen({
 
             // Customer object — always use ref values for addresses (user may have edited)
             customer: snap ? {
-                id:          snap.id,
-                customerId:  snap.customerId,
-                name:        currentName,
-                fatherName:  currentFather || null,
-                gender:      currentGender,
-                email:       currentEmail || null,
-                contacts:    snap.contacts || [],
+                id: snap.id,
+                customerId: snap.customerId,
+                name: currentName,
+                fatherName: currentFather || null,
+                gender: currentGender,
+                email: currentEmail || null,
+                contacts: snap.contacts || [],
                 dateOfBirth: normalizedDob,
                 address: {
-                    line1:    currentAddr,
-                    line2:    currentAddr2,
-                    line3:    currentAddr3,
+                    line1: currentAddr,
+                    line2: currentAddr2,
+                    line3: currentAddr3,
                     locality: currentLoc,
-                    pincode:  currentPin,
-                    country:  currentCountry ? { name: currentCountry } : null,
-                    state:    currentState   ? { name: currentState }   : null,
-                    city:     currentCity    ? { name: currentCity }    : null,
+                    pincode: currentPin,
+                    country: currentCountry ? { name: currentCountry } : null,
+                    state: currentState ? { name: currentState } : null,
+                    city: currentCity ? { name: currentCity } : null,
                 },
                 refferedBy: currentReferred || null,
             } : null,
 
-            customerId:         displayCustomerId,
-            customerName:       currentName,
-            fatherName:         currentFather || '',
+            customerId: displayCustomerId,
+            customerName: currentName,
+            fatherName: currentFather || '',
             customerFatherName: currentFather || '',
-            customerPhone:      currentPhone,
-            customerGender:     currentGender,
-            line1:               currentAddr || '',
-            line2:               currentAddr2 || '',
-            line3:               currentAddr3 || '',
-            customerLine1:      currentAddr || '',
-            customerLine2:      currentAddr2 || '',
-            customerLine3:      currentAddr3 || '',
-            customerLocality:   currentLoc,
-            customerCountry:    currentCountry,
-            customerState:      currentState,
-            customerCity:       currentCity,
-            customerPincode:    currentPin,
-            customerEmail:      currentEmail,
-            customerDob:        normalizedDob,
+            customerPhone: currentPhone,
+            customerGender: currentGender,
+            line1: currentAddr || '',
+            line2: currentAddr2 || '',
+            line3: currentAddr3 || '',
+            customerLine1: currentAddr || '',
+            customerLine2: currentAddr2 || '',
+            customerLine3: currentAddr3 || '',
+            customerLocality: currentLoc,
+            customerCountry: currentCountry,
+            customerState: currentState,
+            customerCity: currentCity,
+            customerPincode: currentPin,
+            customerEmail: currentEmail,
+            customerDob: normalizedDob,
 
             IDbranch: branchId,
-            branch:   { id: branchId, name: selectedBranch.name || branch },
+            branch: { id: branchId, name: selectedBranch.name || branch },
 
-            nomineeName:  currentNominee,
-            nomineeAge:   currentNomAge,
+            nomineeName: currentNominee,
+            nomineeAge: currentNomAge,
             relationship: currentRelation,
 
-            vehicle:         vehicleData,
+            vehicle: vehicleData,
             selectedVehicle: vehicleData ? [{
                 color: {
-                    id:    vehicleData.color?.id,
+                    id: vehicleData.color?.id,
                     color: vehicleData.color?.name,
-                    code:  vehicleData.color?.code,
-                    url:   vehicleData.color?.imageUrl,
+                    code: vehicleData.color?.code,
+                    url: vehicleData.color?.imageUrl,
                 },
                 vehicleDetail: {
-                    id:        vehicleData.id,
+                    id: vehicleData.id,
                     modelName: vehicleData.modelName,
                     modelCode: vehicleData.modelCode,
                 },
             }] : [],
 
-            rto:     resolveRto(),
+            rto: resolveRto(),
             rtoCode: rto?.split(' - ')[0] || 'KA-01',
             rtoArea: rto?.split(' - ')[1] || '',
 
             price: {
-                showroomPrice:                parseFloat(showroomPrice)         || 0,
-                onRoadPrice:                  parseFloat(onRoadPrice)           || 0,
-                onRoadDiscount:               parseFloat(onRoadDiscount)        || 0,
-                insuranceAmount:              parseFloat(insuranceAmount)       || 0,
-                insuranceType:                insuranceType || 'Comprehensive',
-                roadTax:                      parseFloat(roadTax)               || 0,
-                handlingCharges:              parseFloat(handlingCharges)       || 0,
-                registrationFee:              parseFloat(registrationFee)       || 0,
-                numberPlate:                  parseFloat(numberPlateCharges)    || 0,
-                tempRegister:                 parseFloat(tempRegCharges)        || 0,
-                hp:                           parseFloat(hypothecationCharges)  || 0,
-                paymentMode:                  currentPayMode,
-                affidavit:                    parseFloat(affidavitAmount)       || 0,
-                netRecievables:               parseFloat(netReceivables)        || 0,
-                specialNoCharges:             parseFloat(specialNoCharges)      || 0,
-                accessoriesTotal:             parseFloat(accessoriesTotal)      || 0,
+                showroomPrice: parseFloat(showroomPrice) || 0,
+                onRoadPrice: parseFloat(onRoadPrice) || 0,
+                onRoadDiscount: parseFloat(onRoadDiscount) || 0,
+                insuranceAmount: parseFloat(insuranceAmount) || 0,
+                insuranceType: insuranceType || 'Comprehensive',
+                roadTax: parseFloat(roadTax) || 0,
+                handlingCharges: parseFloat(handlingCharges) || 0,
+                registrationFee: parseFloat(registrationFee) || 0,
+                numberPlate: parseFloat(numberPlateCharges) || 0,
+                tempRegister: parseFloat(tempRegCharges) || 0,
+                hp: parseFloat(hypothecationCharges) || 0,
+                paymentMode: currentPayMode,
+                affidavit: parseFloat(affidavitAmount) || 0,
+                netRecievables: parseFloat(netReceivables) || 0,
+                specialNoCharges: parseFloat(specialNoCharges) || 0,
+                accessoriesTotal: parseFloat(accessoriesTotal) || 0,
                 accessoriesTotalAfterDiscount: parseFloat(accessoriesAfterDiscount) || 0,
-                totalDiscount:                parseFloat(totalDiscount)         || 0,
-                finalAmount:                  parseFloat(finalAmount)           || 0,
+                totalDiscount: parseFloat(totalDiscount) || 0,
+                finalAmount: parseFloat(finalAmount) || 0,
             },
 
-            exchangeVehicleName:  exchangeModel,
+            exchangeVehicleName: exchangeModel,
             exchangeVehiclePrice: parseFloat(exchangePrice) || 0,
             exchange: { vehicleModel: exchangeModel, vehiclePrice: parseFloat(exchangePrice) || null },
 
@@ -1378,18 +1378,18 @@ export default function BookingActivityScreen({
 
             color: { id: vehicleData?.color?.id || null },
 
-            loan:     loanPayload,
+            loan: loanPayload,
             loanData: {
-                finName:               isFinance ? financer : null,
-                financerBranch:        loanPayload.financerBranch,
-                downPayment:           loanPayload.downPayment,
-                loanAmount:            loanPayload.loanAmount,
-                tenure:                loanPayload.tenure,
-                emiDate:               loanPayload.emiDate,
-                emiStartDate:          loanPayload.emiStartDate,
-                loanType:              loanPayload.loanType,
-                emiAmount:             loanPayload.emiAmount,
-                disbursementAmount:    loanPayload.disbursementAmount,
+                finName: isFinance ? financer : null,
+                financerBranch: loanPayload.financerBranch,
+                downPayment: loanPayload.downPayment,
+                loanAmount: loanPayload.loanAmount,
+                tenure: loanPayload.tenure,
+                emiDate: loanPayload.emiDate,
+                emiStartDate: loanPayload.emiStartDate,
+                loanType: loanPayload.loanType,
+                emiAmount: loanPayload.emiAmount,
+                disbursementAmount: loanPayload.disbursementAmount,
                 showroomFinanceCharges: loanPayload.showroomFinanceCharges,
             },
 
@@ -1414,9 +1414,9 @@ export default function BookingActivityScreen({
                 }
                 return currentExpDel;
             })() : null,
-            refferedBy:      currentReferred && currentReferred.id ? { id: currentReferred.id } : null,
+            refferedBy: currentReferred && currentReferred.id ? { id: currentReferred.id } : null,
             confirmBookingId: null,
-            
+
             // Authentication data for Confirm Booking (matching web app pattern)
             ...(persistedIsConfirmBooking && {
                 authentication: {
@@ -1430,13 +1430,13 @@ export default function BookingActivityScreen({
 
         // Remove undefined keys
         Object.keys(payload).forEach(k => { if (payload[k] === undefined) delete payload[k]; });
-        
+
         // Debug: Show booking mode and key payload fields
         console.log(`🎯 Booking Mode: ${bookingMode}`);
         console.log(`📊 Booking Flags: isAdvanceBooking=${payload.isAdvanceBooking}, bookingStatus=${payload.bookingStatus}`);
         console.log('🔐 Authentication:', payload.authentication ? 'Included' : 'Not included');
         console.log('📦 Final payload:', JSON.stringify(payload, null, 2));
-        
+
         return payload;
     };
 
@@ -1462,37 +1462,37 @@ export default function BookingActivityScreen({
             console.log('📦 Booking response:', response);
             console.log('📦 Response data:', response.data);
             console.log('📦 Response status:', response.status);
-            
+
             if (response.data.code === 200) {
                 toast.success('Booking saved successfully!');
                 console.log('📦 Booking created successfully, updating quotation status...');
-                
+
                 // Extract booking ID from response
                 const bookingData = response.data?.response?.data;
                 const extractedBookingId = bookingData?.bookingId || bookingData?.id;
-                
+
                 if (extractedBookingId) {
                     console.log('📝 Found bookingId:', extractedBookingId);
                     setBookingId(extractedBookingId);
                 } else {
                     console.log('⚠️ No booking ID found in booking response');
                 }
-                
+
                 // Update quotation status to "BOOKED" after successful booking
                 const quotationData = response.data?.response?.data?.quotation?.[0];
                 const quotationId = quotationData?.id || quotationData?.quotationId;
-                
+
                 if (quotationId) {
                     console.log('📝 Found quotationId:', quotationId);
                     // TODO: Implement status update when backend API is available
                     console.log('⚠️ Status update API not available yet, skipping status update');
-                    
+
                     // Emit event to refresh FollowUps list
                     DeviceEventEmitter.emit('refreshFollowUps');
                 } else {
                     console.log('⚠️ No quotation ID found in booking response');
                 }
-                
+
                 // After successful booking, navigate to Auth section if it's a confirm booking
                 if (persistedIsConfirmBooking) {
                     console.log('🔍 Confirm booking successful, navigating to Auth section');
@@ -1504,25 +1504,39 @@ export default function BookingActivityScreen({
                     // For advanced bookings, proceed with original navigation logic
                     const state = navigation.getState();
                     const previousRoute = state.routes[state.routes.length - 2]; // Get previous route
-                    
+
                     console.log('🔍 Save completed - Navigation state check:', {
                         currentRoute: state.routes[state.routes.length - 1].name,
                         previousRoute: previousRoute?.name,
                         cameFromQuotationForm: previousRoute?.name === 'QuotationForm'
                     });
-                    
+
                     // If we came from QuotationForm, go back to it after successful booking
                     if (previousRoute?.name === 'QuotationForm') {
                         console.log('🔍 Came from QuotationForm, going back after successful booking');
                         setTimeout(() => {
-                            navigation.goBack();
+                            // Reset navigation to remove BookingActivity from stack and go to FollowUpDetail
+                            const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
+                            if (customerPhone) {
+                                console.log('🔍 Resetting navigation to FollowUpDetail with customerPhone:', customerPhone);
+                                navigation.reset({
+                                    index: 1,
+                                    routes: [
+                                        { name: 'Main', state: { routes: [{ name: 'FollowUps' }] } },
+                                        { name: 'FollowUpDetail', params: { id: customerPhone } }
+                                    ]
+                                });
+                            } else {
+                                // Fallback: just go back if no customer phone
+                                navigation.goBack();
+                            }
                         }, 1500); // Small delay to show success message
                     } else {
                         // Otherwise, reset to Quotations tab (original behavior)
                         const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
                         if (customerPhone) {
                             console.log('🔍 Resetting navigation and going to Quotations tab with customerPhone:', customerPhone);
-                            
+
                             setTimeout(() => {
                                 if (quotationId) {
                                     console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
@@ -1563,7 +1577,7 @@ export default function BookingActivityScreen({
             console.error('❌ Booking creation error:', error);
             console.error('❌ Error response:', error.response);
             console.error('❌ Error request:', error.request);
-            
+
             if (error.response) {
                 console.error('❌ Server response data:', error.response.data);
                 toast.error(error.response.data?.message || error.response.data?.err?.message || 'Server error');
@@ -1581,7 +1595,7 @@ export default function BookingActivityScreen({
     const handleClose = () => {
         const target = getBackNavigationTarget();
         console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-        
+
         if (target.useGoBack) {
             navigation.goBack();
         } else if (target.params) {
@@ -1606,14 +1620,14 @@ export default function BookingActivityScreen({
     const handleAttachQuotation = async (selected: string[]) => {
         console.log('🔗 handleAttachQuotation called with:', selected);
         console.log('📊 Current quotationsAssociated before:', quotationsAssociated);
-        
+
         if (selected.length > 0) {
             // Convert internal IDs to quotation IDs using existing customer data or API fallback
             const newQuotationIds = await Promise.all(selected.map(async (id) => {
                 // First try to find matching quotation in customer data
                 const matchingQuotation = customerData?.quotation?.find(q => q.id === id);
                 const quotationId = matchingQuotation?.quotationId;
-                
+
                 if (quotationId) {
                     console.log('🔄 Found in customer data - Converting ID:', id, 'to QuotationId:', quotationId);
                     return quotationId;
@@ -1632,21 +1646,21 @@ export default function BookingActivityScreen({
                     }
                 }
             }));
-            
+
             console.log('🔄 Converted quotation IDs:', newQuotationIds);
-            
+
             // Combine existing and new quotations
             const existingQuotations = quotationsAssociated ? quotationsAssociated.split(', ').filter(q => q.trim()) : [];
             const allQuotations = [...existingQuotations, ...newQuotationIds];
-            
+
             // Remove duplicates
             const uniqueQuotations = [...new Set(allQuotations)];
             const finalQuotations = uniqueQuotations.join(', ');
-            
+
             console.log('📝 Setting quotations to:', finalQuotations);
             setQuotationsSync(finalQuotations);
             toast.success(`Attached ${selected.length} quotation(s)`);
-            
+
             // Verify the change
             setTimeout(() => {
                 console.log('📊 QuotationsAssociated after setting:', quotationsAssociated);
@@ -1660,7 +1674,7 @@ export default function BookingActivityScreen({
     const handleAccessorySave = (saved: Accessory[]) => {
         setAccessories(saved);
         const before = saved.reduce((s, a) => s + a.priceBeforeDiscount, 0);
-        const after  = saved.reduce((s, a) => s + a.priceAfterDiscount, 0);
+        const after = saved.reduce((s, a) => s + a.priceAfterDiscount, 0);
         setAccessoriesTotal(before.toString());
         setAccessoriesAfterDiscount(after.toString());
     };
@@ -1675,9 +1689,9 @@ export default function BookingActivityScreen({
             if (!address.trim()) { setAddressError('Required'); err = true; }
             if (!locality.trim()) { setLocalityError('Required'); err = true; }
             if (!pincode.trim() || pincode.length !== 6) { setPincodeError('Required (6 digits)'); err = true; }
-            if (!salesOfficer.trim())     { setSalesOfficerError('Required'); err = true; }
-            if (!age.trim())              { toast.error('Age is required'); err = true; }
-            if (!customerGender.trim())   { toast.error('Gender is required'); err = true; }
+            if (!salesOfficer.trim()) { setSalesOfficerError('Required'); err = true; }
+            if (!age.trim()) { toast.error('Age is required'); err = true; }
+            if (!customerGender.trim()) { toast.error('Gender is required'); err = true; }
             if (!err) setActiveTab('vehicle');
         } else if (activeTab === 'vehicle') {
             if (!model) { toast.error('Please select a vehicle model'); return; }
@@ -1692,7 +1706,7 @@ export default function BookingActivityScreen({
             // After completing auth section, navigate to QuotationList
             console.log('🔍 Auth section completed, navigating to QuotationList');
             toast.success('Authorization completed! Redirecting to quotations...');
-            
+
             setTimeout(() => {
                 // Reset navigation and go to Quotations tab
                 navigation.reset({
@@ -1731,22 +1745,22 @@ export default function BookingActivityScreen({
 
         setIsGeneratingOTP(true);
         try {
-            const salesOfficerData = { 
-                profile: { employeeName: salesOfficerRef.current }, 
-                phone: phoneRef.current 
+            const salesOfficerData = {
+                profile: { employeeName: salesOfficerRef.current },
+                phone: phoneRef.current
             };
             const branchData = { name: branch };
-            
+
             const response = await generateOTP(
-                registeredPhone, 
-                bookingId, 
-                customerFullNameRef.current || customerFullName, 
-                model, 
-                salesOfficerData, 
+                registeredPhone,
+                bookingId,
+                customerFullNameRef.current || customerFullName,
+                model,
+                salesOfficerData,
                 branchData
             );
             console.log('🔐 OTP Generation Response:', response.data);
-            
+
             if (response.data.code === 200) {
                 setOtpReferenceId(response.data.data.referenceId);
                 setAuthStatus('Sent');
@@ -1777,7 +1791,7 @@ export default function BookingActivityScreen({
         try {
             const response = await verifyOTP(otpReferenceId, otp);
             console.log('🔐 OTP Verification Response:', response.data);
-            
+
             if (response.data.code === 200 && response.data.data.isValid) {
                 setAuthStatus('Verified');
                 toast.success('OTP verified successfully!');
@@ -1798,7 +1812,7 @@ export default function BookingActivityScreen({
             authPassword: authPassword ? '***' : 'empty',
             bookingStatus: bookingStatus
         });
-        
+
         if (!authPassword) {
             toast.error('Please enter authorization password');
             return;
@@ -1818,20 +1832,20 @@ export default function BookingActivityScreen({
                 status: bookingStatus,
                 bookingId: bookingId
             });
-            
+
             const response = await authorizeBooking(bookingId, authPassword, bookingStatus);
             console.log('🔐 Booking Authorization Response:', response.data);
             console.log('🔐 Full response structure:', JSON.stringify(response.data, null, 2));
-            
+
             if (response.data.code === 200) {
                 setAuthStatus('Authorized');
                 toast.success(`Booking ${bookingStatus.toLowerCase()} successfully!`);
-                
+
                 // Send confirmation SMS only for accepted bookings
                 if (bookingStatus === 'ACCEPTED') {
                     await sendConfirmationSMS();
                 }
-                
+
                 // Navigate to quotations after successful authorization
                 setTimeout(() => {
                     navigation.reset({
@@ -1861,7 +1875,7 @@ export default function BookingActivityScreen({
             console.error('🔐 Error response:', error.response?.data);
             console.error('🔐 Error status:', error.response?.status);
             console.error('🔐 Error headers:', error.response?.headers);
-            
+
             if (error.response?.status === 500) {
                 toast.error('Backend server error. Please try again later or contact support.');
             } else {
@@ -1878,10 +1892,10 @@ export default function BookingActivityScreen({
             toast.error('Booking ID not available');
             return;
         }
-        
+
         try {
             console.log('📄 Attempting to download booking form for ID:', bookingId);
-            
+
             // Build complete PDF data structure matching web implementation
             const pdfData = {
                 fileNo: bookingId,
@@ -1970,7 +1984,7 @@ export default function BookingActivityScreen({
                 },
                 remarks: '',
             };
-            
+
             console.log('📄 PDF Data being sent (sample):', {
                 fileNo: pdfData.fileNo,
                 customerName: pdfData.customer.name,
@@ -1978,11 +1992,11 @@ export default function BookingActivityScreen({
                 branchName: pdfData.branch.name
             });
             console.log('📄 Full PDF data size:', JSON.stringify(pdfData).length, 'characters');
-            
+
             const response = await generateBookingPDF(pdfData);
             console.log('📄 Booking Form Download Response:', response.data);
             console.log('📄 Full download response structure:', JSON.stringify(response.data, null, 2));
-            
+
             if (response.data.code === 200) {
                 toast.success('Booking form downloaded successfully!');
                 // TODO: Handle actual file download if needed
@@ -2020,7 +2034,7 @@ export default function BookingActivityScreen({
             }
 
             const file = result.assets[0];
-            
+
             // Create FormData for file upload
             const formData = new FormData();
             formData.append('file', {
@@ -2033,7 +2047,7 @@ export default function BookingActivityScreen({
 
             const response = await uploadBookingDocument(formData);
             console.log('📄 Upload Response:', response.data);
-            
+
             if (response.data.code === 200) {
                 toast.success('Booking form uploaded successfully!');
             } else {
@@ -2062,14 +2076,14 @@ export default function BookingActivityScreen({
                 vname: model,
                 dlr: { name: branch }
             };
-            
+
             const response = await sendBookingConfirmationSMS(
-                phoneRef.current || registeredPhone, 
-                "WhatsApp", 
+                phoneRef.current || registeredPhone,
+                "WhatsApp",
                 smsData
             );
             console.log('📱 Confirmation SMS Response:', response.data);
-            
+
             if (response.data.code === 200) {
                 toast.success('Confirmation SMS sent successfully!');
             }
@@ -2097,14 +2111,14 @@ export default function BookingActivityScreen({
             <HeaderWithBack
                 title="Booking Register"
                 subtitle={
-    isConfirmBooking ? "Confirm Booking" : 
-    isAdvancedBooking ? "Advanced Booking" : 
-    undefined
-}
+                    isConfirmBooking ? "Confirm Booking" :
+                        isAdvancedBooking ? "Advanced Booking" :
+                            undefined
+                }
                 onBackPress={() => {
                     const target = getBackNavigationTarget();
                     console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-                    
+
                     if (target.useGoBack) {
                         navigation.goBack();
                     } else if (target.params) {
@@ -2367,33 +2381,18 @@ export default function BookingActivityScreen({
                                     />
                                 </View>
 
-                                {/* Gender */}
+                                {/* Nominee */}
                                 <View className="mb-4">
-                                    <FormLabel label="Gender" required />
-                                    <View className="flex-row gap-4 mt-2">
-                                        {['Male', 'Female', 'Other'].map(g => (
-                                            <TouchableOpacity
-                                                key={g}
-                                                onPress={() => setCustomerGenderSync(g)}
-                                                className={`flex-1 h-12 rounded-lg border flex-row items-center justify-center ${customerGender === g ? 'bg-teal-50 border-teal-600' : 'bg-white border-gray-300'}`}
-                                            >
-                                                <Text className={customerGender === g ? 'text-teal-700 font-bold' : 'text-gray-600'}>{g}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                </View>
-
-                                {/* Nominee Age */}
-                                <View className="mb-4">
-                                    <FormLabel label="Nominee Age" />
+                                    <FormLabel label="Nominee Details" required />
                                     <TextInput
-                                        value={nomineeAge}
-                                        onChangeText={setNomineeAgeSync}
-                                        placeholder="Nominee Age"
-                                        keyboardType="numeric"
+                                        value={nominee}
+                                        onChangeText={setNomineeSync}
+                                        placeholder="Nominee Name"
                                         className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                                     />
                                 </View>
+
+
 
                                 {/* Referred By */}
                                 <View className="mb-4">
@@ -2419,16 +2418,7 @@ export default function BookingActivityScreen({
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Nominee */}
-                                <View className="mb-4">
-                                    <FormLabel label="Nominee Details" required />
-                                    <TextInput
-                                        value={nominee}
-                                        onChangeText={setNomineeSync}
-                                        placeholder="Nominee Name"
-                                        className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
-                                    />
-                                </View>
+
 
                                 {/* Sales Officer */}
                                 <View className="mb-4">
@@ -2535,34 +2525,34 @@ export default function BookingActivityScreen({
                                                 isConfirmBooking: persistedIsConfirmBooking,
                                                 isAdvancedBooking: persistedIsAdvancedBooking,
                                                 savedFormData: {
-                                                fatherName: fatherNameRef.current,
-                                                address: addressRef.current,
-                                                address2: address2Ref.current,
-                                                address3: address3Ref.current,
-                                                locality: localityRef.current,
-                                                pincode: pincodeRef.current,
-                                                country: countryRef.current,
-                                                stateVal: stateValRef.current,
-                                                city: cityRef.current,
-                                                email: emailRef.current,
-                                                dob: dobRef.current,
-                                                age: ageRef.current,
-                                                salesOfficer: salesOfficerRef.current,
-                                                quotations: quotationsRef.current,
-                                                remarks: remarksRef.current,
-                                                customerGender: customerGenderRef.current,
-                                                nominee: nomineeRef.current,
-                                                nomineeAge: nomineeAgeRef.current,
-                                                relationship: relationshipRef.current,
-                                                referredBy: referredByRef.current,
-                                                expectedDelivery: expectedDeliveryRef.current,
-                                                customerFullName: customerFullNameRef.current,
-                                            },
-                                        });
-                                    } : undefined}
-                                    disabled={!isModelSelected}
-                                    className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${isModelSelected ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
-                                >
+                                                    fatherName: fatherNameRef.current,
+                                                    address: addressRef.current,
+                                                    address2: address2Ref.current,
+                                                    address3: address3Ref.current,
+                                                    locality: localityRef.current,
+                                                    pincode: pincodeRef.current,
+                                                    country: countryRef.current,
+                                                    stateVal: stateValRef.current,
+                                                    city: cityRef.current,
+                                                    email: emailRef.current,
+                                                    dob: dobRef.current,
+                                                    age: ageRef.current,
+                                                    salesOfficer: salesOfficerRef.current,
+                                                    quotations: quotationsRef.current,
+                                                    remarks: remarksRef.current,
+                                                    customerGender: customerGenderRef.current,
+                                                    nominee: nomineeRef.current,
+                                                    nomineeAge: nomineeAgeRef.current,
+                                                    relationship: relationshipRef.current,
+                                                    referredBy: referredByRef.current,
+                                                    expectedDelivery: expectedDeliveryRef.current,
+                                                    customerFullName: customerFullNameRef.current,
+                                                },
+                                            });
+                                        } : undefined}
+                                        disabled={!isModelSelected}
+                                        className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${isModelSelected ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
+                                    >
                                         <Text className={`font-medium mr-2 ${isModelSelected ? 'text-white' : 'text-gray-500'}`}>
                                             Select Vehicle Color
                                         </Text>
@@ -2843,7 +2833,7 @@ export default function BookingActivityScreen({
                                 {/* Booking Authorization */}
                                 <View>
                                     <Text className="text-base font-medium text-gray-700 mb-4">Booking Authorization</Text>
-                                    
+
                                     <View className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
                                         <Text className="text-sm text-gray-600 mb-2">I hereby authorise the Booking of the Vehicle.</Text>
                                         <View className="flex-row mb-2">
@@ -2859,7 +2849,7 @@ export default function BookingActivityScreen({
                                             <Text className="text-sm text-gray-600">{phone || 'N/A'}</Text>
                                         </View>
                                     </View>
-                                    
+
                                     {/* Booking Status */}
                                     <View className="mb-4">
                                         <Text className="text-sm text-gray-600 mb-2">Booking Status</Text>
@@ -2873,7 +2863,7 @@ export default function BookingActivityScreen({
                                             <ChevronRight size={16} color={COLORS.gray[400]} />
                                         </TouchableOpacity>
                                     </View>
-                                    
+
                                     {/* Authorization Password */}
                                     <View className="mb-4">
                                         <Text className="text-sm text-gray-600 mb-2">Authorization Password</Text>
@@ -2885,20 +2875,19 @@ export default function BookingActivityScreen({
                                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                                         />
                                     </View>
-                                    
+
                                     {/* Authorize Button */}
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         onPress={handleAuthorizeBooking}
                                         disabled={isAuthorizing || !authPassword}
-                                        className={`h-12 rounded-lg items-center justify-center ${
-                                            isAuthorizing || !authPassword ? 'bg-gray-400' : 'bg-green-600'
-                                        }`}
+                                        className={`h-12 rounded-lg items-center justify-center ${isAuthorizing || !authPassword ? 'bg-gray-400' : 'bg-green-600'
+                                            }`}
                                     >
                                         <Text className="text-white font-medium">
                                             {isAuthorizing ? 'Authorizing...' : 'Authorize Booking'}
                                         </Text>
                                     </TouchableOpacity>
-                                    
+
                                     {/* Authorization Status */}
                                     {authStatus === 'Authorized' && (
                                         <View className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -2912,12 +2901,12 @@ export default function BookingActivityScreen({
                                 {/* Manual Authentication */}
                                 <View className="border-t border-gray-200 pt-8">
                                     <Text className="text-base font-medium text-gray-700 mb-4">Manual Authentication</Text>
-                                    
+
                                     <View className="space-y-4">
                                         {/* Download Booking Form */}
                                         <View className="mb-4">
                                             <Text className="text-sm text-gray-600 mb-2">Download Booking Form</Text>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={handleDownloadBookingForm}
                                                 className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
                                             >
@@ -2932,7 +2921,7 @@ export default function BookingActivityScreen({
                                         {/* Upload Booking Form */}
                                         <View className="mb-4">
                                             <Text className="text-sm text-gray-600 mb-2">Upload Booking Form</Text>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={handleUploadBookingForm}
                                                 className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between"
                                             >
@@ -3101,7 +3090,7 @@ export default function BookingActivityScreen({
             {/* Tenure */}
             <CustomModal visible={showTenureModal} onClose={() => setShowTenureModal(false)}>
                 <View className="p-4 border-b border-gray-200"><Text className="text-lg font-semibold">Select Tenure</Text></View>
-                <ScrollView>{['1','2','3','6','12','24','36','48','60'].map(t => (<TouchableOpacity key={t} onPress={() => { setTenure(t); setShowTenureModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{t} months</Text></TouchableOpacity>))}</ScrollView>
+                <ScrollView>{['1', '2', '3', '6', '12', '24', '36', '48', '60'].map(t => (<TouchableOpacity key={t} onPress={() => { setTenure(t); setShowTenureModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{t} months</Text></TouchableOpacity>))}</ScrollView>
                 <TouchableOpacity onPress={() => setShowTenureModal(false)} className="p-4 border-t border-gray-200"><Text className="text-center text-gray-600">Cancel</Text></TouchableOpacity>
             </CustomModal>
 
@@ -3223,7 +3212,7 @@ export default function BookingActivityScreen({
                                         <Text className="text-teal-200 mx-1">›</Text>
                                         <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
                                             <Text className={`text-sm font-semibold ${dobCalendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
-                                                {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dobPickMonth]}
+                                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dobPickMonth]}
                                             </Text>
                                         </TouchableOpacity>
                                     </>
@@ -3267,7 +3256,7 @@ export default function BookingActivityScreen({
                             {/* STEP 2: Month Selection */}
                             {dobCalendarStep === 'month' && (
                                 <View className="flex-row flex-wrap">
-                                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
+                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((monthName, idx) => {
                                         const isSelected = idx === dobPickMonth;
                                         const now = new Date();
                                         const isFuture = dobPickYear === now.getFullYear() && idx > now.getMonth();
@@ -3308,7 +3297,7 @@ export default function BookingActivityScreen({
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
                                                 <Text className="text-base font-bold text-teal-700">
-                                                    {['January','February','March','April','May','June','July','August','September','October','November','December'][dobPickMonth]} {dobPickYear}
+                                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][dobPickMonth]} {dobPickYear}
                                                 </Text>
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => {
@@ -3324,7 +3313,7 @@ export default function BookingActivityScreen({
 
                                         {/* Weekday headers */}
                                         <View className="flex-row mb-1">
-                                            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
                                                 <View key={d} className="flex-1 items-center py-1">
                                                     <Text className="text-xs font-semibold text-teal-600">{d}</Text>
                                                 </View>

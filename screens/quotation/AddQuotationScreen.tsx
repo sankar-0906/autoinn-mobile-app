@@ -489,17 +489,40 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         value: user.id,
                     }));
                 setExecutiveOptions(filtered);
-                // Auto-select the first executive if none is selected or matches pending
-                if (filtered.length > 0) {
-                    if (pendingExecutive?.id) {
-                        const match = filtered.find((o: any) => o.value === pendingExecutive.id);
-                        if (match) setSalesExecutive(match.value);
-                        else setSalesExecutive(filtered[0].value);
-                    } else if (pendingExecutive?.name) {
-                        const match = filtered.find((o: any) => o.label.includes(pendingExecutive.name!));
-                        if (match) setSalesExecutive(match.value);
-                        else setSalesExecutive(filtered[0].value);
-                    } else if (!salesExecutive) {
+                
+                // Get logged-in user profile to auto-select as sales executive
+                try {
+                    const profileRaw = await AsyncStorage.getItem('userProfile');
+                    const profile = profileRaw ? JSON.parse(profileRaw) : null;
+                    const loggedInUserId = profile?.id || profile?._id;
+                    
+                    // Auto-select logic
+                    if (filtered.length > 0) {
+                        if (pendingExecutive?.id) {
+                            const match = filtered.find((o: any) => o.value === pendingExecutive.id);
+                            if (match) setSalesExecutive(match.value);
+                            else setSalesExecutive(filtered[0].value);
+                        } else if (pendingExecutive?.name) {
+                            const match = filtered.find((o: any) => o.label.includes(pendingExecutive.name!));
+                            if (match) setSalesExecutive(match.value);
+                            else setSalesExecutive(filtered[0].value);
+                        } else if (!salesExecutive) {
+                            // Auto-select logged-in user if found in executives list
+                            if (loggedInUserId) {
+                                const loggedInExecutive = filtered.find((o: any) => o.value === loggedInUserId);
+                                if (loggedInExecutive) {
+                                    setSalesExecutive(loggedInExecutive.value);
+                                } else {
+                                    setSalesExecutive(filtered[0].value);
+                                }
+                            } else {
+                                setSalesExecutive(filtered[0].value);
+                            }
+                        }
+                    }
+                } catch (profileError) {
+                    // Fallback to original logic if profile fetch fails
+                    if (filtered.length > 0 && !salesExecutive) {
                         setSalesExecutive(filtered[0].value);
                     }
                 }
