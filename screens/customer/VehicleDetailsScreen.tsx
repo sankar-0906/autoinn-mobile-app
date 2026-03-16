@@ -64,37 +64,37 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import platformApi from '../../src/api';
-    // API imports for validation
-    import {
-        getVehicleById,
-        getVehicleManufacturers,
-        getVehicleModelsByManufacturer,
-        getVehicleModelsByManufacturerId,
-        getVehicleColor,
-        getVehicleFiles,
-        getVehicleEReceipt,
-        getVehicleServices,
-        getVehicleCustomers,
-        searchCustomers,
-        updateVehicle,
-        validateChassisNumber,
-        validateEngineNumber,
-        validateRegistrationNumber,
-        fetchMarketInfo,
-        getVehicleInsurance,
-        getJobOrderHistory,
-        getJobOrderDetails,
-        addInsurance,
-        getInsuranceTypes,
-        generateQRCode,
-        generateJobOrderPDF,
-    } from '../../src/api';
-    import { uploadVehicleFile, deleteVehicleFile } from '../../src/api';
+// API imports for validation
+import {
+    getVehicleById,
+    getVehicleManufacturers,
+    getVehicleModelsByManufacturer,
+    getVehicleModelsByManufacturerId,
+    getVehicleColor,
+    getVehicleFiles,
+    getVehicleEReceipt,
+    getVehicleServices,
+    getVehicleCustomers,
+    searchCustomers,
+    updateVehicle,
+    validateChassisNumber,
+    validateEngineNumber,
+    validateRegistrationNumber,
+    fetchMarketInfo,
+    getVehicleInsurance,
+    getJobOrderHistory,
+    getJobOrderDetails,
+    addInsurance,
+    getInsuranceTypes,
+    generateQRCode,
+    generateJobOrderPDF,
+} from '../../src/api';
+import { uploadVehicleFile, deleteVehicleFile } from '../../src/api';
 
 // Document type mapping to match web project database
-const DOCUMENT_TYPE_MAPPING: {[key: string]: string} = {
+const DOCUMENT_TYPE_MAPPING: { [key: string]: string } = {
     'address_proof': 'addressproof',
-    'chassis_impression': 'chassisimpression', 
+    'chassis_impression': 'chassisimpression',
     'form_22': 'form22',
     'form_21': 'form21',
     'signature': 'signature',
@@ -114,7 +114,7 @@ const DOCUMENT_TYPE_MAPPING: {[key: string]: string} = {
 };
 
 // Reverse mapping for display
-const REVERSE_DOCUMENT_MAPPING: {[key: string]: string} = {};
+const REVERSE_DOCUMENT_MAPPING: { [key: string]: string } = {};
 Object.entries(DOCUMENT_TYPE_MAPPING).forEach(([mobile, web]) => {
     REVERSE_DOCUMENT_MAPPING[web] = mobile;
 });
@@ -136,6 +136,7 @@ interface Vehicle {
     registerNo: string;
     chassisNo: string;
     color?: {
+        id?: string;
         color: string;
         code: string;
         url?: string;
@@ -175,11 +176,14 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('🎨 VehicleDetails - Received colorSelected event:', colorData);
             if (colorData) {
                 // Display color in "(code-colorname)" format
-                const colorDisplay = colorData.code && colorData.color 
+                const colorDisplay = colorData.code && colorData.color
                     ? `(${colorData.code}-${colorData.color})`
                     : colorData.color || colorData.name || 'No Color Chosen';
                 console.log('🎨 VehicleDetails - Setting color to:', colorDisplay);
                 setSelectedColor(colorDisplay);
+                if (colorData.id) {
+                    setSelectedColorId(colorData.id);
+                }
             } else {
                 console.log('🎨 VehicleDetails - No color data received');
             }
@@ -194,7 +198,7 @@ const VehicleDetailsScreen: React.FC = () => {
             const unsubscribe = DeviceEventEmitter.addListener('vehicleSelected', (vehicleData) => {
                 if (vehicleData) {
                     console.log('Received vehicle data:', vehicleData);
-                    
+
                     // Update form fields with selected vehicle data
                     if (vehicleData.modelName) {
                         setModel(vehicleData.modelName);
@@ -261,6 +265,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const [model, setModel] = useState("");
     const [category, setCategory] = useState("");
     const [selectedColor, setSelectedColor] = useState("No Color Chosen");
+    const [selectedColorId, setSelectedColorId] = useState("");
     const [chassisNumber, setChassisNumber] = useState("");
     const [mfgDate, setMfgDate] = useState("");
     const [engineNumber, setEngineNumber] = useState("");
@@ -274,9 +279,9 @@ const VehicleDetailsScreen: React.FC = () => {
     const [insuranceType, setInsuranceType] = useState("");
     const [validFrom, setValidFrom] = useState('');
     const [validTo, setValidTo] = useState('');
-    
+
     // Validation and error states
-    const [validationErrors, setValidationErrors] = useState<{[key: string]: string}>({});
+    const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
     const [isValidatingChassis, setIsValidatingChassis] = useState(false);
     const [marketInfoLoading, setMarketInfoLoading] = useState(false);
     const [disableForm, setDisableForm] = useState(false);
@@ -295,7 +300,7 @@ const VehicleDetailsScreen: React.FC = () => {
         { id: 'service', name: 'Service' },
         { id: 'test_ride', name: 'Test Ride' },
     ];
-    const [uploadedFiles, setUploadedFiles] = useState<{[key: string]: {name: string | null, uri: string, url?: string, size?: number, mimeType?: string, type?: string, id?: string} | null}>({
+    const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: { name: string | null, uri: string, url?: string, size?: number, mimeType?: string, type?: string, id?: string } | null }>({
         consent: null,
         insurance: null,
         registration: null,
@@ -311,7 +316,7 @@ const VehicleDetailsScreen: React.FC = () => {
         }
         fetchManufacturers();
         loadSavedFiles(); // Load saved files
-        
+
         // Debug permissions on component mount
         checkPermissions().then(result => {
             console.log('Initial permission check result:', result);
@@ -319,11 +324,97 @@ const VehicleDetailsScreen: React.FC = () => {
     }, [vehicle?.id]);
 
     // Fetch vehicle details from API
+    // Fetch color from vehicle master when API doesn't return color data
+    const fetchColorFromVehicleMaster = async () => {
+        try {
+            console.log('🎨 Attempting to fetch color from vehicle master...');
+
+            // We need to wait for vehicleDetails to be set first
+            if (!vehicleDetails) {
+                console.log('🎨 Vehicle details not available yet, will retry later');
+                return;
+            }
+
+            const vehicleData = vehicleDetails.data || vehicleDetails;
+            const manufacturerId = vehicleData.vehicle?.manufacturer?.id;
+            const modelName = vehicleData.vehicle?.modelName;
+
+            if (!manufacturerId) {
+                console.log('🎨 No manufacturer ID found, cannot fetch colors');
+                return;
+            }
+
+            console.log('🎨 Fetching models for manufacturer:', manufacturerId);
+            const response = await getVehicleModelsByManufacturerId(manufacturerId);
+
+            if (response.data.code === 200) {
+                const models = response.data.response.data || [];
+                console.log('🎨 Found models:', models.length);
+
+                // Find the matching model
+                const model = models.find((m: any) =>
+                    m.modelName === modelName ||
+                    `${m.modelCode} - ${m.modelName}` === modelName ||
+                    m.id === vehicleData.vehicle?.modelId
+                );
+
+                if (model) {
+                    console.log('🎨 Found matching model:', model.modelName);
+
+                    // Get colors from the model's image array
+                    const colors = [];
+                    const colorSet = new Set();
+
+                    // Extract colors from image array
+                    if (model.image && Array.isArray(model.image)) {
+                        model.image.forEach((imageData: any) => {
+                            const colorName = imageData.color || imageData.colorName || 'Unknown';
+                            const colorCode = imageData.code || imageData.colorCode || '';
+
+                            if (!colorSet.has(colorName)) {
+                                colorSet.add(colorName);
+                                colors.push({
+                                    code: colorCode,
+                                    color: colorName,
+                                    id: imageData.id || '',
+                                    url: imageData.url || ''
+                                });
+                            }
+                        });
+                    }
+
+                    if (colors.length > 0) {
+                        // For now, set the first available color
+                        // In a real implementation, you'd need to determine which color is actually assigned
+                        const firstColor = colors[0];
+                        const colorDisplay = `(${firstColor.code}-${firstColor.color})`;
+
+                        console.log('🎨 Setting color from vehicle master:', colorDisplay);
+                        setSelectedColor(colorDisplay);
+
+                        // Update the colorToSet variable that will be used
+                        return colorDisplay;
+                    } else {
+                        console.log('🎨 No colors found in model data');
+                    }
+                } else {
+                    console.log('🎨 No matching model found for:', modelName);
+                }
+            } else {
+                console.log('🎨 Failed to fetch vehicle models:', response.data);
+            }
+        } catch (error) {
+            console.error('🎨 Error fetching color from vehicle master:', error);
+        }
+
+        return 'No Color Chosen';
+    };
+
     const fetchVehicleDetails = async (vehicleId: string) => {
         try {
             setLoading(true);
-            console.log('Fetching vehicle details for:', vehicleId);
-            
+            console.log('🔍 Fetching vehicle details for:', vehicleId);
+
             // Check if token exists before making API call
             const token = await AsyncStorage.getItem('token');
             if (!token) {
@@ -332,15 +423,73 @@ const VehicleDetailsScreen: React.FC = () => {
                 navigation.navigate('Login');
                 return;
             }
-            
+
             console.log('Token found:', token.substring(0, 20) + '...');
-            
+
             const response = await getVehicleById(vehicleId);
-            console.log('Vehicle details response:', response.data);
-            
+            console.log('🔍 Full vehicle details response:', JSON.stringify(response.data, null, 2));
+            console.log('🔍 Vehicle color field:', response.data.response?.color);
+            console.log('🔍 Vehicle color type:', typeof response.data.response?.color);
+
             if (response.data.code === 200) {
+                console.log('🔍 Vehicle color from backend:', response.data.response.color);
+                console.log('🔍 Vehicle color type:', typeof response.data.response.color);
+
+                // Set vehicle details first
                 setVehicleDetails(response.data.response);
-                // Fetch related data only after vehicle details are successfully fetched
+
+                // Immediately parse and set the color from the response
+                const vehicleData = response.data.response.data || response.data.response;
+                console.log('🎨 Processing color from response:', {
+                    color: vehicleData.color,
+                    vehicleColor: vehicleData.vehicleColor,
+                    rawResponse: response.data.response
+                });
+
+                // Try to extract color from various possible locations
+                let colorToSet = 'No Color Chosen';
+
+                // Check for web app format first (color and vehicleColor fields)
+                if (vehicleData.color && vehicleData.vehicleColor) {
+                    // Format as (code-colorname)
+                    colorToSet = `(${vehicleData.color}-${vehicleData.vehicleColor})`;
+                    console.log('🎨 Setting color from web format (color+vehicleColor):', colorToSet);
+                }
+                // Check for object format with code and color
+                else if (vehicleData.color && typeof vehicleData.color === 'object') {
+                    if (vehicleData.color.code && vehicleData.color.color) {
+                        colorToSet = `(${vehicleData.color.code}-${vehicleData.color.color})`;
+                        console.log('🎨 Setting color from object with code/color:', colorToSet);
+                    } else if (vehicleData.color.color) {
+                        colorToSet = vehicleData.color.color;
+                        console.log('🎨 Setting color from object with color only:', colorToSet);
+                    }
+                }
+                // Check for string format
+                else if (vehicleData.color && typeof vehicleData.color === 'string') {
+                    colorToSet = vehicleData.color;
+                    console.log('🎨 Setting color from string:', colorToSet);
+                }
+                // Check for vehicleColor only
+                else if (vehicleData.vehicleColor && typeof vehicleData.vehicleColor === 'string') {
+                    colorToSet = vehicleData.vehicleColor;
+                    console.log('🎨 Setting color from vehicleColor only:', colorToSet);
+                }
+
+                // If color is not found, try to fetch it from vehicle master
+                if (colorToSet === 'No Color Chosen') {
+                    console.log('🎨 Color not found in API response, trying vehicle master...');
+                    const masterColor = await fetchColorFromVehicleMaster();
+                    colorToSet = masterColor || 'No Color Chosen';
+                }
+
+                setSelectedColor(colorToSet);
+                if (vehicleData.color && typeof vehicleData.color === 'object' && vehicleData.color.id) {
+                    setSelectedColorId(vehicleData.color.id);
+                }
+                console.log('🎨 Color set immediately after fetch:', colorToSet);
+
+                // Fetch related data
                 await fetchRelatedData(vehicleId);
             } else {
                 console.error('Vehicle details API error:', response.data);
@@ -348,16 +497,16 @@ const VehicleDetailsScreen: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Error fetching vehicle details:', error);
-            
+
             if (error.response?.status === 401) {
                 console.error('Authentication failed - 401 error');
                 Alert.alert(
-                    'Session Expired', 
+                    'Session Expired',
                     'Your session has expired. Please login again.',
                     [
                         { text: 'Cancel', style: 'cancel' },
-                        { 
-                            text: 'Login', 
+                        {
+                            text: 'Login',
                             onPress: () => {
                                 AsyncStorage.removeItem('token');
                                 navigation.navigate('Login');
@@ -377,12 +526,12 @@ const VehicleDetailsScreen: React.FC = () => {
     useEffect(() => {
         if (vehicleDetails) {
             console.log('=== VEHICLE DETAILS DATA POPULATION ===');
-            
+
             // IMPORTANT: The actual data is nested under vehicleDetails.data
             const vehicleData = vehicleDetails.data || vehicleDetails;
-            
+
             console.log('Raw vehicleData:', vehicleData);
-            
+
             // MFG Date - this is in vehicleData.mfg
             console.log('MFG DATE:');
             console.log('- vehicleData.mfg:', vehicleData.mfg);
@@ -392,7 +541,7 @@ const VehicleDetailsScreen: React.FC = () => {
             } else {
                 console.log('❌ MFG date not found');
             }
-            
+
             // Engine Number - this is in vehicleData.engineNo
             console.log('ENGINE NUMBER:');
             console.log('- vehicleData.engineNo:', vehicleData.engineNo);
@@ -402,7 +551,7 @@ const VehicleDetailsScreen: React.FC = () => {
             } else {
                 console.log('❌ Engine number not found');
             }
-            
+
             // Vehicle Type - this is in vehicleData.vehicleType
             console.log('VEHICLE TYPE:');
             console.log('- vehicleData.vehicleType:', vehicleData.vehicleType);
@@ -412,22 +561,69 @@ const VehicleDetailsScreen: React.FC = () => {
             } else {
                 console.log('❌ Vehicle type not found');
             }
-            
+
+            // COLOR - DON'T OVERRIDE if already set by the direct response handler
+            console.log('🎨 COLOR DATA IN POPULATE:');
+            console.log('- Current selectedColor:', selectedColor);
+            console.log('- vehicleData.color:', vehicleData.color);
+            console.log('- vehicleData.vehicleColor:', vehicleData.vehicleColor);
+
+            // Only set color if it's still "No Color Chosen" (meaning it wasn't set by the direct response handler)
+            if (selectedColor === 'No Color Chosen') {
+                let colorToSet = 'No Color Chosen';
+
+                // Check for web app format first (color and vehicleColor fields)
+                if (vehicleData.color && vehicleData.vehicleColor) {
+                    colorToSet = `(${vehicleData.color}-${vehicleData.vehicleColor})`;
+                    console.log('🎨 Setting color from populate (web format):', colorToSet);
+                }
+                // Check for object format with code and color
+                else if (vehicleData.color && typeof vehicleData.color === 'object') {
+                    if (vehicleData.color.code && vehicleData.color.color) {
+                        colorToSet = `(${vehicleData.color.code}-${vehicleData.color.color})`;
+                        console.log('🎨 Setting color from populate (object with code/color):', colorToSet);
+                    } else if (vehicleData.color.color) {
+                        colorToSet = vehicleData.color.color;
+                        console.log('🎨 Setting color from populate (object with color only):', colorToSet);
+                    }
+                }
+                // Check for string format
+                else if (vehicleData.color && typeof vehicleData.color === 'string') {
+                    colorToSet = vehicleData.color;
+                    console.log('🎨 Setting color from populate (string):', colorToSet);
+                }
+                // Check for vehicleColor only
+                else if (vehicleData.vehicleColor && typeof vehicleData.vehicleColor === 'string') {
+                    colorToSet = vehicleData.vehicleColor;
+                    console.log('🎨 Setting color from populate (vehicleColor only):', colorToSet);
+                }
+
+                if (colorToSet !== 'No Color Chosen') {
+                    setSelectedColor(colorToSet);
+                    if (vehicleData.color && typeof vehicleData.color === 'object' && vehicleData.color.id) {
+                        setSelectedColorId(vehicleData.color.id);
+                    }
+                    console.log('✅ Color set in populate to:', colorToSet);
+                }
+            } else {
+                console.log('🎨 Color already set to:', selectedColor, '- not overriding');
+            }
+
             // Customer Data - this is in vehicleData.customer
             console.log('CUSTOMER DATA:');
             console.log('- vehicleData.customer:', vehicleData.customer);
-            
+
             if (vehicleData.customer && vehicleData.customer.length > 0) {
                 // Extract customer objects from the vehicle data
                 const vehicleCustomers = vehicleData.customer
                     .map((c: any) => c.customer)
                     .filter((customer: any) => customer);
-                
+
                 console.log('Extracted customers:', vehicleCustomers);
-                
+
                 if (vehicleCustomers.length > 0) {
                     setSelectedCustomers(vehicleCustomers);
-                    
+
                     // Set display value for first customer
                     const firstCustomer = vehicleCustomers[0];
                     let phoneDisplay = '';
@@ -448,10 +644,10 @@ const VehicleDetailsScreen: React.FC = () => {
             } else {
                 console.log('❌ Customer data not found');
             }
-            
+
             console.log('=== END VEHICLE DETAILS POPULATION ===');
         }
-    }, [vehicleDetails]);
+    }, [vehicleDetails, selectedColor]); // Add selectedColor to dependencies
     useEffect(() => {
         if (vehicleDetails) {
             console.log('Vehicle details loaded, checking for job orders:', {
@@ -464,10 +660,10 @@ const VehicleDetailsScreen: React.FC = () => {
                 responseJobOrder: vehicleDetails.response?.jobOrder,
                 dataJobOrder: vehicleDetails.data?.jobOrder
             });
-            
+
             // Try different possible structures for job orders
             let jobOrders = null;
-            
+
             if (vehicleDetails.jobOrder && Array.isArray(vehicleDetails.jobOrder)) {
                 jobOrders = vehicleDetails.jobOrder;
                 console.log('Found job orders in vehicleDetails.jobOrder');
@@ -481,7 +677,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 jobOrders = vehicleDetails.data.jobOrder;
                 console.log('Found job orders in vehicleDetails.data.jobOrder');
             }
-            
+
             if (jobOrders) {
                 console.log('Extracting job orders:', jobOrders);
                 // Fetch detailed information for each job order
@@ -505,7 +701,7 @@ const VehicleDetailsScreen: React.FC = () => {
                     try {
                         const response = await getJobOrderDetails(job.id);
                         console.log('Job order details response for', job.jobNo, ':', response.data);
-                        
+
                         if (response.data.code === 200) {
                             const detailedJob = response.data.response?.data || response.data.response;
                             console.log('Detailed job order for', job.jobNo, ':', detailedJob);
@@ -518,7 +714,7 @@ const VehicleDetailsScreen: React.FC = () => {
                     }
                 })
             );
-            
+
             console.log('All detailed job orders:', detailedJobOrders);
             setJobOrderHistory(detailedJobOrders);
         } catch (error) {
@@ -534,11 +730,11 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('Fetching job orders separately for vehicle:', vehicleId);
             const response = await getJobOrderHistory(vehicleId);
             console.log('Job orders API response:', response.data);
-            
+
             if (response.data.code === 200) {
                 const jobOrderData = response.data.response;
                 console.log('Job orders data structure:', jobOrderData);
-                
+
                 // Check different possible structures
                 if (Array.isArray(jobOrderData)) {
                     setJobOrderHistory(jobOrderData);
@@ -561,10 +757,10 @@ const VehicleDetailsScreen: React.FC = () => {
     const fetchRelatedData = async (vehicleId: string) => {
         try {
             console.log('Fetching related data for vehicle:', vehicleId);
-            
+
             // Fetch vehicle customers (this will set both customers and customerDropdownData)
             await fetchVehicleCustomers(vehicleId);
-            
+
             // Fetch other related data
             const [colorResponse, servicesResponse, filesResponse, insuranceResponse, jobOrderResponse] = await Promise.all([
                 getVehicleColor(vehicleId),
@@ -573,15 +769,16 @@ const VehicleDetailsScreen: React.FC = () => {
                 getVehicleInsurance(vehicleId),
                 getJobOrderHistory(vehicleId)
             ]);
-            
+
             if (colorResponse.data.code === 200) {
                 const colorData = colorResponse.data.response.data;
                 setVehicleColors(colorData);
-                if (colorData.length > 0) {
-                    setSelectedColor(colorData[0].color);
-                }
+                // Do not overwrite the already selected color from the vehicle details
+                // if (colorData.length > 0) {
+                //     setSelectedColor(colorData[0].color);
+                // }
             }
-            
+
             if (servicesResponse.data.code === 200) {
                 const serviceData = servicesResponse.data.response.data;
                 console.log('Service API Response:', serviceData); // Debug log
@@ -592,12 +789,12 @@ const VehicleDetailsScreen: React.FC = () => {
                     setVehicleServices(serviceData.services || serviceData || []);
                 }
             }
-            
+
             if (filesResponse.data.code === 200) {
                 const vehicleData = filesResponse.data.response.data;
                 const serverFiles = vehicleData.vehicleDocuments || []; // Use vehicleDocuments like web
                 setVehicleFiles(serverFiles);
-                
+
                 // Extract e-Receipt URL from the same API response as web project
                 const eReceiptUrl = vehicleData.SoldVehicle?.[0]?.eReceipt;
                 if (eReceiptUrl) {
@@ -607,14 +804,14 @@ const VehicleDetailsScreen: React.FC = () => {
                     setEReceiptUrl(null);
                     console.log('❌ No e-Receipt URL found');
                 }
-                
+
                 // Populate uploadedFiles state with server files
-                const serverUploadedFiles: {[key: string]: any} = {};
+                const serverUploadedFiles: { [key: string]: any } = {};
                 serverFiles.forEach((file: any) => {
                     // Use the exact type from server (web compatibility)
                     const webType = file.type?.toLowerCase();
                     const mobileType = REVERSE_DOCUMENT_MAPPING[webType] || webType;
-                    
+
                     serverUploadedFiles[mobileType] = {
                         uri: file.url,
                         url: file.url,
@@ -626,21 +823,21 @@ const VehicleDetailsScreen: React.FC = () => {
                         webType: webType, // Store web type for reference
                     };
                 });
-                
+
                 // Merge with existing uploaded files
                 setUploadedFiles(prev => ({
                     ...prev,
                     ...serverUploadedFiles
                 }));
-                
+
                 console.log('Loaded vehicle documents from server:', serverUploadedFiles);
             }
-            
+
             if (insuranceResponse.data.code === 200) {
                 const vehicleData = insuranceResponse.data.response.data;
                 setInsuranceData(vehicleData.insurance || []);
             }
-            
+
             // Job orders are already included in the main vehicle data
             if (vehicleDetails && vehicleDetails.jobOrder && Array.isArray(vehicleDetails.jobOrder)) {
                 console.log('Job Order from vehicle data:', vehicleDetails.jobOrder); // Debug log
@@ -688,13 +885,13 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('Fetching vehicle models for manufacturer:', manufacturerId);
             const response = await getVehicleModelsByManufacturerId(manufacturerId);
             console.log('Vehicle models response:', response.data);
-            
+
             if (response.data.code === 200 && response.data.response.code === 200) {
                 // Web project sets response.data as vehicles
                 const models = response.data.response.data || [];
                 console.log('Setting vehicle models:', models);
                 setVehicleModels(models);
-                
+
                 // Debug: Log model structure
                 if (models.length > 0) {
                     console.log('Sample model structure:', models[0]);
@@ -713,22 +910,22 @@ const VehicleDetailsScreen: React.FC = () => {
     // Populate form fields with API data
     const populateFormFields = (data: any) => {
         console.log('Populating form fields with data:', data); // Debug log
-        
+
         // Set model in modelCode - modelName format like web app
         if (data.vehicle?.modelCode && data.vehicle?.modelName) {
             setModel(`${data.vehicle.modelCode} - ${data.vehicle.modelName}`);
         } else if (data.vehicle?.modelName) {
             setModel(data.vehicle.modelName);
         }
-        
+
         if (data.vehicle?.category) setCategory(data.vehicle.category);
         if (data.chassisNumber || data.chassisNo) setChassisNumber(data.chassisNumber || data.chassisNo);
-        
+
         // Handle MFG date - improved parsing
         if (data.mfg || data.mfgDate) {
             const mfgData = data.mfg || data.mfgDate;
             let mfgDateString = '';
-            
+
             if (typeof mfgData === 'string') {
                 mfgDateString = mfgData;
             } else if (mfgData.date || mfgData.$date) {
@@ -736,9 +933,9 @@ const VehicleDetailsScreen: React.FC = () => {
             } else if (mfgData instanceof Date) {
                 mfgDateString = mfgData.toISOString();
             }
-            
+
             console.log('MFG date string:', mfgDateString); // Debug log
-            
+
             if (mfgDateString && mfgDateString.trim() !== '') {
                 // Check if it's already in the correct format (MMM-YYYY)
                 const monthYearPattern = /^[A-Za-z]{3}\s\d{4}$/;
@@ -771,26 +968,26 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('No MFG date data found');
             setMfgDate('');
         }
-        
+
         // Set vehicle activate status
         if (data.active !== undefined) {
             console.log('Setting vehicle activate:', data.active); // Debug log
             setVehicleActivate(data.active ? 'Active' : 'Inactive');
         }
-        
+
         // Set customers from vehicle data directly
         if (data.customer && Array.isArray(data.customer)) {
             console.log('Setting customers from vehicle data:', data.customer); // Debug log
-            
+
             // Extract customer objects from the vehicle data
             const vehicleCustomers = data.customer.map((c: any) => c.customer).filter((customer: any) => customer);
             console.log('Extracted customers:', vehicleCustomers); // Debug log
-            
+
             if (vehicleCustomers.length > 0) {
                 setCustomers(vehicleCustomers);
                 setCustomerDropdownData(vehicleCustomers);
                 setSelectedCustomers(vehicleCustomers);
-                
+
                 // Set display value for first customer
                 const firstCustomer = vehicleCustomers[0];
                 let phoneDisplay = '';
@@ -810,7 +1007,7 @@ const VehicleDetailsScreen: React.FC = () => {
             }
         }
         if (data.engineNo) setEngineNumber(data.engineNo);
-        
+
         // Handle date of sale with proper type checking
         if (data.dateOfSale) {
             let dateString = '';
@@ -819,7 +1016,7 @@ const VehicleDetailsScreen: React.FC = () => {
             } else if (data.dateOfSale.date || data.dateOfSale.$date) {
                 dateString = data.dateOfSale.date || data.dateOfSale.$date;
             }
-            
+
             if (dateString && dateString.trim() !== '') {
                 const momentDate = moment(dateString);
                 if (momentDate.isValid()) {
@@ -827,14 +1024,14 @@ const VehicleDetailsScreen: React.FC = () => {
                 }
             }
         }
-        
+
         if (data.registerNo || data.registrationNumber) setRegistrationNumber(data.registerNo || data.registrationNumber);
         if (data.serviceCouponNumber) setServiceCouponNumber(data.serviceCouponNumber);
         if (data.vehicleType) setVehicleType(data.vehicleType);
         if (data.insurer) setInsurer(data.insurer);
         if (data.policyNo) setPolicyNo(data.policyNo);
         if (data.insuranceType) setInsuranceType(data.insuranceType);
-        
+
         // Handle validFrom date with proper type checking
         if (data.validFrom) {
             let dateString = '';
@@ -843,7 +1040,7 @@ const VehicleDetailsScreen: React.FC = () => {
             } else if (data.validFrom.date || data.validFrom.$date) {
                 dateString = data.validFrom.date || data.validFrom.$date;
             }
-            
+
             if (dateString && dateString.trim() !== '') {
                 const momentDate = moment(dateString);
                 if (momentDate.isValid()) {
@@ -851,7 +1048,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 }
             }
         }
-        
+
         // Handle validTo date with proper type checking
         if (data.validTo) {
             let dateString = '';
@@ -860,7 +1057,7 @@ const VehicleDetailsScreen: React.FC = () => {
             } else if (data.validTo.date || data.validTo.$date) {
                 dateString = data.validTo.date || data.validTo.$date;
             }
-            
+
             if (dateString && dateString.trim() !== '') {
                 const momentDate = moment(dateString);
                 if (momentDate.isValid()) {
@@ -868,17 +1065,17 @@ const VehicleDetailsScreen: React.FC = () => {
                 }
             }
         }
-        
+
         // Set manufacturer name if available
         if (data.vehicle?.manufacturer?.name) {
             setManufacturerName(data.vehicle.manufacturer.name);
         }
-        
+
         // Set vehicle activate status
         if (data.active !== undefined) {
             setVehicleActivate(data.active ? 'Active' : 'Inactive');
         }
-        
+
         // Fetch and set customer data
         if (data.customer && data.customer.length > 0) {
             fetchCustomerData(data.customer);
@@ -891,16 +1088,16 @@ const VehicleDetailsScreen: React.FC = () => {
             const customerIdsArray = customerIds
                 .filter(c => c.customer && c.customer.id)
                 .map(c => c.customer.id);
-            
+
             if (customerIdsArray.length > 0) {
                 const response = await getVehicleCustomers(customerIdsArray);
                 if (response.data.code === 200 && response.data.response.code === 200) {
                     const customerData = response.data.response.data || [];
                     setCustomers(customerData);
-                    
+
                     // Set selected customers (pre-selected from API)
                     setSelectedCustomers(customerData);
-                    
+
                     // Format customer display like web project: "name - phone" or just "name"
                     if (customerData.length > 0) {
                         const customerNames = customerData.map((customer: any) => {
@@ -922,31 +1119,31 @@ const VehicleDetailsScreen: React.FC = () => {
     // Chassis number validation with pymidol market info integration
     const handleChassisNumberChange = async (value: string) => {
         setChassisNumber(value.toUpperCase());
-        
+
         // Clear previous errors
         if (validationErrors.chassis) {
             setValidationErrors(prev => ({ ...prev, chassis: '' }));
         }
-        
+
         // Validate chassis number when it reaches 17 characters
         if (value.length === 17 && manufacturers.length > 0) {
             await validateChassisNumberWithAPI(value);
         }
     };
-    
+
     const validateChassisNumberWithAPI = async (chassisNo: string) => {
         try {
             setIsValidatingChassis(true);
-            
+
             // Get selected manufacturer ID
             const selectedManufacturer = manufacturers.find(m => m.name === manufacturerName);
             const manufacturerId = selectedManufacturer?.id || '';
-            
+
             if (!manufacturerId) {
                 setValidationErrors(prev => ({ ...prev, chassis: 'Please select manufacturer first' }));
                 return;
             }
-            
+
             // Call chassis validation API (matching web project)
             const response = await validateChassisNumber({
                 chassisNo,
@@ -954,10 +1151,10 @@ const VehicleDetailsScreen: React.FC = () => {
                 id: vehicleDetails?.id || null,
                 checkType: true // Enable market info fetching
             });
-            
+
             if (response.data.code === 200) {
                 const responseData = response.data.response;
-                
+
                 if (responseData.code === 200) {
                     // Valid chassis number - set MFG date
                     const mfgData = responseData.data;
@@ -965,16 +1162,16 @@ const VehicleDetailsScreen: React.FC = () => {
                         const dateObj = new Date(mfgData);
                         const formattedDate = moment(dateObj).format('MMM-YYYY');
                         setMfgDate(formattedDate);
-                        
+
                         // Fetch market info if available
                         if (responseData.otherValues) {
                             await fetchAndApplyMarketInfo(chassisNo);
                         }
                     }
-                    
+
                     // Clear any chassis errors
                     setValidationErrors(prev => ({ ...prev, chassis: '' }));
-                    
+
                 } else if (responseData.code === 401) {
                     // Chassis exists but belongs to another vehicle
                     const mfgData = responseData.data;
@@ -983,52 +1180,52 @@ const VehicleDetailsScreen: React.FC = () => {
                         const formattedDate = moment(dateObj).format('MMM-YYYY');
                         setMfgDate(formattedDate);
                     }
-                    
-                    setValidationErrors(prev => ({ 
-                        ...prev, 
-                        chassis: 'Chassis Number already exists' 
+
+                    setValidationErrors(prev => ({
+                        ...prev,
+                        chassis: 'Chassis Number already exists'
                     }));
-                    
+
                 } else if (responseData.code === 400) {
                     // Invalid chassis number
-                    setValidationErrors(prev => ({ 
-                        ...prev, 
-                        chassis: 'Enter Valid Chassis Number' 
+                    setValidationErrors(prev => ({
+                        ...prev,
+                        chassis: 'Enter Valid Chassis Number'
                     }));
                     setMfgDate('');
                 }
             }
         } catch (error) {
             console.error('Chassis validation error:', error);
-            setValidationErrors(prev => ({ 
-                ...prev, 
-                chassis: 'Validation failed. Please try again.' 
+            setValidationErrors(prev => ({
+                ...prev,
+                chassis: 'Validation failed. Please try again.'
             }));
         } finally {
             setIsValidatingChassis(false);
         }
     };
-    
+
     const fetchAndApplyMarketInfo = async (chassisNo: string) => {
         try {
             setMarketInfoLoading(true);
             setDisableForm(true);
-            
+
             Alert.alert(
                 'Market Info',
                 'Fetching vehicle data from pymidol. This may take some time...',
                 [{ text: 'OK' }]
             );
-            
+
             // Call pymidol market info API (matching web project)
             const response = await fetchMarketInfo({ chassisNo });
-            
+
             if (response.data?.responseCode === 200 && response.data?.data) {
                 const marketData = response.data.data;
-                
+
                 // Apply market data to form (matching web project logic)
                 await applyMarketDataToForm(marketData);
-                
+
                 Alert.alert(
                     'Success',
                     'Vehicle data fetched successfully from pymidol!',
@@ -1047,7 +1244,7 @@ const VehicleDetailsScreen: React.FC = () => {
             setDisableForm(false);
         }
     };
-    
+
     const applyMarketDataToForm = async (marketData: any) => {
         try {
             // Apply model data (matching web project)
@@ -1056,30 +1253,30 @@ const VehicleDetailsScreen: React.FC = () => {
                 const matchedVehicle = vehicleModels.find(
                     vehicle => vehicle.modelCode?.toString().trim().toUpperCase() === normalizedModelCode
                 );
-                
+
                 if (matchedVehicle) {
                     setModel(`${matchedVehicle.modelCode} - ${matchedVehicle.modelName}`);
                     setCategory(matchedVehicle.category || '');
-                    
+
                     // Apply color data
                     if (marketData.color && Array.isArray(matchedVehicle.image)) {
                         const normalizedColorCode = (marketPrefill?.color || marketData.color)?.toString().trim().toUpperCase();
                         const matchedColor = matchedVehicle.image.find(
                             color => color.code?.toString().trim().toUpperCase() === normalizedColorCode
                         );
-                        
+
                         if (matchedColor) {
                             setSelectedColor(matchedColor.color);
                         }
                     }
                 }
             }
-            
+
             // Apply engine number
             if (marketData.engineNo) {
                 setEngineNumber(marketData.engineNo.toString().trim());
             }
-            
+
             // Apply date of sale
             if (marketData.retailDate) {
                 const retailMoment = moment(
@@ -1087,7 +1284,7 @@ const VehicleDetailsScreen: React.FC = () => {
                     ["DD/MM/YYYY", "DD-MM-YYYY", "YYYY/MM/DD", "YYYY-MM-DD", "YYYYMMDD"],
                     true
                 );
-                
+
                 if (retailMoment.isValid()) {
                     setDateOfSale(retailMoment.format('DD/MM/YYYY'));
                 }
@@ -1104,17 +1301,17 @@ const VehicleDetailsScreen: React.FC = () => {
                 contacts: newCustomerPhone.trim() ? [{ phone: newCustomerPhone.trim() }] : [],
                 isNew: true // Flag to identify new customers
             };
-            
+
             // Add to customers list
             setCustomers([...customers, newCustomer]);
-            
+
             // Auto-select the new customer
             setSelectedCustomers([...selectedCustomers, newCustomer]);
-            
+
             // Update customer associated display
             const displayName = newCustomer.name + (newCustomerPhone.trim() ? ` - ${newCustomerPhone.trim()}` : '');
             setCustomerAssociated(customerAssociated ? `${customerAssociated}, ${displayName}` : displayName);
-            
+
             // Reset form
             setNewCustomerName("");
             setNewCustomerPhone("");
@@ -1127,10 +1324,10 @@ const VehicleDetailsScreen: React.FC = () => {
         if (!customerSearchQuery.trim()) {
             return customers;
         }
-        
+
         // For now, filter local customers (could be enhanced with API search)
         const query = customerSearchQuery.toLowerCase();
-        return customers.filter((customer: any) => 
+        return customers.filter((customer: any) =>
             customer.name?.toLowerCase().includes(query) ||
             customer.contacts?.some((contact: any) => contact.phone?.includes(query))
         );
@@ -1140,15 +1337,15 @@ const VehicleDetailsScreen: React.FC = () => {
     const fetchVehicleCustomers = async (vehicleId: string) => {
         try {
             console.log('Fetching vehicle customers for:', vehicleId);
-            
+
             // Get the actual vehicle data from vehicleDetails.data
             const vehicleData = vehicleDetails?.data;
             console.log('Vehicle data for customers:', vehicleData);
-            
+
             // Check the actual structure of customer data
             if (vehicleData?.customer && Array.isArray(vehicleData.customer)) {
                 console.log('Customer array found:', vehicleData.customer);
-                
+
                 // Extract customer IDs
                 const customerIds = vehicleData.customer
                     .map((c: any) => {
@@ -1161,19 +1358,19 @@ const VehicleDetailsScreen: React.FC = () => {
                         return null;
                     })
                     .filter((id: string | null) => id);
-                
+
                 console.log('Customer IDs to fetch:', customerIds);
-                
+
                 if (customerIds.length > 0) {
                     const response = await getVehicleCustomers(customerIds);
                     console.log('Vehicle customers response:', response);
-                    
+
                     if (response.data.code === 200 && response.data.response.code === 200) {
                         const customerData = response.data.response.data || [];
                         console.log('Setting customers:', customerData);
                         setCustomers(customerData);
                         setCustomerDropdownData(customerData);
-                        
+
                         // Set selected customers if any
                         if (customerData.length > 0) {
                             setSelectedCustomers(customerData);
@@ -1204,18 +1401,18 @@ const VehicleDetailsScreen: React.FC = () => {
             console.error('Error fetching vehicle customers:', error);
         }
     };
-    
+
     // Customer search function for dropdown (matching web project exactly)
     const handleCustomerDropdownSearch = async (searchString: string) => {
         setCustomerSearchQuery(searchString);
         console.log('Searching customers with:', searchString); // Debug log
-        
+
         try {
             // Use the exact same API as web project
             const response = await searchCustomers(searchString, 50);
-            
+
             console.log('Customer search response:', response); // Debug log
-            
+
             if (response.data && response.data.response) {
                 const customerData = response.data.response || [];
                 console.log('Setting customer dropdown data:', customerData); // Debug log
@@ -1232,7 +1429,7 @@ const VehicleDetailsScreen: React.FC = () => {
     // Handle customer selection from dropdown (multi-select)
     const handleCustomerSelection = (customer: any) => {
         const isSelected = selectedCustomers.some((selected: any) => selected.id === customer.id);
-        
+
         if (isSelected) {
             // Remove customer
             setSelectedCustomers(selectedCustomers.filter((selected: any) => selected.id !== customer.id));
@@ -1242,9 +1439,9 @@ const VehicleDetailsScreen: React.FC = () => {
             setSelectedCustomers([...selectedCustomers, customer]);
             console.log('Added customer:', customer.name); // Debug log
         }
-        
+
         console.log('Total selected customers:', selectedCustomers.length + (isSelected ? -1 : 1)); // Debug log
-        
+
         // Don't close dropdown - allow multiple selections
         // setCustomerDropdownVisible(false);
         // setCustomerSearchQuery('');
@@ -1266,26 +1463,34 @@ const VehicleDetailsScreen: React.FC = () => {
                 setCategory(categoryValue);
                 console.log('Category set:', categoryValue, 'from vehicle category:', vehicle.vehicle?.category);
             }
-            // Handle color properly - ensure it's a string, but don't override if user has already selected a color
-            // Only set initial color if it's the first load and no user selection has been made
+            // Handle color properly - ensure it's a string, but don't override if user has already selected a color in this session
+            // Only set initial color if it's the first load
             console.log('🎨 VehicleDetails - useEffect checking color:', {
                 vehicleColor: vehicle.color,
                 currentSelectedColor: selectedColor,
                 includesParentheses: selectedColor.includes('('),
-                condition: vehicle.color && !selectedColor.includes('(') && selectedColor === "No Color Chosen"
+                condition: vehicle.color && selectedColor === "No Color Chosen"
             });
-            
-            if (vehicle.color && !selectedColor.includes('(') && selectedColor === "No Color Chosen") {
-                if (typeof vehicle.color === 'object' && vehicle.color.color) {
-                    // Color object has color, code, url properties
+
+            if (vehicle.color && selectedColor === "No Color Chosen") {
+                if (typeof vehicle.color === 'object' && vehicle.color.code && vehicle.color.color) {
+                    // Color object has code and color properties - format as (code-colorname)
+                    const colorDisplay = `(${vehicle.color.code}-${vehicle.color.color})`;
+                    console.log('🎨 VehicleDetails - Setting color from object with format:', colorDisplay);
+                    setSelectedColor(colorDisplay);
+                    if (vehicle.color.id) setSelectedColorId(vehicle.color.id);
+                } else if (typeof vehicle.color === 'object' && vehicle.color.color) {
+                    // Color object has only color property
                     console.log('🎨 VehicleDetails - Setting color from object:', vehicle.color.color);
                     setSelectedColor(vehicle.color.color);
+                    if (vehicle.color.id) setSelectedColorId(vehicle.color.id);
                 } else if (typeof vehicle.color === 'string') {
                     console.log('🎨 VehicleDetails - Setting color from string:', vehicle.color);
                     setSelectedColor(vehicle.color);
                 } else if (vehicle.color.color && typeof vehicle.color.color === 'string') {
                     console.log('🎨 VehicleDetails - Setting color from nested color:', vehicle.color.color);
                     setSelectedColor(vehicle.color.color);
+                    if (vehicle.color.id) setSelectedColorId(vehicle.color.id);
                 } else {
                     console.log('🎨 VehicleDetails - Setting default color');
                     setSelectedColor('No Color Chosen');
@@ -1295,6 +1500,29 @@ const VehicleDetailsScreen: React.FC = () => {
             }
         }
     }, [vehicle]);
+
+    const extractColorId = (colorString: string) => {
+        if (selectedColorId) return selectedColorId;
+        if (colorString.includes('(') && colorString.includes(')')) {
+            const match = colorString.match(/^\(([^)-]+)-/);
+            return match ? match[1].trim() : '';
+        }
+        return '';
+    };
+
+    const extractColorName = (colorString: string) => {
+        if (colorString.includes('(') && colorString.includes(')')) {
+            const match = colorString.match(/\(([^)-]+)-(.+)\)$/);
+            return match ? match[2].trim() : '';
+        }
+        return colorString;
+    };
+
+    const extractColorUrl = (colorString: string) => {
+        // In a real implementation, you'd need to map color to URL
+        // For now, return empty string as URL is optional
+        return '';
+    };
 
     const handleDateSelect = (day: any) => {
         const date = new Date(day.dateString);
@@ -1306,7 +1534,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const handleSave = async () => {
         try {
             setLoading(true);
-            
+
             // Check for vehicle ID in both possible locations
             const vehicleId = vehicleDetails?.id || vehicleDetails?.data?.id;
             if (!vehicleId) {
@@ -1315,43 +1543,68 @@ const VehicleDetailsScreen: React.FC = () => {
                 return;
             }
 
-            // Create FormData for API
+            // Create FormData for API - MATCH WEB APP STRUCTURE
             const formData = new FormData();
-            formData.append('chassisNumber', chassisNumber);
-            formData.append('engineNumber', engineNumber);
-            formData.append('mfgDate', mfgDate);
-            formData.append('dateOfSale', dateOfSale);
-            formData.append('registrationNumber', registrationNumber);
-            formData.append('serviceCouponNumber', serviceCouponNumber);
-            formData.append('vehicleType', vehicleType);
-            formData.append('insurer', insurer);
-            formData.append('policyNo', policyNo);
-            formData.append('insuranceType', insuranceType);
-            formData.append('validFrom', validFrom);
-            formData.append('validTo', validTo);
-            
-            // Add vehicle and manufacturer data
-            if (vehicleDetails.vehicle?.id) {
-                formData.append('vehicle', vehicleDetails.vehicle.id.toString());
-            }
-            
-            // Add color data if selected
-            if (selectedColor && typeof selectedColor === 'object') {
-                formData.append('color', JSON.stringify(selectedColor));
-            }
+            formData.append('id', chassisNumber); // Required field like web app
+
+            // Build vehicleData object like web app - exclude customers to prevent association conflicts
+            const vehicleObj = vehicleDetails?.data || vehicleDetails;
+            const vehicleData = {
+                vehicle: vehicleObj?.vehicle?.id || '',
+                color: selectedColor && selectedColor !== 'No Color Chosen' ? extractColorId(selectedColor) : '',
+                registerNo: registrationNumber,
+                vehicleType: vehicleType,
+                chassisNo: chassisNumber,
+                engineNo: engineNumber,
+                serviceCouponNumber: serviceCouponNumber,
+                dateOfSale: dateOfSale,
+                mfg: mfgDate,
+                manufacturer: vehicleObj?.vehicle?.manufacturer?.id || '',
+                modelName: vehicleObj?.vehicle?.modelName || '',
+                // Add color fields like web app
+                vehicleColor: selectedColor && selectedColor !== 'No Color Chosen' ? extractColorName(selectedColor) : '',
+                images: selectedColor && selectedColor !== 'No Color Chosen' ? extractColorUrl(selectedColor) : '',
+                // Don't include customer field to prevent 400 error
+            };
+
+            formData.append('vehicleData', JSON.stringify(vehicleData));
+            console.log('🎨 Sending vehicleData object:', vehicleData);
 
             // Call API to update vehicle
+            console.log('🔍 About to call updateVehicle API with color:', selectedColor);
+
             const response = await updateVehicle(vehicleId, formData);
-            
+            console.log('🔍 Update vehicle response:', response.data);
+
             if (response.data.code === 200 && response.data.response.code === 200) {
+                console.log('🔍 Vehicle updated successfully');
                 Alert.alert('Success', 'Vehicle details updated successfully');
                 navigation.goBack();
             } else {
+                console.log('🔍 Update failed:', response.data);
                 Alert.alert('Error', 'Failed to update vehicle details');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving vehicle:', error);
-            Alert.alert('Error', 'Failed to update vehicle details');
+
+            // Log the full error response
+            if (error.response) {
+                console.error('Error response data:', error.response.data);
+                console.error('Error response status:', error.response.status);
+                console.error('Error response headers:', error.response.headers);
+
+                // Show more detailed error to user
+                const errorMessage = error.response.data?.msg ||
+                    error.response.data?.message ||
+                    'Failed to update vehicle details';
+                Alert.alert('Error', errorMessage);
+            } else if (error.request) {
+                console.error('Error request:', error.request);
+                Alert.alert('Error', 'No response from server');
+            } else {
+                console.error('Error message:', error.message);
+                Alert.alert('Error', error.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -1360,20 +1613,20 @@ const VehicleDetailsScreen: React.FC = () => {
     const handleInsuranceDateSelect = (dateString: string) => {
         const [yyyy, mm, dd] = dateString.split('-');
         const formattedDate = `${dd}/${mm}/${yyyy}`;
-        
+
         if (activeDateField === 'validFrom') {
             setValidFrom(formattedDate);
         } else if (activeDateField === 'validTo') {
             setValidTo(formattedDate);
         }
-        
+
         setShowValidFromCalendar(false);
         setShowValidToCalendar(false);
     };
 
     const openCalendar = (field: 'validFrom' | 'validTo') => {
         setActiveDateField(field);
-        
+
         // Set initial date from existing value or default
         const existingDate = field === 'validFrom' ? validFrom : validTo;
         if (existingDate && existingDate.includes('/')) {
@@ -1384,7 +1637,7 @@ const VehicleDetailsScreen: React.FC = () => {
             setPickYear(new Date().getFullYear());
             setPickMonth(new Date().getMonth());
         }
-        
+
         setCalendarStep('year');
         if (field === 'validFrom') {
             setShowValidFromCalendar(true);
@@ -1396,10 +1649,10 @@ const VehicleDetailsScreen: React.FC = () => {
     const handleFileUpload = async (documentType: string) => {
         try {
             console.log('Starting file upload for:', documentType);
-            
+
             // Use your improved permission request function
             const hasPermission = await requestStoragePermission();
-            
+
             if (!hasPermission) {
                 console.log('Permission denied');
                 Alert.alert(
@@ -1407,8 +1660,8 @@ const VehicleDetailsScreen: React.FC = () => {
                     'Storage permission is needed to upload documents. Please enable it in app settings.',
                     [
                         { text: 'Cancel', style: 'cancel' },
-                        { 
-                            text: 'Open Settings', 
+                        {
+                            text: 'Open Settings',
                             onPress: () => {
                                 if (Platform.OS === 'android') {
                                     Linking.openSettings();
@@ -1423,7 +1676,7 @@ const VehicleDetailsScreen: React.FC = () => {
             }
 
             console.log('Permission granted, showing options');
-            
+
             // Show file selection options
             Alert.alert(
                 'Select File Source',
@@ -1502,11 +1755,11 @@ const VehicleDetailsScreen: React.FC = () => {
                 const videoPerm = await PermissionsAndroid.check(
                     PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO
                 );
-                
+
                 console.log('Camera permission:', cameraPerm);
                 console.log('Read media images:', imagesPerm);
                 console.log('Read media video:', videoPerm);
-                
+
                 return imagesPerm;
             } else {
                 // For older Android
@@ -1516,10 +1769,10 @@ const VehicleDetailsScreen: React.FC = () => {
                 const writePerm = await PermissionsAndroid.check(
                     PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE
                 );
-                
+
                 console.log('Read storage:', readPerm);
                 console.log('Write storage:', writePerm);
-                
+
                 return readPerm && writePerm;
             }
         } else {
@@ -1535,17 +1788,17 @@ const VehicleDetailsScreen: React.FC = () => {
         try {
             console.log('📱 Requesting storage permission...');
             console.log('Platform:', Platform.OS, 'Version:', Platform.Version);
-            
+
             if (Platform.OS === 'android') {
                 // Android 13+ (API 33+)
                 if (Platform.Version >= 33) {
                     console.log('Android 13+ detected, requesting READ_MEDIA_IMAGES/VIDEO');
-                    
+
                     const permissions = [
                         PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
                         PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
                     ];
-                    
+
                     // Check current status
                     const checkResults = await Promise.all(
                         permissions.map(async (perm) => {
@@ -1554,36 +1807,36 @@ const VehicleDetailsScreen: React.FC = () => {
                             return result;
                         })
                     );
-                    
+
                     if (checkResults.every(result => result === true)) {
                         console.log('✅ All permissions already granted');
                         return true;
                     }
-                    
+
                     console.log('⚠️ Requesting permissions...');
                     const statuses = await PermissionsAndroid.requestMultiple(permissions);
                     console.log('Permission request results:', statuses);
-                    
+
                     const allGranted = Object.values(statuses).every(
                         status => status === PermissionsAndroid.RESULTS.GRANTED
                     );
-                    
+
                     console.log('All permissions granted:', allGranted);
                     return allGranted;
-                } 
+                }
                 // Android 12 and below
                 else {
                     console.log('Android 12 or below, requesting READ_EXTERNAL_STORAGE');
-                    
+
                     const checkRead = await PermissionsAndroid.check(
                         PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
                     );
                     console.log('Read external storage already granted:', checkRead);
-                    
+
                     if (checkRead) {
                         return true;
                     }
-                    
+
                     const status = await PermissionsAndroid.request(
                         PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
                         {
@@ -1594,7 +1847,7 @@ const VehicleDetailsScreen: React.FC = () => {
                             buttonPositive: 'OK',
                         }
                     );
-                    
+
                     console.log('Permission request result:', status);
                     return status === PermissionsAndroid.RESULTS.GRANTED;
                 }
@@ -1639,30 +1892,30 @@ const VehicleDetailsScreen: React.FC = () => {
     const testDirectUpload = async (documentType: string) => {
         try {
             console.log('🧪 TEST: Direct upload attempt');
-            
+
             // Try using only expo-image-picker (no manual permission request)
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             console.log('Expo-image-picker permission status:', status);
-            
+
             if (status !== 'granted') {
                 console.log('Permission not granted, trying manual request...');
                 const manualResult = await requestStoragePermission();
                 console.log('Manual permission result:', manualResult);
-                
+
                 if (!manualResult) {
                     Alert.alert('Permission Denied', 'Cannot proceed without permission');
                     return;
                 }
             }
-            
+
             // Try launching image picker
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 quality: 0.8,
             });
-            
+
             console.log('Image picker result:', result);
-            
+
             if (!result.canceled) {
                 Alert.alert('Success', 'File selected successfully!');
             }
@@ -1678,7 +1931,7 @@ const VehicleDetailsScreen: React.FC = () => {
             const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
             const existingFiles = await AsyncStorage.getItem(storageKey);
             const files = existingFiles ? JSON.parse(existingFiles) : {};
-            
+
             files[documentType] = fileInfo;
             await AsyncStorage.setItem(storageKey, JSON.stringify(files));
         } catch (error) {
@@ -1690,7 +1943,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const openCameraForUpload = async (documentType: string) => {
         try {
             console.log('Opening camera for server upload:', documentType);
-            
+
             const result = await ImagePicker.launchCameraAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.All,
                 quality: 0.8,
@@ -1710,7 +1963,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const openGalleryForUpload = async (documentType: string) => {
         try {
             console.log('Opening gallery for server upload:', documentType);
-            
+
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.All,
                 quality: 0.8,
@@ -1730,7 +1983,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const openDocumentPickerForUpload = async (documentType: string) => {
         try {
             console.log('Opening document picker for server upload:', documentType);
-            
+
             const result = await DocumentPicker.getDocumentAsync({
                 type: ['*/*'],
                 copyToCacheDirectory: true,
@@ -1750,19 +2003,19 @@ const VehicleDetailsScreen: React.FC = () => {
     const uploadFileToServer = async (documentType: string, asset: any) => {
         try {
             console.log('Uploading file to server:', { documentType, asset });
-            
+
             setLoading(true);
-            
+
             // Get vehicle ID from route params or vehicleDetails
             const vehicleId = vehicle?.id || vehicleDetails?.data?.id || vehicleDetails?.id;
-            
+
             if (!vehicleId) {
                 throw new Error('Vehicle ID not found');
             }
 
             // Create FormData matching web project structure
             const formData = new FormData();
-            
+
             // Append the file
             if (asset.uri) {
                 formData.append('profile', {
@@ -1776,7 +2029,7 @@ const VehicleDetailsScreen: React.FC = () => {
             formData.append('master', 'Transaction Master');
             formData.append('module', 'vehicle');
             formData.append('id', vehicleId);
-            
+
             // Use web-compatible document type
             const webDocumentType = DOCUMENT_TYPE_MAPPING[documentType] || documentType.toLowerCase();
             formData.append('type', webDocumentType);
@@ -1791,18 +2044,18 @@ const VehicleDetailsScreen: React.FC = () => {
 
             // Upload to server using same API as web project
             const response = await uploadVehicleFile(formData);
-            
+
             console.log('Upload response:', response.data);
 
             if (response.data.code === 200) {
                 const uploadedFile = response.data.response.data;
-                
+
                 console.log('🎯 Upload Success!', {
                     mobileType: documentType,
                     webType: webDocumentType,
                     serverResponse: uploadedFile
                 });
-                
+
                 // Update local state with server response
                 const fileInfo = {
                     uri: uploadedFile.url,
@@ -1833,15 +2086,15 @@ const VehicleDetailsScreen: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Server upload error:', error);
-            
+
             let errorMessage = 'Failed to upload file';
-            
+
             if (error.response?.data?.msg?.message?.includes('Chassis mismatch!')) {
                 errorMessage = 'Incorrect chassis photo. Please upload the correct chassis photo';
             } else if (error.message) {
                 errorMessage = error.message;
             }
-            
+
             Alert.alert('Upload Failed', errorMessage);
         } finally {
             setLoading(false);
@@ -1851,9 +2104,9 @@ const VehicleDetailsScreen: React.FC = () => {
     const deleteFileFromServer = async (documentType: string, fileInfo: any) => {
         try {
             console.log('Deleting file from server:', { documentType, fileInfo });
-            
+
             setLoading(true);
-            
+
             // Delete from server using same API as web project
             const deleteData = {
                 delid: fileInfo.id,
@@ -1864,7 +2117,7 @@ const VehicleDetailsScreen: React.FC = () => {
             console.log('Deleting file from server:', { documentType, deleteData });
 
             const response = await deleteVehicleFile(deleteData);
-            
+
             if (response.data.code === 200) {
                 // Remove from local state
                 const newUploadedFiles = { ...uploadedFiles };
@@ -1894,7 +2147,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const viewFile = async (fileInfo: any) => {
         try {
             console.log('Viewing file:', fileInfo);
-            
+
             if (fileInfo.mimeType?.startsWith('image/')) {
                 // For images, show in modal
                 setSelectedImage(fileInfo.uri);
@@ -1906,15 +2159,15 @@ const VehicleDetailsScreen: React.FC = () => {
                     `Name: ${fileInfo.name}\nSize: ${fileInfo.size ? `${(fileInfo.size / 1024).toFixed(2)} KB` : 'Unknown'}\nType: ${fileInfo.mimeType || 'Unknown'}\n\nWould you like to open this document?`,
                     [
                         { text: 'Cancel', style: 'cancel' },
-                        { 
-                            text: 'Open Document', 
+                        {
+                            text: 'Open Document',
                             onPress: async () => {
                                 try {
                                     console.log('Attempting to open document:', fileInfo.uri);
-                                    
+
                                     // Check if sharing is available
                                     const isSharingAvailable = await Sharing.isAvailableAsync();
-                                    
+
                                     if (isSharingAvailable) {
                                         // Use expo-sharing to open the file
                                         await Sharing.shareAsync(fileInfo.uri, {
@@ -1952,7 +2205,7 @@ const VehicleDetailsScreen: React.FC = () => {
         try {
             const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
             const savedFiles = await AsyncStorage.getItem(storageKey);
-            
+
             if (savedFiles) {
                 setUploadedFiles(JSON.parse(savedFiles));
             }
@@ -1967,7 +2220,7 @@ const VehicleDetailsScreen: React.FC = () => {
             const storageKey = `uploadedFiles_${vehicle?.id || 'new'}`;
             const existingFiles = await AsyncStorage.getItem(storageKey);
             const files = existingFiles ? JSON.parse(existingFiles) : {};
-            
+
             delete files[documentType];
             await AsyncStorage.setItem(storageKey, JSON.stringify(files));
         } catch (error) {
@@ -1991,7 +2244,7 @@ const VehicleDetailsScreen: React.FC = () => {
 
             if (!result.canceled && result.assets && result.assets[0]) {
                 const asset = result.assets[0];
-                
+
                 if (asset.uri) {
                     const fileInfo = {
                         uri: asset.uri,
@@ -2024,7 +2277,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const openGallery = async (documentType: string) => {
         try {
             console.log('Opening gallery for:', documentType);
-            
+
             // Permission already checked in handleFileUpload, so we can proceed directly
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -2037,10 +2290,10 @@ const VehicleDetailsScreen: React.FC = () => {
 
             if (!result.canceled && result.assets && result.assets[0]) {
                 const asset = result.assets[0];
-                
+
                 if (asset.uri) {
                     console.log('Selected asset:', asset);
-                    
+
                     const fileInfo = {
                         uri: asset.uri,
                         name: asset.fileName || `gallery_${Date.now()}.jpg`,
@@ -2093,7 +2346,7 @@ const VehicleDetailsScreen: React.FC = () => {
                             ...prev,
                             [documentType]: uploadedFile
                         }));
-                        
+
                         Alert.alert(
                             'File Selected Successfully',
                             `File "${file.name}" has been selected from your device storage.`,
@@ -2140,9 +2393,9 @@ const VehicleDetailsScreen: React.FC = () => {
     const openDocumentPicker = async (documentType: string) => {
         try {
             console.log('Opening document picker for:', documentType);
-            
+
             // Permission already checked in handleFileUpload
-            
+
             // Try expo-document-picker for real documents
             try {
                 const result = await DocumentPicker.getDocumentAsync({
@@ -2155,10 +2408,10 @@ const VehicleDetailsScreen: React.FC = () => {
 
                 if (!result.canceled && result.assets && result.assets[0]) {
                     const asset = result.assets[0];
-                    
+
                     if (asset.uri) {
                         console.log('Selected document asset:', asset);
-                        
+
                         const fileInfo = {
                             uri: asset.uri,
                             name: asset.name || `document_${Date.now()}`,
@@ -2187,7 +2440,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 }
             } catch (docPickerError) {
                 console.log('Document picker failed, falling back to image picker:', docPickerError);
-                
+
                 // Fallback to image picker if document picker fails
                 const result = await ImagePicker.launchImageLibraryAsync({
                     mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -2200,10 +2453,10 @@ const VehicleDetailsScreen: React.FC = () => {
 
                 if (!result.canceled && result.assets && result.assets[0]) {
                     const asset = result.assets[0];
-                    
+
                     if (asset.uri) {
                         console.log('Selected document asset via image picker:', asset);
-                        
+
                         const fileInfo = {
                             uri: asset.uri,
                             name: asset.fileName || `document_${Date.now()}`,
@@ -2246,7 +2499,7 @@ const VehicleDetailsScreen: React.FC = () => {
         };
 
         const basePath = storagePaths[storageType] || storagePaths['internal'];
-        
+
         Alert.alert(
             'Browse Device Storage',
             `Accessing ${storageType} storage...\n\nPath: ${basePath}\n\nSelect file type:`,
@@ -2344,7 +2597,7 @@ const VehicleDetailsScreen: React.FC = () => {
         };
 
         const path = sourcePaths[source] || sourcePaths['storage'];
-        
+
         Alert.alert(
             'File Browser',
             `Browsing: ${path}\n\nSimulating file selection from device storage...`,
@@ -2362,7 +2615,7 @@ const VehicleDetailsScreen: React.FC = () => {
                             ...prev,
                             [documentType]: uploadedFile
                         }));
-                        
+
                         Alert.alert(
                             'File Selected from Device',
                             `File "${uploadedFile.name}" has been selected from:\n${path}`,
@@ -2435,7 +2688,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const getCategoryFromModel = (modelName: string, modelCode: string): string => {
         const name = modelName.toLowerCase();
         const code = modelCode.toLowerCase();
-        
+
         // Determine category based on common patterns
         if (name.includes('scooter') || code.includes('scooter') || name.includes('activa') || name.includes('access') || name.includes('dio')) {
             return 'SCOOTER';
@@ -2451,7 +2704,7 @@ const VehicleDetailsScreen: React.FC = () => {
     const handleRemoveFile = async (documentType: string) => {
         try {
             const fileInfo = uploadedFiles[documentType];
-            
+
             // If file has server ID, delete from server first
             if (fileInfo?.id) {
                 await deleteFileFromServer(documentType, fileInfo);
@@ -2461,9 +2714,9 @@ const VehicleDetailsScreen: React.FC = () => {
                     ...prev,
                     [documentType]: null
                 }));
-                
+
                 await removeFileFromStorage(documentType);
-                
+
                 Alert.alert(
                     'File Removed',
                     'File has been removed successfully.',
@@ -2479,16 +2732,19 @@ const VehicleDetailsScreen: React.FC = () => {
     // Handle bulk insurance upload save
     const handleBulkInsuranceSave = (savedInsurances: any[]) => {
         console.log('Bulk insurance saved:', savedInsurances);
-        // Refresh insurance data
+        // Don't modify existing insuranceData - only show bulk uploaded items
+        // The existing insurance data should remain separate and only be displayed in the existing insurance section
+        
+        // Refresh insurance data to show updated state
         if (vehicle?.id) {
             fetchRelatedData(vehicle.id);
         }
         setShowBulkInsuranceModal(false);
     };
 
-    
+
     const renderHeader = () => (
-        <HeaderWithBack 
+        <HeaderWithBack
             title="Vehicle Details"
             subtitle={mode === 'edit' ? 'Edit Mode' : 'View Mode'}
         />
@@ -2622,13 +2878,12 @@ const VehicleDetailsScreen: React.FC = () => {
                             editable={!disableForm}
                             maxLength={17}
                             placeholder="Enter 17-character Chassis Number"
-                            className={`h-12 border rounded-lg px-3 text-gray-800 ${
-                                validationErrors.chassis 
-                                    ? 'border-red-500 bg-red-50' 
-                                    : isValidatingChassis 
+                            className={`h-12 border rounded-lg px-3 text-gray-800 ${validationErrors.chassis
+                                ? 'border-red-500 bg-red-50'
+                                : isValidatingChassis
                                     ? 'border-blue-500 bg-blue-50'
                                     : 'border-gray-400 bg-white'
-                            }`}
+                                }`}
                         />
                         {validationErrors.chassis && (
                             <Text className="text-xs text-red-500 mt-1">{validationErrors.chassis}</Text>
@@ -2766,7 +3021,7 @@ const VehicleDetailsScreen: React.FC = () => {
                 <FormLabel label="Vehicle Activate" />
                 <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
                     <Text className="text-gray-800">
-                        {vehicleDetails?.active !== undefined 
+                        {vehicleDetails?.active !== undefined
                             ? (vehicleDetails.active ? 'Yes' : 'No')
                             : (vehicleActivate === 'Active' ? 'Yes' : 'No')
                         }
@@ -2787,15 +3042,14 @@ const VehicleDetailsScreen: React.FC = () => {
                         onPress={() => {
                             console.log('Opening customer dropdown'); // Debug log
                             setCustomerDropdownVisible(true);
-                            
+
                             // Always load ALL customers for dropdown (not just vehicle customers)
                             console.log('Loading all customers for dropdown'); // Debug log
                             // Use search API with empty string to get all customers
                             handleCustomerDropdownSearch('');
                         }}
-                        className={`bg-white border border-gray-300 rounded-lg px-3 flex-row items-start justify-between ${
-                            selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
-                        }`}
+                        className={`bg-white border border-gray-300 rounded-lg px-3 flex-row items-start justify-between ${selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
+                            }`}
                     >
                         <View className="flex-1">
                             {selectedCustomers.length > 0 ? (
@@ -2815,9 +3069,8 @@ const VehicleDetailsScreen: React.FC = () => {
                         <ChevronRight size={16} color={COLORS.gray[400]} />
                     </TouchableOpacity>
                 ) : (
-                    <View className={`bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center ${
-                        selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
-                    }`}>
+                    <View className={`bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center ${selectedCustomers.length > 0 ? 'min-h-12 py-2' : 'h-12'
+                        }`}>
                         <View className="flex-row flex-wrap gap-1">
                             {selectedCustomers.map((customer: any, index: number) => (
                                 <View key={customer.id || index} className="bg-blue-100 px-2 py-1 rounded">
@@ -2864,7 +3117,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                             {file.type || file.documentType || 'Document'}
                                         </Text>
                                         <View className="flex-row gap-2" style={{ width: 100 }}>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 className="px-2 py-1 bg-blue-500 rounded"
                                                 onPress={() => {
                                                     if (file.url) {
@@ -2876,7 +3129,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                             >
                                                 <Text className="text-xs text-white">View</Text>
                                             </TouchableOpacity>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 className="px-2 py-1 bg-green-500 rounded"
                                                 onPress={() => {
                                                     if (file.url) {
@@ -2940,7 +3193,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                             {insurance.validTo ? moment(insurance.validTo).format('DD/MM/YYYY') : 'N/A'}
                                         </Text>
                                         <View className="flex-row gap-2" style={{ width: 80 }}>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 className="px-2 py-1 bg-blue-500 rounded"
                                                 onPress={() => {
                                                     Alert.alert('Insurance Details', `Insurer: ${insurance.insurerName || 'N/A'}\nPolicy: ${insurance.policyNumber || 'N/A'}\nType: ${insurance.insuranceType || 'N/A'}`);
@@ -2948,15 +3201,17 @@ const VehicleDetailsScreen: React.FC = () => {
                                             >
                                                 <Text className="text-xs text-white">View</Text>
                                             </TouchableOpacity>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 className="px-2 py-1 bg-red-500 rounded"
                                                 onPress={() => {
                                                     Alert.alert('Remove Insurance', 'Are you sure you want to remove this insurance?', [
                                                         { text: 'Cancel', style: 'cancel' },
-                                                        { text: 'Remove', style: 'destructive', onPress: () => {
-                                                            // TODO: Implement remove insurance API call
-                                                            console.log('Remove insurance:', index);
-                                                        }}
+                                                        {
+                                                            text: 'Remove', style: 'destructive', onPress: () => {
+                                                                // TODO: Implement remove insurance API call
+                                                                console.log('Remove insurance:', index);
+                                                            }
+                                                        }
                                                     ]);
                                                 }}
                                             >
@@ -2976,124 +3231,22 @@ const VehicleDetailsScreen: React.FC = () => {
                 </ScrollView>
             </View>
 
-            
+
             {/* Upload Insurance Section */}
             <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
                 Upload Insurance
             </Text>
 
             <View className="mb-6">
-                <TouchableOpacity 
-                    className="flex-row items-center gap-2 px-4 py-2 border border-blue-600 rounded-lg self-start mb-6"
+                {/* Bulk Insurance Upload Button */}
+                <TouchableOpacity
+                    className="flex-row items-center justify-center gap-2 bg-blue-600 border border-blue-700 rounded-lg py-3 px-4 mb-6"
                     onPress={() => setShowBulkInsuranceModal(true)}
+                    style={{ backgroundColor: COLORS.primary }}
                 >
-                    <Upload size={16} color="#2563eb" />
-                    <Text className="text-sm text-blue-600">Upload Bulk Insurance</Text>
+                    <Upload size={20} color="white" />
+                    <Text className="text-white font-medium">Upload Bulk Insurance</Text>
                 </TouchableOpacity>
-                
-                {/* Insurance Form */}
-                <View className="bg-gray-50 border border-gray-300 rounded-lg p-4">
-                    {/* Insurer */}
-                    <View className="mb-4">
-                        <FormLabel label="Insurer" />
-                        <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
-                            <Text className="text-gray-400">Select Insurer</Text>
-                            <ChevronRight size={16} color={COLORS.gray[400]} />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Policy No */}
-                    <View className="mb-4">
-                        <FormLabel label="Policy No" />
-                        {mode === 'edit' ? (
-                            <TextInput
-                                value={policyNo}
-                                onChangeText={setPolicyNo}
-                                placeholder="Enter Policy Number"
-                                editable={true}
-                                className="h-12 bg-white border-gray-400 border rounded-lg px-3 text-gray-800"
-                            />
-                        ) : (
-                            <View className="h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
-                                <Text className="text-gray-800">{policyNo || '-'}</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Insurance Type */}
-                    <View className="mb-4">
-                        <FormLabel label="Insurance Type" />
-                        <TouchableOpacity className="h-12 bg-white border border-gray-300 rounded-lg px-3 flex-row items-center justify-between">
-                            <Text className="text-gray-400">Select Insurance Type</Text>
-                            <ChevronRight size={16} color={COLORS.gray[400]} />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Valid From */}
-                    <View className="mb-4">
-                        <FormLabel label="Valid From" />
-                        <View className="flex-row items-center">
-                            {mode === 'edit' ? (
-                                <>
-                                    <TextInput
-                                        value={validFrom}
-                                        onChangeText={setValidFrom}
-                                        placeholder="DD/MM/YYYY"
-                                        editable={true}
-                                        className="flex-1 h-12 bg-white border-gray-400 border rounded-l-lg px-3 text-gray-800"
-                                    />
-                                    <TouchableOpacity
-                                        onPress={() => openCalendar('validFrom')}
-                                        className="h-12 bg-teal-600 rounded-r-lg px-4 justify-center"
-                                    >
-                                        <Calendar size={20} color="white" />
-                                    </TouchableOpacity>
-                                </>
-                            ) : (
-                                <View className="flex-1 h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
-                                    <Text className="text-gray-800">{validFrom || '-'}</Text>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* Valid To */}
-                    <View className="mb-4">
-                        <FormLabel label="Valid To" />
-                        <View className="flex-row items-center">
-                            {mode === 'edit' ? (
-                                <>
-                                    <TextInput
-                                        value={validTo}
-                                        onChangeText={setValidTo}
-                                        placeholder="DD/MM/YYYY"
-                                        editable={true}
-                                        className="flex-1 h-12 bg-white border-gray-400 border rounded-l-lg px-3 text-gray-800"
-                                    />
-                                    <TouchableOpacity
-                                        onPress={() => openCalendar('validTo')}
-                                        className="h-12 bg-teal-600 rounded-r-lg px-4 justify-center"
-                                    >
-                                        <Calendar size={20} color="white" />
-                                    </TouchableOpacity>
-                                </>
-                            ) : (
-                                <View className="flex-1 h-12 bg-gray-50 border border-gray-200 rounded-lg px-3 justify-center">
-                                    <Text className="text-gray-800">{validTo || '-'}</Text>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* Documents Upload */}
-                    <View className="mb-4">
-                        <FormLabel label="Documents" />
-                        <TouchableOpacity className="flex-row items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg h-12">
-                            <Upload size={16} color={COLORS.gray[600]} />
-                            <Text className="text-sm text-gray-700">Upload Consent</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
             </View>
 
             {/* Required Documents Section */}
@@ -3141,7 +3294,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                         </View>
                                         <View className="w-full h-8 items-center justify-center bg-teal-50 rounded flex-row justify-between px-2">
                                             <Text className="text-xs text-teal-600">✓ Uploaded</Text>
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={() => viewFile(uploadedFile)}
                                                 className="bg-blue-500 px-2 py-1 rounded"
                                             >
@@ -3183,7 +3336,7 @@ const VehicleDetailsScreen: React.FC = () => {
                                 <Text className="text-sm font-medium text-gray-800 mb-1">e-Receipt Available</Text>
                                 <Text className="text-xs text-gray-600">Tap to view the vehicle e-Receipt document</Text>
                             </View>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 className="px-4 py-2 bg-teal-600 rounded-lg flex-row items-center gap-2"
                                 onPress={() => {
                                     Linking.openURL(eReceiptUrl);
@@ -3210,216 +3363,214 @@ const VehicleDetailsScreen: React.FC = () => {
     const renderServiceScheduleTab = () => {
         console.log('Service Schedule Tab - vehicleServices:', vehicleServices); // Debug log
         return (
-        <View>
-            {/* Service Schedule Table */}
-            <View className="mb-4">
-                <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
-                    <View style={{ minWidth: 600 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
-                        <View className="bg-gray-600 text-white p-3">
-                            <View className="flex-row" style={{ minWidth: 600 }}>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service No</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 120, marginLeft: 25 }}>Service Kms</Text>
-                                <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Service Date</Text>
+            <View>
+                {/* Service Schedule Table */}
+                <View className="mb-4">
+                    <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
+                        <View style={{ minWidth: 600 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                            <View className="bg-gray-600 text-white p-3">
+                                <View className="flex-row" style={{ minWidth: 600 }}>
+                                    <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service No</Text>
+                                    <Text className="text-sm font-medium text-white" style={{ width: 100 }}>Service Type</Text>
+                                    <Text className="text-sm font-medium text-white" style={{ width: 120, marginLeft: 25 }}>Service Kms</Text>
+                                    <Text className="text-sm font-medium text-white" style={{ width: 120 }}>Service Date</Text>
+                                </View>
                             </View>
-                        </View>
-                        {vehicleServices && vehicleServices.length > 0 ? (
-                            <View>
-                                {vehicleServices.map((service: any, index: number) => (
-                                    <View key={service.id || index} className="p-3 border-b border-gray-100">
-                                        <View className="flex-row" style={{ minWidth: 600 }}>
-                                            <Text className="text-sm text-gray-800" style={{ width: 100 }}>
-                                                {service.serviceNo || '-'}
-                                            </Text>
-                                            <View style={{ width: 100 }}>
-                                                <View className={`px-2 py-1 rounded text-xs text-center ${
-                                                    service.serviceType === 'FREE' ? 'bg-green-100 text-green-800' :
-                                                    service.serviceType === 'PAID' ? 'bg-orange-100 text-orange-800' :
-                                                    'bg-blue-100 text-blue-800'
-                                                }`}>
-                                                    <Text className="font-medium">
-                                                        {service.serviceType || '-'}
-                                                    </Text>
+                            {vehicleServices && vehicleServices.length > 0 ? (
+                                <View>
+                                    {vehicleServices.map((service: any, index: number) => (
+                                        <View key={service.id || index} className="p-3 border-b border-gray-100">
+                                            <View className="flex-row" style={{ minWidth: 600 }}>
+                                                <Text className="text-sm text-gray-800" style={{ width: 100 }}>
+                                                    {service.serviceNo || '-'}
+                                                </Text>
+                                                <View style={{ width: 100 }}>
+                                                    <View className={`px-2 py-1 rounded text-xs text-center ${service.serviceType === 'FREE' ? 'bg-green-100 text-green-800' :
+                                                        service.serviceType === 'PAID' ? 'bg-orange-100 text-orange-800' :
+                                                            'bg-blue-100 text-blue-800'
+                                                        }`}>
+                                                        <Text className="font-medium">
+                                                            {service.serviceType || '-'}
+                                                        </Text>
+                                                    </View>
                                                 </View>
+                                                <Text className="text-sm text-gray-800" style={{ width: 120, marginLeft: 30 }}>
+                                                    {service.serviceKms || '-'}
+                                                </Text>
+                                                <Text className="text-sm text-gray-800" style={{ width: 120 }}>
+                                                    {service.serviceDate ? moment(new Date(service.serviceDate)).format('DD/MM/YYYY') : '-'}
+                                                </Text>
                                             </View>
-                                            <Text className="text-sm text-gray-800" style={{ width: 120, marginLeft: 30 }}>
-                                                {service.serviceKms || '-'}
-                                            </Text>
-                                            <Text className="text-sm text-gray-800" style={{ width: 120 }}>
-                                                {service.serviceDate ? moment(new Date(service.serviceDate)).format('DD/MM/YYYY') : '-'}
-                                            </Text>
                                         </View>
-                                    </View>
-                                ))}
-                            </View>
-                        ) : (
-                            <View className="p-12 items-center" style={{ minWidth: 600 }}>
-                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                                <Text className="text-sm text-gray-400 mt-2">No Service Schedule Available</Text>
-                            </View>
-                        )}
-                    </View>
-                </ScrollView>
-            </View>
-
-            {/* QR Code and Re-Generate Buttons */}
-            <View className="flex-row justify-end gap-3 mb-6">
-                <TouchableOpacity
-                    className="px-4 py-2 bg-blue-600 rounded-lg"
-                    onPress={() => {
-                        try {
-                            // Generate QR data like web project: simple vehicle info
-                            const qrData = `VEHICLE:${vehicleDetails?.vehicle?.modelName || 'N/A'}-REG:${vehicleDetails?.registerNo || 'N/A'}-DATE:${moment().format('DD-MM-YYYY')}`;
-                            
-                            // Set QR data for React Native QR component
-                            setQrCodeData(qrData);
-                            setShowQrCode(true);
-                            Alert.alert('Success', 'QR Code generated successfully');
-                        } catch (error) {
-                            console.error('Error generating QR:', error);
-                            Alert.alert('Error', 'Failed to generate QR Code');
-                        }
-                    }}
-                >
-                    <Text className="text-white font-medium">QR Code</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                    className="flex-row items-center gap-2 px-4 py-2 bg-teal-600 rounded-lg"
-                    onPress={() => {
-                        try {
-                            // Only regenerate QR code, don't reload service schedule
-                            const qrData = `Vehicle: ${vehicleDetails?.registerNo}\nModel: ${vehicleDetails?.vehicle?.modelName}\nChassis: ${vehicleDetails?.chassisNo}\nCustomer: ${selectedCustomers[0]?.name || 'N/A'}\nRefreshed: ${new Date().toLocaleString()}`;
-                            setQrCodeData(qrData);
-                            setShowQrCode(true);
-                            Alert.alert('Success', 'QR Code regenerated successfully');
-                        } catch (error) {
-                            console.error('Error regenerating QR:', error);
-                            Alert.alert('Error', 'Failed to regenerate QR Code');
-                        }
-                    }}
-                >
-                    <Text className="text-sm text-white font-medium">Re-Generate</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* QR Code Display Area */}
-            <View className="bg-gray-50 border border-gray-200 rounded-lg p-4 items-center">
-                {showQrCode ? (
-                    <View className="items-center">
-                        <Text className="text-sm text-gray-600 mb-2 font-medium">QR Code Generated</Text>
-                        <View className="w-32 h-32 bg-white rounded-lg items-center justify-center border-2 border-gray-300">
-                            <QRCode
-                                value={qrCodeData || 'N/A'}
-                                size={112}
-                                color="black"
-                                backgroundColor="white"
-                            />
+                                    ))}
+                                </View>
+                            ) : (
+                                <View className="p-12 items-center" style={{ minWidth: 600 }}>
+                                    <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                    <Text className="text-sm text-gray-400 mt-2">No Service Schedule Available</Text>
+                                </View>
+                            )}
                         </View>
-                        <Text className="text-xs text-gray-500 mt-3 text-center max-w-xs">
-                            Vehicle QR Code
-                        </Text>
-                    </View>
-                ) : (
-                    <View className="items-center">
-                        <Text className="text-sm text-gray-500 mb-2">QR Code will appear here</Text>
-                        <View className="w-32 h-32 bg-gray-200 rounded-lg items-center justify-center">
-                            <QrCodeIcon size={48} color={COLORS.gray[400]} />
+                    </ScrollView>
+                </View>
+
+                {/* QR Code and Re-Generate Buttons */}
+                <View className="flex-row justify-end gap-3 mb-6">
+                    <TouchableOpacity
+                        className="px-4 py-2 bg-blue-600 rounded-lg"
+                        onPress={() => {
+                            try {
+                                // Generate QR data like web project: simple vehicle info
+                                const qrData = `VEHICLE:${vehicleDetails?.vehicle?.modelName || 'N/A'}-REG:${vehicleDetails?.registerNo || 'N/A'}-DATE:${moment().format('DD-MM-YYYY')}`;
+
+                                // Set QR data for React Native QR component
+                                setQrCodeData(qrData);
+                                setShowQrCode(true);
+                                Alert.alert('Success', 'QR Code generated successfully');
+                            } catch (error) {
+                                console.error('Error generating QR:', error);
+                                Alert.alert('Error', 'Failed to generate QR Code');
+                            }
+                        }}
+                    >
+                        <Text className="text-white font-medium">QR Code</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        className="flex-row items-center gap-2 px-4 py-2 bg-teal-600 rounded-lg"
+                        onPress={() => {
+                            try {
+                                // Only regenerate QR code, don't reload service schedule
+                                const qrData = `Vehicle: ${vehicleDetails?.registerNo}\nModel: ${vehicleDetails?.vehicle?.modelName}\nChassis: ${vehicleDetails?.chassisNo}\nCustomer: ${selectedCustomers[0]?.name || 'N/A'}\nRefreshed: ${new Date().toLocaleString()}`;
+                                setQrCodeData(qrData);
+                                setShowQrCode(true);
+                                Alert.alert('Success', 'QR Code regenerated successfully');
+                            } catch (error) {
+                                console.error('Error regenerating QR:', error);
+                                Alert.alert('Error', 'Failed to regenerate QR Code');
+                            }
+                        }}
+                    >
+                        <Text className="text-sm text-white font-medium">Re-Generate</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* QR Code Display Area */}
+                <View className="bg-gray-50 border border-gray-200 rounded-lg p-4 items-center">
+                    {showQrCode ? (
+                        <View className="items-center">
+                            <Text className="text-sm text-gray-600 mb-2 font-medium">QR Code Generated</Text>
+                            <View className="w-32 h-32 bg-white rounded-lg items-center justify-center border-2 border-gray-300">
+                                <QRCode
+                                    value={qrCodeData || 'N/A'}
+                                    size={112}
+                                    color="black"
+                                    backgroundColor="white"
+                                />
+                            </View>
+                            <Text className="text-xs text-gray-500 mt-3 text-center max-w-xs">
+                                Vehicle QR Code
+                            </Text>
                         </View>
-                    </View>
-                )}
+                    ) : (
+                        <View className="items-center">
+                            <Text className="text-sm text-gray-500 mb-2">QR Code will appear here</Text>
+                            <View className="w-32 h-32 bg-gray-200 rounded-lg items-center justify-center">
+                                <QrCodeIcon size={48} color={COLORS.gray[400]} />
+                            </View>
+                        </View>
+                    )}
+                </View>
             </View>
-        </View>
         );
     };
 
     const renderJobOrderHistoryTab = () => {
         console.log('Job Order History Tab - jobOrderHistory:', jobOrderHistory); // Debug log
         return (
-        <View>
-            {/* Job Order History Table */}
-            <View className="mb-4">
-                <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
-                    <View style={{ minWidth: 1300 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
-                        <View className="bg-gray-600 text-white p-3">
-                            <View className="flex-row" style={{ minWidth: 1300 }}>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Job No</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Reg. No</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Customer</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Model</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service No</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service Type</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Kms</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Time</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Date</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Mechanic</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Supervisor</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Status</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 100, marginLeft: 20 }}>Total Invoice</Text>
-                                <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Actions</Text>
+            <View>
+                {/* Job Order History Table */}
+                <View className="mb-4">
+                    <ScrollView horizontal showsHorizontalScrollIndicator={true} className="overflow-hidden">
+                        <View style={{ minWidth: 1300 }} className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                            <View className="bg-gray-600 text-white p-3">
+                                <View className="flex-row" style={{ minWidth: 1300 }}>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Job No</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Reg. No</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 120 }}>Customer</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Model</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service No</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Service Type</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Kms</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Time</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Date</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Mechanic</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100 }}>Supervisor</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Status</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 100, marginLeft: 20 }}>Total Invoice</Text>
+                                    <Text className="text-xs font-semibold text-white" style={{ width: 80 }}>Actions</Text>
+                                </View>
                             </View>
-                        </View>
-                        
-                        {/* Job Order Data from API */}
-                        {jobOrderHistory && jobOrderHistory.length > 0 ? (
-                            <View>
-                                {jobOrderHistory.map((job: any, index: number) => (
-                                    <View key={job.id || index} className="border-b border-gray-100">
-                                        {/* Main Job Order Row */}
-                                        <View className="p-3">
-                                            <View className="flex-row" style={{ minWidth: 1300 }}>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.jobNo || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
-                                                    {vehicleDetails?.registerNo || job.vehicle?.registerNo || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
-                                                    {vehicleDetails?.customer?.[0]?.name || job.customer?.name || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {vehicleDetails?.vehicle?.modelName || job.vehicle?.modelName || job.vehicle?.vehicle?.modelName || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.serviceNo || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.serviceType || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
-                                                    {job.kms || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
-                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('hh:mm A') : 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.mechanic?.profile?.employeeName || job.mechanic?.name || job.mechanic?.employeeName || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
-                                                    {job.supervisor?.profile?.employeeName || job.supervisor?.name || job.supervisor?.employeeName || 'N/A'}
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
-                                                    <Text className={`px-2 py-1 rounded text-xs font-medium ${
-                                                        job.jobStatus === 'PAID' ? 'bg-green-100 text-green-800' :
-                                                        job.jobStatus === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                                                        job.jobStatus === 'CANCELLED' ? 'bg-red-100 text-red-800' :
-                                                        job.jobStatus === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                                                        'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {job.jobStatus || job.status || 'N/A'}
+
+                            {/* Job Order Data from API */}
+                            {jobOrderHistory && jobOrderHistory.length > 0 ? (
+                                <View>
+                                    {jobOrderHistory.map((job: any, index: number) => (
+                                        <View key={job.id || index} className="border-b border-gray-100">
+                                            {/* Main Job Order Row */}
+                                            <View className="p-3">
+                                                <View className="flex-row" style={{ minWidth: 1300 }}>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.jobNo || 'N/A'}
                                                     </Text>
-                                                </Text>
-                                                <Text className="text-sm text-gray-800 mb-1" style={{ width: 100, marginLeft: 20 }}>
-                                                    {job.totalInvoice || job.total || job.netAmount || job.amount || 'N/A'}
-                                                </Text>
-                                                <View className="flex-row gap-2" style={{ width: 80 }}>
-                                                    <TouchableOpacity 
-                                                        className="px-2 py-1 bg-blue-600 rounded"
-                                                        onPress={() => {
-                                                            const jobDetails = `
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
+                                                        {vehicleDetails?.registerNo || job.vehicle?.registerNo || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 120 }}>
+                                                        {vehicleDetails?.customer?.[0]?.name || job.customer?.name || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {vehicleDetails?.vehicle?.modelName || job.vehicle?.modelName || job.vehicle?.vehicle?.modelName || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.serviceNo || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.serviceType || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                        {job.kms || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                        {job.createdAt ? moment(new Date(job.createdAt)).format('hh:mm A') : 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY') : 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.mechanic?.profile?.employeeName || job.mechanic?.name || job.mechanic?.employeeName || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100 }}>
+                                                        {job.supervisor?.profile?.employeeName || job.supervisor?.name || job.supervisor?.employeeName || 'N/A'}
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 80 }}>
+                                                        <Text className={`px-2 py-1 rounded text-xs font-medium ${job.jobStatus === 'PAID' ? 'bg-green-100 text-green-800' :
+                                                            job.jobStatus === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                                                job.jobStatus === 'CANCELLED' ? 'bg-red-100 text-red-800' :
+                                                                    job.jobStatus === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                                                                        'bg-gray-100 text-gray-800'
+                                                            }`}>
+                                                            {job.jobStatus || job.status || 'N/A'}
+                                                        </Text>
+                                                    </Text>
+                                                    <Text className="text-sm text-gray-800 mb-1" style={{ width: 100, marginLeft: 20 }}>
+                                                        {job.totalInvoice || job.total || job.netAmount || job.amount || 'N/A'}
+                                                    </Text>
+                                                    <View className="flex-row gap-2" style={{ width: 80 }}>
+                                                        <TouchableOpacity
+                                                            className="px-2 py-1 bg-blue-600 rounded"
+                                                            onPress={() => {
+                                                                const jobDetails = `
 Job Number: ${job.jobNo || 'N/A'}
 Registration No: ${job.registerNo || job.vehicle?.registerNo || vehicleDetails?.registerNo || 'N/A'}
 Customer: ${job.customer?.name || selectedCustomers[0]?.name || 'N/A'}
@@ -3435,99 +3586,99 @@ Total Invoice: ${job.totalAmount || job.totalInvoice || 'N/A'}
 Kms: ${job.kms || 'N/A'}
 Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh:mm:ss A') : 'N/A'}
 `;
-                                                            Alert.alert('Complete Job Order Details', jobDetails.trim());
-                                                        }}
-                                                    >
-                                                        <Text className="text-xs text-white">View</Text>
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity 
-                                                        className="px-2 py-1 bg-red-600 rounded"
-                                                        onPress={async () => {
-                                                            try {
-                                                                Alert.alert('PDF Download', 'Downloading job order PDF...');
-                                                                // Use the same method as web project
-                                                                const response = await platformApi.get(
-                                                                    `/api/jobOrder/generatePDF/${encodeURIComponent(job.id)}`,
-                                                                    { responseType: 'blob', timeout: 30000 }
-                                                                );
-                                                                
-                                                                if (response.status === 200) {
-                                                                    // Use web project approach for PDF download
-                                                                    const blob = new Blob([response.data], { type: 'application/pdf' });
-                                                                    
-                                                                    // Create object URL for the blob
-                                                                    const url = URL.createObjectURL(blob);
-                                                                    
-                                                                    try {
-                                                                        // For React Native, use Sharing with the blob URL
-                                                                        if (await Sharing.isAvailableAsync()) {
-                                                                            // Convert blob to base64 for sharing
-                                                                            const reader = new FileReader();
-                                                                            reader.onload = async () => {
-                                                                                const base64Data = reader.result as string;
-                                                                                await Sharing.shareAsync(base64Data, {
-                                                                                    mimeType: 'application/pdf',
-                                                                                    dialogTitle: 'Download Job Order PDF',
-                                                                                    UTI: 'com.adobe.pdf'
-                                                                                });
-                                                                            };
-                                                                            reader.readAsDataURL(blob);
-                                                                            Alert.alert('Success', 'PDF downloaded successfully');
-                                                                        } else {
-                                                                            Alert.alert('Success', `PDF generated successfully (size: ${Math.round(blob.size/1024)}KB)`);
+                                                                Alert.alert('Complete Job Order Details', jobDetails.trim());
+                                                            }}
+                                                        >
+                                                            <Text className="text-xs text-white">View</Text>
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity
+                                                            className="px-2 py-1 bg-red-600 rounded"
+                                                            onPress={async () => {
+                                                                try {
+                                                                    Alert.alert('PDF Download', 'Downloading job order PDF...');
+                                                                    // Use the same method as web project
+                                                                    const response = await platformApi.get(
+                                                                        `/api/jobOrder/generatePDF/${encodeURIComponent(job.id)}`,
+                                                                        { responseType: 'blob', timeout: 30000 }
+                                                                    );
+
+                                                                    if (response.status === 200) {
+                                                                        // Use web project approach for PDF download
+                                                                        const blob = new Blob([response.data], { type: 'application/pdf' });
+
+                                                                        // Create object URL for the blob
+                                                                        const url = URL.createObjectURL(blob);
+
+                                                                        try {
+                                                                            // For React Native, use Sharing with the blob URL
+                                                                            if (await Sharing.isAvailableAsync()) {
+                                                                                // Convert blob to base64 for sharing
+                                                                                const reader = new FileReader();
+                                                                                reader.onload = async () => {
+                                                                                    const base64Data = reader.result as string;
+                                                                                    await Sharing.shareAsync(base64Data, {
+                                                                                        mimeType: 'application/pdf',
+                                                                                        dialogTitle: 'Download Job Order PDF',
+                                                                                        UTI: 'com.adobe.pdf'
+                                                                                    });
+                                                                                };
+                                                                                reader.readAsDataURL(blob);
+                                                                                Alert.alert('Success', 'PDF downloaded successfully');
+                                                                            } else {
+                                                                                Alert.alert('Success', `PDF generated successfully (size: ${Math.round(blob.size / 1024)}KB)`);
+                                                                            }
+                                                                        } catch (shareError) {
+                                                                            console.error('Sharing error:', shareError);
+                                                                            Alert.alert('Success', `PDF generated (size: ${Math.round(blob.size / 1024)}KB)`);
+                                                                        } finally {
+                                                                            // Clean up the object URL
+                                                                            URL.revokeObjectURL(url);
                                                                         }
-                                                                    } catch (shareError) {
-                                                                        console.error('Sharing error:', shareError);
-                                                                        Alert.alert('Success', `PDF generated (size: ${Math.round(blob.size/1024)}KB)`);
-                                                                    } finally {
-                                                                        // Clean up the object URL
-                                                                        URL.revokeObjectURL(url);
+                                                                    } else {
+                                                                        Alert.alert('Error', 'Failed to download PDF');
                                                                     }
-                                                                } else {
+                                                                } catch (error) {
+                                                                    console.error('Error downloading PDF:', error);
                                                                     Alert.alert('Error', 'Failed to download PDF');
                                                                 }
-                                                            } catch (error) {
-                                                                console.error('Error downloading PDF:', error);
-                                                                Alert.alert('Error', 'Failed to download PDF');
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Text className="text-xs text-white">PDF</Text>
-                                                    </TouchableOpacity>
-                                                </View>
-                                            </View>
-                                            
-                                            {/* Additional Service Details - Expandable */}
-                                            {job.serviceDetails && job.serviceDetails.length > 0 && (
-                                                <View className="mt-2 pt-2 border-t border-gray-200">
-                                                    <Text className="text-xs text-gray-600 font-medium mb-1">Service Details:</Text>
-                                                    <View className="flex-row flex-wrap gap-2">
-                                                        {job.serviceDetails.map((service: any, serviceIndex: number) => (
-                                                            <View key={serviceIndex} className="bg-gray-50 px-2 py-1 rounded">
-                                                                <Text className="text-xs text-gray-700">
-                                                                    {service.name || service.serviceName || `Service ${serviceIndex + 1}`}
-                                                                </Text>
-                                                            </View>
-                                                        ))}
+                                                            }}
+                                                        >
+                                                            <Text className="text-xs text-white">PDF</Text>
+                                                        </TouchableOpacity>
                                                     </View>
                                                 </View>
-                                            )}
+
+                                                {/* Additional Service Details - Expandable */}
+                                                {job.serviceDetails && job.serviceDetails.length > 0 && (
+                                                    <View className="mt-2 pt-2 border-t border-gray-200">
+                                                        <Text className="text-xs text-gray-600 font-medium mb-1">Service Details:</Text>
+                                                        <View className="flex-row flex-wrap gap-2">
+                                                            {job.serviceDetails.map((service: any, serviceIndex: number) => (
+                                                                <View key={serviceIndex} className="bg-gray-50 px-2 py-1 rounded">
+                                                                    <Text className="text-xs text-gray-700">
+                                                                        {service.name || service.serviceName || `Service ${serviceIndex + 1}`}
+                                                                    </Text>
+                                                                </View>
+                                                            ))}
+                                                        </View>
+                                                    </View>
+                                                )}
+                                            </View>
                                         </View>
-                                    </View>
-                                ))}
-                            </View>
-                        ) : (
-                            <View className="p-12 items-center" style={{ minWidth: 1000 }}>
-                                <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
-                                <Text className="text-sm text-gray-400 mt-2">No Job Order History Available</Text>
-                                <Text className="text-xs text-gray-400 mt-1">Job orders will appear here once service is completed</Text>
-                            </View>
-                        )}
-                    </View>
-                </ScrollView>
+                                    ))}
+                                </View>
+                            ) : (
+                                <View className="p-12 items-center" style={{ minWidth: 1000 }}>
+                                    <FolderOpen size={48} color={COLORS.gray[300]} strokeWidth={1} />
+                                    <Text className="text-sm text-gray-400 mt-2">No Job Order History Available</Text>
+                                    <Text className="text-xs text-gray-400 mt-1">Job orders will appear here once service is completed</Text>
+                                </View>
+                            )}
+                        </View>
+                    </ScrollView>
+                </View>
             </View>
-        </View>
-    )
+        )
     }
 
     const renderManufacturerModal = () => (
@@ -3544,14 +3695,14 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                     </View>
                     <ScrollView>
                         {manufacturers.map((item) => (
-                            <TouchableOpacity 
-                                key={item.id} 
-                                onPress={() => { 
-                                    setManufacturerName(item.name); 
+                            <TouchableOpacity
+                                key={item.id}
+                                onPress={() => {
+                                    setManufacturerName(item.name);
                                     setShowManufacturerModal(false);
                                     // Fetch models for selected manufacturer
                                     fetchVehicleModels(item.id);
-                                }} 
+                                }}
                                 className="p-4 border-b border-gray-100"
                             >
                                 <Text className={`text-gray-800 ${manufacturerName === item.name ? 'font-bold text-teal-700' : ''}`}>
@@ -3582,31 +3733,31 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                     </View>
                     <ScrollView>
                         {(vehicleModels || []).map((item) => {
-                            const modelDisplay = item.modelCode && item.modelName 
+                            const modelDisplay = item.modelCode && item.modelName
                                 ? `${item.modelCode} - ${item.modelName}`
                                 : item.modelName || item.name || '';
-                            
+
                             return (
-                                <TouchableOpacity 
-                                    key={item.id} 
-                                    onPress={() => { 
-                                        const modelDisplay = item.modelCode && item.modelName 
+                                <TouchableOpacity
+                                    key={item.id}
+                                    onPress={() => {
+                                        const modelDisplay = item.modelCode && item.modelName
                                             ? `${item.modelCode} - ${item.modelName}`
                                             : item.modelName || item.name || '';
-                                        
-                                        setModel(modelDisplay); 
+
+                                        setModel(modelDisplay);
                                         setShowModelModal(false);
-                                        
+
                                         // Auto-set category based on selected model
                                         if (item.category) {
                                             setCategory(item.category);
                                         }
-                                        
+
                                         // Auto-set color if available
                                         if (item.image && item.image.length > 0) {
                                             setSelectedColor(item.image[0].color);
                                         }
-                                    }} 
+                                    }}
                                     className="p-4 border-b border-gray-100"
                                 >
                                     <Text className={`text-gray-800 ${model === modelDisplay ? 'font-bold text-teal-700' : ''}`}>
@@ -3640,48 +3791,47 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                         {vehicleModels.length > 0 && (() => {
                             // Extract model code from the model string (format: "ModelCode - ModelName")
                             const modelCodeFromSelection = model.split(' - ')[0]?.trim();
-                            const matchedVehicle = vehicleModels.find(v => 
-                                v.modelCode && modelCodeFromSelection && 
+                            const matchedVehicle = vehicleModels.find(v =>
+                                v.modelCode && modelCodeFromSelection &&
                                 v.modelCode.toString().trim().toUpperCase() === modelCodeFromSelection.toString().trim().toUpperCase()
                             );
-                            
-                            console.log('Color modal - Model:', model);
-                            console.log('Color modal - Extracted model code:', modelCodeFromSelection);
-                            console.log('Color modal - Matched vehicle:', matchedVehicle);
-                            console.log('Color modal - Available models:', vehicleModels.map(v => ({ id: v.id, code: v.modelCode, name: v.modelName })));
-                            
+
+                            // console.log('Color modal - Model:', model);
+                            // console.log('Color modal - Extracted model code:', modelCodeFromSelection);
+                            // console.log('Color modal - Matched vehicle:', matchedVehicle);
+                            // console.log('Color modal - Available models:', vehicleModels.map(v => ({ id: v.id, code: v.modelCode, name: v.modelName })));
+
                             return matchedVehicle && matchedVehicle.image && matchedVehicle.image.length > 0;
                         })() ? (
                             // Show actual colors from vehicle model
                             (() => {
                                 const modelCodeFromSelection = model.split(' - ')[0]?.trim();
-                                const matchedVehicle = vehicleModels.find(v => 
-                                    v.modelCode && modelCodeFromSelection && 
+                                const matchedVehicle = vehicleModels.find(v =>
+                                    v.modelCode && modelCodeFromSelection &&
                                     v.modelCode.toString().trim().toUpperCase() === modelCodeFromSelection.toString().trim().toUpperCase()
                                 );
-                                
+
                                 return matchedVehicle?.image?.map((color: any, index: number) => (
-                                    <TouchableOpacity 
-                                        key={color.id || index} 
-                                        onPress={() => { 
-                                            setSelectedColor(color.color); 
+                                    <TouchableOpacity
+                                        key={color.id || index}
+                                        onPress={() => {
+                                            setSelectedColor(color.color);
                                             setShowColorModal(false);
-                                        }} 
+                                        }}
                                         className="p-4 border-b border-gray-100"
                                     >
                                         <View className="flex-row items-center justify-between">
                                             <View className="flex-row items-center flex-1">
                                                 {color.url && (
-                                                    <Image 
-                                                        source={{ uri: color.url }} 
+                                                    <Image
+                                                        source={{ uri: color.url }}
                                                         className="w-8 h-8 rounded-full mr-3"
                                                         style={{ width: 32, height: 32 }}
                                                     />
                                                 )}
                                                 <View>
-                                                    <Text className={`text-gray-800 ${
-                                                        selectedColor === color.color ? 'font-bold text-teal-700' : ''
-                                                    }`}>
+                                                    <Text className={`text-gray-800 ${selectedColor === color.color ? 'font-bold text-teal-700' : ''
+                                                        }`}>
                                                         {color.color}
                                                     </Text>
                                                     {color.code && (
@@ -3691,11 +3841,10 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                                     )}
                                                 </View>
                                             </View>
-                                            <View className={`w-5 h-5 rounded-full border-2 ${
-                                                selectedColor === color.color 
-                                                    ? 'bg-teal-600 border-teal-600' 
-                                                    : 'border-gray-300'
-                                            }`}>
+                                            <View className={`w-5 h-5 rounded-full border-2 ${selectedColor === color.color
+                                                ? 'bg-teal-600 border-teal-600'
+                                                : 'border-gray-300'
+                                                }`}>
                                                 {selectedColor === color.color && (
                                                     <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
                                                 )}
@@ -3714,35 +3863,32 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                 { id: '5', name: 'White', code: 'WHT', color: 'white' },
                                 { id: '6', name: 'Silver', code: 'SLV', color: 'gray' },
                             ].map((item) => (
-                                <TouchableOpacity 
-                                    key={item.id} 
-                                    onPress={() => { setSelectedColor(item.name); setShowColorModal(false); }} 
+                                <TouchableOpacity
+                                    key={item.id}
+                                    onPress={() => { setSelectedColor(item.name); setShowColorModal(false); }}
                                     className="p-4 border-b border-gray-100"
                                 >
                                     <View className="flex-row items-center justify-between">
                                         <View className="flex-row items-center flex-1">
-                                            <View className={`w-8 h-8 rounded-full mr-3 ${
-                                                item.color === 'black' ? 'bg-black' :
+                                            <View className={`w-8 h-8 rounded-full mr-3 ${item.color === 'black' ? 'bg-black' :
                                                 item.color === 'blue' ? 'bg-blue-500' :
-                                                item.color === 'red' ? 'bg-red-500' :
-                                                item.color === 'gray' ? 'bg-gray-500' :
-                                                item.color === 'white' ? 'bg-white border border-gray-300' :
-                                                'bg-gray-400'
-                                            }`} />
+                                                    item.color === 'red' ? 'bg-red-500' :
+                                                        item.color === 'gray' ? 'bg-gray-500' :
+                                                            item.color === 'white' ? 'bg-white border border-gray-300' :
+                                                                'bg-gray-400'
+                                                }`} />
                                             <View>
-                                                <Text className={`text-gray-800 ${
-                                                    selectedColor === item.name ? 'font-bold text-teal-700' : ''
-                                                }`}>
+                                                <Text className={`text-gray-800 ${selectedColor === item.name ? 'font-bold text-teal-700' : ''
+                                                    }`}>
                                                     {item.name}
                                                 </Text>
                                                 <Text className="text-xs text-gray-500">{item.code}</Text>
                                             </View>
                                         </View>
-                                        <View className={`w-5 h-5 rounded-full border-2 ${
-                                            selectedColor === item.name 
-                                                ? 'bg-teal-600 border-teal-600' 
-                                                : 'border-gray-300'
-                                        }`}>
+                                        <View className={`w-5 h-5 rounded-full border-2 ${selectedColor === item.name
+                                            ? 'bg-teal-600 border-teal-600'
+                                            : 'border-gray-300'
+                                            }`}>
                                             {selectedColor === item.name && (
                                                 <View className="w-2 h-2 bg-white rounded-full self-center mt-1" />
                                             )}
@@ -3774,9 +3920,9 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                     </View>
                     <ScrollView>
                         {VEHICLE_TYPES.map((item) => (
-                            <TouchableOpacity 
-                                key={item.id} 
-                                onPress={() => { setVehicleType(item.name); setShowVehicleTypeModal(false); }} 
+                            <TouchableOpacity
+                                key={item.id}
+                                onPress={() => { setVehicleType(item.name); setShowVehicleTypeModal(false); }}
                                 className="p-4 border-b border-gray-100"
                             >
                                 <Text className={`text-gray-800 ${vehicleType === item.name ? 'font-bold text-teal-700' : ''}`}>
@@ -3804,7 +3950,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                 <X size={20} color={COLORS.gray[600]} />
                             </TouchableOpacity>
                         </View>
-                        
+
                         {/* Search Input */}
                         <View className="flex-row items-center bg-gray-100 rounded-lg px-3 py-2">
                             <Search size={16} color={COLORS.gray[400]} />
@@ -3816,10 +3962,10 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                             />
                         </View>
                     </View>
-                    
+
                     <ScrollView>
                         {/* Add Customer Button */}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={() => setShowAddCustomerForm(true)}
                             className="p-4 border-b border-gray-100 bg-blue-50"
                         >
@@ -3833,21 +3979,21 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                         {getFilteredCustomers().map((customer: any) => {
                             const isSelected = selectedCustomers.some((selected: any) => selected.id === customer.id);
                             const displayName = customer.name || '';
-                            const phoneDisplay = customer.contacts && customer.contacts[0] && customer.contacts[0].phone 
-                                ? ` - ${customer.contacts[0].phone}` 
+                            const phoneDisplay = customer.contacts && customer.contacts[0] && customer.contacts[0].phone
+                                ? ` - ${customer.contacts[0].phone}`
                                 : '';
-                            
+
                             return (
-                                <TouchableOpacity 
-                                    key={customer.id} 
-                                    onPress={() => { 
+                                <TouchableOpacity
+                                    key={customer.id}
+                                    onPress={() => {
                                         // Toggle customer selection
                                         if (isSelected) {
                                             setSelectedCustomers(selectedCustomers.filter((selected: any) => selected.id !== customer.id));
                                         } else {
                                             setSelectedCustomers([...selectedCustomers, customer]);
                                         }
-                                    }} 
+                                    }}
                                     className="p-4 border-b border-gray-100 flex-row items-center"
                                 >
                                     <View className="flex-1">
@@ -3866,7 +4012,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                 </TouchableOpacity>
                             );
                         })}
-                        
+
                         {getFilteredCustomers().length === 0 && (
                             <View className="p-8 items-center">
                                 <Text className="text-gray-500 text-center">
@@ -3875,14 +4021,14 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                             </View>
                         )}
                     </ScrollView>
-                    
+
                     <View className="p-3 border-t border-gray-200 flex-row gap-2">
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={() => {
                                 // Update display with selected customers count
                                 const customerCount = selectedCustomers.length;
                                 if (customerCount > 0) {
-                                    const displayText = customerCount === 1 
+                                    const displayText = customerCount === 1
                                         ? `${selectedCustomers[0].name} selected`
                                         : `${customerCount} customers selected`;
                                     setCustomerAssociated(displayText);
@@ -3890,7 +4036,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                     setCustomerAssociated('');
                                 }
                                 setShowCustomerModal(false);
-                            }} 
+                            }}
                             className="flex-1 bg-blue-600 p-3 rounded-lg"
                         >
                             <Text className="text-center text-white font-medium">Done ({selectedCustomers.length})</Text>
@@ -3916,7 +4062,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                             </TouchableOpacity>
                         </View>
                     </View>
-                    
+
                     <View className="p-4">
                         <View className="mb-4">
                             <Text className="text-gray-700 font-medium mb-2">Customer Name *</Text>
@@ -3927,7 +4073,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                 onChangeText={setNewCustomerName}
                             />
                         </View>
-                        
+
                         <View className="mb-4">
                             <Text className="text-gray-700 font-medium mb-2">Phone Number</Text>
                             <TextInput
@@ -3939,9 +4085,9 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                             />
                         </View>
                     </View>
-                    
+
                     <View className="p-4 border-t border-gray-200 flex-row gap-2">
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={handleAddCustomer}
                             className="flex-1 bg-blue-600 p-3 rounded-lg"
                         >
@@ -4041,7 +4187,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                     <Text className="text-teal-200 mx-1">›</Text>
                                     <TouchableOpacity onPress={() => setCalendarStep('month')}>
                                         <Text className={`text-sm font-semibold ${calendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
-                                            {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][pickMonth]}
+                                            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][pickMonth]}
                                         </Text>
                                     </TouchableOpacity>
                                 </>
@@ -4080,34 +4226,13 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                         )}
 
                         {/* STEP 2: Month Selection */}
-                        {calendarStep === 'month' && (
-                            <View className="flex-row flex-wrap">
-                                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
-                                    const isSelected = idx === pickMonth;
-                                    const isFuture = pickYear === new Date().getFullYear() && idx > new Date().getMonth();
-                                    return (
-                                        <TouchableOpacity
-                                            key={monthName}
-                                            disabled={isFuture}
-                                            onPress={() => { setPickMonth(idx); setCalendarStep('day'); }}
-                                            className={`w-1/3 p-1`}
-                                        >
-                                            <View className={`py-3 rounded-xl items-center ${isSelected ? 'bg-teal-600' : 'bg-gray-50 border border-gray-200'} ${isFuture ? 'opacity-30' : ''}`}>
-                                                <Text className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{monthName.slice(0,3)}</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </View>
-                        )}
-
                         {/* STEP 3: Day Selection */}
                         {calendarStep === 'day' && (() => {
                             const daysInMonth = new Date(pickYear, pickMonth + 1, 0).getDate();
                             const firstDayOfWeek = new Date(pickYear, pickMonth, 1).getDay();
                             const now = new Date();
                             const isCurrentMonth = pickYear === now.getFullYear() && pickMonth === now.getMonth();
-                            
+
                             return (
                                 <View>
                                     <View className="flex-row justify-between items-center mb-4">
@@ -4116,14 +4241,14 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                         </TouchableOpacity>
                                         <TouchableOpacity onPress={() => setCalendarStep('month')}>
                                             <Text className="text-base font-bold text-teal-700">
-                                                {['January','February','March','April','May','June','July','August','September','October','November','December'][pickMonth]} {pickYear}
+                                                {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][pickMonth]} {pickYear}
                                             </Text>
                                         </TouchableOpacity>
                                         <View className="w-8" />
                                     </View>
-                                    
+
                                     <View className="flex-row flex-wrap">
-                                        {['S','M','T','W','T','F','S'].map((day, index) => (
+                                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
                                             <View key={`${day}-${index}`} className="w-1/7 p-2">
                                                 <Text className="text-xs text-center text-gray-500 font-semibold">{day}</Text>
                                             </View>
@@ -4136,7 +4261,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                             const isSelected = false;
                                             const isPast = isCurrentMonth && day > now.getDate();
                                             const dateStr = `${pickYear}-${String(pickMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                            
+
                                             return (
                                                 <TouchableOpacity
                                                     key={day}
@@ -4196,7 +4321,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                     <Text className="text-teal-200 mx-1">›</Text>
                                     <TouchableOpacity onPress={() => setCalendarStep('month')}>
                                         <Text className={`text-sm font-semibold ${calendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
-                                            {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][pickMonth]}
+                                            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][pickMonth]}
                                         </Text>
                                     </TouchableOpacity>
                                 </>
@@ -4234,35 +4359,13 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                             />
                         )}
 
-                        {/* STEP 2: Month Selection */}
-                        {calendarStep === 'month' && (
-                            <View className="flex-row flex-wrap">
-                                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
-                                    const isSelected = idx === pickMonth;
-                                    const isFuture = pickYear === new Date().getFullYear() && idx > new Date().getMonth();
-                                    return (
-                                        <TouchableOpacity
-                                            key={monthName}
-                                            disabled={isFuture}
-                                            onPress={() => { setPickMonth(idx); setCalendarStep('day'); }}
-                                            className={`w-1/3 p-1`}
-                                        >
-                                            <View className={`py-3 rounded-xl items-center ${isSelected ? 'bg-teal-600' : 'bg-gray-50 border border-gray-200'} ${isFuture ? 'opacity-30' : ''}`}>
-                                                <Text className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{monthName.slice(0,3)}</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </View>
-                        )}
-
                         {/* STEP 3: Day Selection */}
                         {calendarStep === 'day' && (() => {
                             const daysInMonth = new Date(pickYear, pickMonth + 1, 0).getDate();
                             const firstDayOfWeek = new Date(pickYear, pickMonth, 1).getDay();
                             const now = new Date();
                             const isCurrentMonth = pickYear === now.getFullYear() && pickMonth === now.getMonth();
-                            
+
                             return (
                                 <View>
                                     <View className="flex-row justify-between items-center mb-4">
@@ -4271,14 +4374,14 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                         </TouchableOpacity>
                                         <TouchableOpacity onPress={() => setCalendarStep('month')}>
                                             <Text className="text-base font-bold text-teal-700">
-                                                {['January','February','March','April','May','June','July','August','September','October','November','December'][pickMonth]} {pickYear}
+                                                {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][pickMonth]} {pickYear}
                                             </Text>
                                         </TouchableOpacity>
                                         <View className="w-8" />
                                     </View>
-                                    
+
                                     <View className="flex-row flex-wrap">
-                                        {['S','M','T','W','T','F','S'].map((day, index) => (
+                                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
                                             <View key={`${day}-${index}`} className="w-1/7 p-2">
                                                 <Text className="text-xs text-center text-gray-500 font-semibold">{day}</Text>
                                             </View>
@@ -4291,7 +4394,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                                             const isSelected = false;
                                             const isPast = isCurrentMonth && day > now.getDate();
                                             const dateStr = `${pickYear}-${String(pickMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                            
+
                                             return (
                                                 <TouchableOpacity
                                                     key={day}
@@ -4327,7 +4430,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
         </Modal>
     );
 
-    
+
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
             <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
@@ -4352,8 +4455,6 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
             {renderCustomerModal()}
             {renderAddCustomerModal()}
             {renderCalendarModal()}
-            {renderValidFromCalendarModal()}
-            {renderValidToCalendarModal()}
             {/* Image Viewer Modal */}
             <Modal
                 visible={showImageViewer}
@@ -4374,7 +4475,7 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                     >
                         <X size={24} color="white" />
                     </TouchableOpacity>
-                    
+
                     {selectedImage && (
                         <Image
                             source={{ uri: selectedImage }}
@@ -4384,13 +4485,15 @@ Created: ${job.createdAt ? moment(new Date(job.createdAt)).format('DD/MM/YYYY hh
                     )}
                 </View>
             </Modal>
-            
+
             {/* Bulk Insurance Upload Modal */}
             <BulkInsuranceUpload
                 visible={showBulkInsuranceModal}
                 onClose={() => setShowBulkInsuranceModal(false)}
                 onSave={handleBulkInsuranceSave}
                 vehicleId={vehicle?.id || ''}
+                chassisNumber={chassisNumber}
+                existingInsuranceData={insuranceData}
             />
         </SafeAreaView>
     );

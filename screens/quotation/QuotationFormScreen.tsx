@@ -17,10 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
-import { Calendar, Clock, Share2, ChevronLeft, ArrowRight } from 'lucide-react-native';
+import { Calendar, Clock, Share2, ChevronLeft, ArrowRight, Download } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { ENDPOINT, getQuotationById } from '../../src/api';
+import { ENDPOINT, getQuotationById, generateQuotationPDF } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -41,8 +41,19 @@ const STATUS_STEPS = ['Quoted', 'Booked', 'Sold'];
 
 export default function QuotationFormScreen({ navigation, route }: { navigation: QuotationFormNavigationProp; route: QuotationFormRouteProp }) {
     const { id, selectedVehicle, paymentDetails, viewMode } = route.params;
-    // viewMode indicates whether the form should be read-only. default to true to preserve current behavior
     const isViewMode = viewMode !== undefined ? !!viewMode : true;
+
+    console.log('🚀 QuotationFormScreen - Route params:', {
+        id,
+        selectedVehicle: selectedVehicle ? {
+            id: selectedVehicle.id,
+            name: selectedVehicle.name,
+            paymentDetails: selectedVehicle.paymentDetails,
+            priceDetails: selectedVehicle.priceDetails
+        } : null,
+        paymentDetails,
+        viewMode
+    });
 
     const [gender, setGender] = useState('male');
     const [testDrive, setTestDrive] = useState('yes');
@@ -81,11 +92,28 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
     useEffect(() => {
         if (!id) return;
+        
+        console.log('📋 QuotationFormScreen - selectedVehicle exists:', !!selectedVehicle);
+        console.log('📋 QuotationFormScreen - paymentDetails exists:', !!paymentDetails);
+        
+        // Always fetch quotation data for customer details, even if we have selectedVehicle
+        // This ensures we have all the quotation metadata
+        console.log('📋 Fetching quotation data for metadata');
         getQuotationById(id)
             .then((res) => {
                 const data = res?.data;
                 const quotationData = data?.response?.data || null;
 
+                console.log('📋 Quotation data received:', {
+                    hasQuotation: !!quotationData,
+                    hasCustomer: !!quotationData?.customer,
+                    hasVehicle: !!(quotationData?.vehicle?.length > 0)
+                });
+
+                // Log the complete vehicle structure for debugging
+                if (quotationData?.vehicle?.length > 0) {
+                    console.log('📋 Complete vehicle structure from API:', JSON.stringify(quotationData.vehicle[0], null, 2));
+                }
 
                 setQuotation(quotationData);
 
@@ -115,113 +143,166 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 console.error('[QuotationForm] Fetch error:', err);
                 setQuotation(null);
                 toast.error('Failed to load quotation details');
-            })
-            .finally(() => { });
-    }, [id]);
+            });
+    }, [id, selectedVehicle, paymentDetails]); // Remove selectedVehicle from dependency array - always fetch
 
     const derived = useMemo(() => {
-        const branchName =
-            quotation?.branch?.name ||
-            quotation?.assignedBranch?.name ||
-            (Array.isArray(quotation?.branch) ? quotation?.branch?.[0]?.name : undefined) ||
-            '-';
-        const executiveName =
-            quotation?.assignedExecutive?.profile?.employeeName ||
-            quotation?.executive?.profile?.employeeName ||
-            '-';
-        // Match autoinn-fe: quotationPhone || proCustomer.phone || customer.contacts[0].phone
-        const customerPhone =
-            quotation?.quotationPhone ||
-            quotation?.proCustomer?.phone ||
-            quotation?.customer?.contacts?.[0]?.phone ||
-            '-';
-        // Match autoinn-fe: customerName || (customer ? customer.name : proCustomer?.name)
-        const rawName =
-            quotation?.customerName ||
-            (quotation?.customer ? quotation.customer.name : quotation?.proCustomer?.name) ||
-            '';
+        console.log('🎯 Computing derived data with:', {
+            hasQuotation: !!quotation,
+            hasSelectedVehicle: !!selectedVehicle,
+            hasPaymentDetails: !!paymentDetails,
+            selectedVehicleId: selectedVehicle?.id,
+            paymentDetailsType: paymentDetails?.paymentType
+        });
+
+        // Get customer information from quotation data (always available now)
+        const branchName = quotation?.branch?.name || quotation?.assignedBranch?.name || '-';
+        const executiveName = quotation?.assignedExecutive?.profile?.employeeName || quotation?.executive?.profile?.employeeName || '-';
+        const customerPhone = quotation?.quotationPhone || quotation?.proCustomer?.phone || quotation?.customer?.contacts?.[0]?.phone || '-';
+        const rawName = quotation?.customerName || (quotation?.customer ? quotation.customer.name : quotation?.proCustomer?.name) || '';
         const customerName = rawName || '-';
-        // Match autoinn-fe: locality || (proCustomer ? proCustomer.locality : customer.address?.locality)
-        const locality =
-            quotation?.locality ||
-            (quotation?.proCustomer
-                ? quotation.proCustomer.locality
-                : quotation?.customer?.address?.locality) ||
-            '-';
-        const scheduleDate =
-            scheduleDateValue ||
-            quotation?.scheduleDateAndTime ||
-            quotation?.scheduleDate ||
-            undefined;
-        const scheduleTime = quotation?.scheduleTime || '';
+        const locality = quotation?.locality || (quotation?.proCustomer ? quotation.proCustomer.locality : quotation?.customer?.address?.locality) || '-';
+        const scheduleDate = scheduleDateValue || quotation?.scheduleDateAndTime || quotation?.scheduleDate;
+        
+        // Extract time from ISO string if it's an ISO format, otherwise use as-is
+        let scheduleTime = quotation?.scheduleTime || '';
+        if (scheduleTime && scheduleTime.includes('T') && scheduleTime.includes('Z')) {
+            // Extract time from ISO string like "2026-03-16T04:04:00.000Z"
+            const timeMatch = scheduleTime.match(/T(\d{2}:\d{2}):\d{2}/);
+            if (timeMatch) {
+                scheduleTime = timeMatch[1];
+            }
+        } else if (scheduleTime && scheduleTime.includes(':')) {
+            // Extract just HH:MM from time string
+            const timeMatch = scheduleTime.match(/(\d{2}:\d{2})/);
+            if (timeMatch) {
+                scheduleTime = timeMatch[1];
+            }
+        }
+        
         const customerType = quotation?.customerType || quotation?.customer?.customerType || '-';
         const enquiryType = quotation?.enquiryType || '-';
         const remarks = quotation?.remarks || '';
         const expectedPurchase = expectedDateValue || quotation?.expectedPurchaseDate || quotation?.expectedDateOfPurchase;
         const leadSource = quotation?.leadSource || '-';
-        const vehicleName =
-            selectedVehicle?.name ||
-            (Array.isArray(quotation?.vehicle) && quotation?.vehicle.length
-                ? quotation.vehicle
-                    .map((v: any) => v?.vehicleDetail?.modelName || v?.vehicleDetail?.modelCode)
-                    .filter(Boolean)
-                    .join(', ')
-                : 'Select Vehicle');
+        const createdOn = formatDate(quotation?.createdAt);
 
-        const associatedVehiclesRaw =
-            quotation?.customer?.purchasedVehicle ||
-            quotation?.customer?.vehicle ||
-            [];
-        const associatedVehicles = Array.isArray(associatedVehiclesRaw)
-            ? associatedVehiclesRaw.map((vehicle: any) => ({
-                regNo: vehicle?.registerNo || vehicle?.regNo || vehicle?.registrationNo || '-',
-                name:
-                    vehicle?.vehicle?.vehicleDetail?.modelName ||
-                    vehicle?.vehicle?.vehicleDetail?.modelCode ||
-                    vehicle?.vehicle?.model?.modelName ||
-                    vehicle?.vehicle?.model?.modelCode ||
-                    vehicle?.vehicle?.modelName ||
-                    vehicle?.vehicle?.modelCode ||
-                    vehicle?.vehicleDetail?.modelName ||
-                    vehicle?.vehicleDetail?.modelCode ||
-                    vehicle?.modelName ||
-                    vehicle?.modelCode ||
-                    '-',
-            }))
-            : [];
+        // Handle vehicle data - prioritize selectedVehicle from navigation
+        let viewVehicleData = null;
+        let viewPaymentDetails = null;
+        let viewVehicleId = null;
+        let vehicleName = 'Select Vehicle';
+        let hasVehicle = false;
+        let associatedVehicles = [];
 
-        const fallbackVehicle = Array.isArray(quotation?.vehicle) && quotation.vehicle.length > 0
-            ? quotation.vehicle[0]
-            : null;
+        if (selectedVehicle) {
+            // Use selectedVehicle from navigation (this has the finance data)
+            console.log('🎯 Using selectedVehicle from navigation for display');
+            console.log('🎯 selectedVehicle paymentDetails:', selectedVehicle.paymentDetails);
+            console.log('🎯 selectedVehicle priceDetails:', selectedVehicle.priceDetails);
+            
+            viewVehicleData = selectedVehicle;
+            
+            // Priority: paymentDetails from route params > selectedVehicle.paymentDetails > default
+            viewPaymentDetails = paymentDetails || selectedVehicle.paymentDetails || {
+                paymentType: 'cash',
+                financerId: null,
+                downPayment: null,
+                financerTenure: { data: [] },
+                priceDetails: selectedVehicle.priceDetails || selectedVehicle.price
+            };
+            
+            viewVehicleId = selectedVehicle.id;
+            vehicleName = selectedVehicle.name || selectedVehicle.modelName || 'Selected Vehicle';
+            hasVehicle = true;
+            
+            console.log('🎯 Final viewPaymentDetails:', viewPaymentDetails);
+        } else {
+            // Fall back to API data
+            console.log('📋 No selectedVehicle, falling back to API data');
+            const fallbackVehicle = Array.isArray(quotation?.vehicle) && quotation.vehicle.length > 0 
+                ? quotation.vehicle[0] 
+                : null;
 
-        // vehicle[0].price = the quotation-specific price (showroomPrice, insurance, etc.)
-        // vehicle[0].vehicleDetail.price = the master vehicle's price array (multiple variants)
-        // For viewing, we need the junction-level price (vehicle[0].price)
-        const junctionPrice = fallbackVehicle?.price;
-        // Handle both: if price is an array, take the first element; if it's an object, use directly
-        const resolvedPrice = Array.isArray(junctionPrice) ? junctionPrice[0] : junctionPrice;
+            if (fallbackVehicle) {
+                console.log('📋 Found fallback vehicle from API');
+                console.log('📋 Full fallbackVehicle structure:', JSON.stringify(fallbackVehicle, null, 2));
+                console.log('📋 fallbackVehicle.financer:', fallbackVehicle.financer);
+                console.log('📋 fallbackVehicle.downPayment:', fallbackVehicle.downPayment);
+                console.log('📋 fallbackVehicle.financerTenure:', fallbackVehicle.financerTenure);
+                console.log('📋 fallbackVehicle.paymentDetails:', fallbackVehicle.paymentDetails);
+                
+                hasVehicle = true;
+                vehicleName = fallbackVehicle.vehicleDetail?.modelName || fallbackVehicle.vehicleDetail?.modelCode || 'Vehicle';
+                
+                const junctionPrice = fallbackVehicle?.price;
+                const resolvedPrice = Array.isArray(junctionPrice) ? junctionPrice[0] : junctionPrice;
+                const vehicleMasterId = fallbackVehicle?.vehicleDetail?.id || null;
 
-        // Build the VehicleMaster ID from the nested vehicleDetail
-        const vehicleMasterId = fallbackVehicle?.vehicleDetail?.id || null;
+                // Build payment details from fallback data
+                if (fallbackVehicle?.paymentDetails) {
+                    viewPaymentDetails = fallbackVehicle.paymentDetails;
+                } else if (fallbackVehicle?.financer || fallbackVehicle?.downPayment || fallbackVehicle?.financerTenure) {
+                    // Handle stringified financerTenure from API
+                    let parsedTenure = { data: [] };
+                    if (fallbackVehicle.financerTenure) {
+                        try {
+                            if (typeof fallbackVehicle.financerTenure === 'string') {
+                                parsedTenure = JSON.parse(fallbackVehicle.financerTenure);
+                            } else {
+                                parsedTenure = fallbackVehicle.financerTenure;
+                            }
+                        } catch (e) {
+                            console.warn(' Failed to parse financerTenure:', fallbackVehicle.financerTenure);
+                            parsedTenure = { data: [] };
+                        }
+                    }
+                    
+                    viewPaymentDetails = {
+                        paymentType: fallbackVehicle.financer ? 'finance' : 'cash',
+                        financerId: fallbackVehicle.financer,
+                        downPayment: fallbackVehicle.downPayment,
+                        financerTenure: parsedTenure,
+                        priceDetails: resolvedPrice
+                    };
+                } else if (resolvedPrice) {
+                    viewPaymentDetails = {
+                        paymentType: 'cash',
+                        financerId: null,
+                        downPayment: null,
+                        financerTenure: { data: [] },
+                        priceDetails: resolvedPrice
+                    };
+                }
 
-        const viewVehicleData = selectedVehicle || (fallbackVehicle ? {
-            id: vehicleMasterId || fallbackVehicle.id,
-            name:
-                fallbackVehicle.vehicleDetail?.modelName ||
-                fallbackVehicle.vehicleDetail?.modelCode ||
-                vehicleName,
-            modelName: fallbackVehicle.vehicleDetail?.modelName,
-            modelCode: fallbackVehicle.vehicleDetail?.modelCode,
-            image: fallbackVehicle.vehicleDetail?.image,
-            manufacturer: fallbackVehicle.vehicleDetail?.manufacturer,
-            color: fallbackVehicle.color,
-            price: resolvedPrice || quotation?.priceDetails,
-            insuranceType: fallbackVehicle.insuranceType,
-            optionalType: fallbackVehicle.optionalType,
-            financer: fallbackVehicle.financer,
-            downPayment: fallbackVehicle.downPayment,
-            financerTenure: fallbackVehicle.financerTenure,
-        } : null);
+                viewVehicleData = {
+                    id: vehicleMasterId || fallbackVehicle.id,
+                    name: fallbackVehicle.vehicleDetail?.modelName || fallbackVehicle.vehicleDetail?.modelCode || vehicleName,
+                    modelName: fallbackVehicle.vehicleDetail?.modelName,
+                    modelCode: fallbackVehicle.vehicleDetail?.modelCode,
+                    image: fallbackVehicle.vehicleDetail?.image,
+                    manufacturer: fallbackVehicle.vehicleDetail?.manufacturer,
+                    color: fallbackVehicle.color,
+                    price: resolvedPrice,
+                    insuranceType: fallbackVehicle.insuranceType,
+                    optionalType: fallbackVehicle.optionalType,
+                    financer: fallbackVehicle.financer,
+                    downPayment: fallbackVehicle.downPayment,
+                    financerTenure: fallbackVehicle.financerTenure,
+                    paymentDetails: viewPaymentDetails
+                };
+                viewVehicleId = vehicleMasterId || fallbackVehicle.id;
+            }
+
+            // Handle associated vehicles
+            const associatedVehiclesRaw = quotation?.customer?.purchasedVehicle || quotation?.customer?.vehicle || [];
+            associatedVehicles = Array.isArray(associatedVehiclesRaw)
+                ? associatedVehiclesRaw.map((vehicle: any) => ({
+                    regNo: vehicle?.registerNo || vehicle?.regNo || vehicle?.registrationNo || '-',
+                    name: vehicle?.vehicle?.vehicleDetail?.modelName || vehicle?.vehicle?.vehicleDetail?.modelCode || '-',
+                }))
+                : [];
+        }
 
         return {
             branchName,
@@ -237,28 +318,27 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             expectedPurchase,
             leadSource,
             vehicleName,
-            createdOn: formatDate(quotation?.createdAt),
+            createdOn,
             associatedVehicles,
             viewVehicleData,
-            viewPaymentDetails: fallbackVehicle?.paymentDetails || (resolvedPrice ? { priceDetails: resolvedPrice } : null),
-            viewVehicleId: vehicleMasterId || fallbackVehicle?.id || selectedVehicle?.id || null,
-            hasVehicle: !!fallbackVehicle || !!selectedVehicle,
+            viewPaymentDetails,
+            viewVehicleId,
+            hasVehicle,
         };
-    }, [quotation, selectedVehicle]);
+    }, [quotation, selectedVehicle, paymentDetails]);
 
     const onRefresh = () => {
         setRefreshing(true);
-        setQuotation(null);
-        setGender('male');
-        setTestDrive('yes');
-        setStatus(0);
-        setScheduleDateValue(null);
-        setExpectedDateValue(null);
+        
+        // If we have selectedVehicle, we should still refresh the quotation metadata
+        // but preserve the selectedVehicle data
         getQuotationById(id)
             .then((res) => {
                 const data = res?.data;
                 const quotationData = data?.response?.data || null;
                 setQuotation(quotationData);
+                
+                // Update form fields from quotation data
                 if (quotationData?.customer?.gender) {
                     const g = String(quotationData.customer.gender).toLowerCase();
                     setGender(g === 'female' ? 'female' : 'male');
@@ -274,8 +354,63 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 const expectedRaw = quotationData?.expectedPurchaseDate || quotationData?.expectedDateOfPurchase;
                 const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
                 setExpectedDateValue(expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : null);
+                
+                if (selectedVehicle) {
+                    toast.success('Refreshed quotation details, vehicle data preserved');
+                }
+            })
+            .catch((err) => {
+                console.error('[QuotationForm] Refresh error:', err);
+                toast.error('Failed to refresh quotation details');
             })
             .finally(() => setRefreshing(false));
+    };
+
+    const handleShareOnWhatsApp = async () => {
+        try {
+            // Get customer phone number
+            const customerPhone = derived.customerPhone.replace(/\D/g, ''); // Remove non-digits
+            
+            if (customerPhone && customerPhone !== '-') {
+                // Open WhatsApp directly to customer's chat with personalized message
+                const message = `Dear ${derived.customerName},\n\n📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n🔹 *Sales Executive*: ${derived.executiveName}\n\n📋 Thank you for your interest! We will send you the complete quotation PDF shortly with all pricing details and specifications.\n\n🤝 Feel free to call us if you have any questions.\n\n📞 *Contact*: +91${derived.customerPhone || 'Contact Number'}`;
+                
+                const whatsappUrl = `https://wa.me/91${customerPhone}?text=${encodeURIComponent(message)}`;
+                
+                await Linking.openURL(whatsappUrl);
+                toast.success('Opening WhatsApp chat with quotation details...');
+                
+            } else {
+                // Fallback to general WhatsApp if no customer number
+                const message = `📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Customer*: ${derived.customerName}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n\n✅ Ready to share quotation with customer!`;
+                
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+                await Linking.openURL(whatsappUrl);
+                toast.success('Opening WhatsApp with quotation details...');
+            }
+            
+        } catch (error) {
+            console.error('Error sharing on WhatsApp:', error);
+            toast.error('Failed to open WhatsApp. Please try again.');
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        try {
+            toast.success('Preparing PDF download...');
+            
+            // Construct the PDF URL directly to match web endpoint
+            const baseUrl = ENDPOINT.replace(/\/$/, ''); // Remove trailing slash
+            const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
+            
+            // Open the PDF URL for download - this will show PDF in browser like web
+            await Linking.openURL(pdfUrl);
+            toast.success('Opening PDF for download...');
+            
+        } catch (error) {
+            console.error('Error downloading PDF:', error);
+            toast.error('Failed to download PDF. Please try again.');
+        }
     };
 
     return (
@@ -286,6 +421,15 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         <ChevronLeft size={24} color="#111827" />
                     </TouchableOpacity>
                     <Text className="text-gray-900 text-lg font-bold text-xl">Quotations</Text>
+                </View>
+                <View className="flex-row items-center gap-2">
+                    <TouchableOpacity onPress={handleShareOnWhatsApp} className="flex-row items-center px-3 py-2 bg-teal-100 rounded-full">
+                        <Share2 size={18} color="#0d9488" />
+                        <Text className="text-teal-600 text-sm font-medium ml-2"> WhatsApp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleDownloadPDF} className="p-2 bg-blue-100 rounded-full">
+                        <Download size={18} color="#2563eb" />
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -387,7 +531,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                             <FormLabel label="Schedule Follow-Up Time" required />
                             <View className="relative">
                                 <TextInput
-                                    value={derived.scheduleTime ? (derived.scheduleTime.includes(':') ? derived.scheduleTime.substring(0, 5) : derived.scheduleTime) : formatTime(derived.scheduleDate)}
+                                    value={derived.scheduleTime ? (derived.scheduleTime.includes(':') ? derived.scheduleTime.substring(0, 5) : derived.scheduleTime) : (derived.scheduleDate ? derived.scheduleDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-')}
                                     editable={!isViewMode}
                                     className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 pr-12 text-gray-800"
                                 />
@@ -453,16 +597,35 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         {derived.hasVehicle ? (
                             <>
                                 <TouchableOpacity
-                                    onPress={() =>
+                                    onPress={() => {
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        console.log('� QUOTATIONFORM VEHICLE CLICKED!');
+                                        
+                                        // Use actual customer payment details
+                                        const actualPaymentDetails = derived.viewPaymentDetails || {
+                                            paymentType: 'cash',
+                                            financerId: null,
+                                            downPayment: null,
+                                            financerTenure: { data: [] },
+                                            priceDetails: derived.viewPaymentDetails?.priceDetails
+                                        };
+                                        
+                                        console.log('🚀 Using actual payment details:', actualPaymentDetails);
+                                        
                                         navigation.navigate('SelectPrice', {
                                             vehicleId: derived.viewVehicleId!,
-                                            vehicleData: derived.viewVehicleData,
+                                            vehicleData: {
+                                                ...derived.viewVehicleData,
+                                                // Preserve payment details like AddQuotation
+                                                paymentDetails: actualPaymentDetails,
+                                            },
                                             returnTo: 'QuotationForm',
                                             quotationId: id,
                                             viewMode: true,
-                                            paymentDetails: paymentDetails || derived.viewPaymentDetails,
-                                        })
-                                    }
+                                            paymentDetails: actualPaymentDetails,
+                                        });
+                                    }}
                                     className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3"
                                     activeOpacity={0.7}
                                 >
@@ -473,40 +636,6 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                                         <Text className="text-blue-700 text-xs mt-1">Model ID: {selectedVehicle.id}</Text>
                                     )}
                                 </TouchableOpacity>
-
-                                {(paymentDetails || selectedVehicle?.priceDetails) && (
-                                    <View className="mt-3 bg-white border border-gray-100 rounded-xl px-4 py-3">
-                                        <Text className="text-gray-500 text-xs">Price & Payment</Text>
-                                        <Text className="text-gray-900 text-sm font-semibold mt-1">
-                                            {paymentDetails?.paymentType === 'finance' ? 'Finance' : 'Cash'}
-                                        </Text>
-                                        <View className="mt-2">
-                                            <Text className="text-gray-500 text-xs">Total Amount</Text>
-                                            <Text className="text-gray-900 text-sm font-semibold">
-                                                ₹ {paymentDetails?.priceDetails?.totalAmount ?? selectedVehicle?.priceDetails?.totalAmount ?? '—'}
-                                            </Text>
-                                        </View>
-                                        {!!paymentDetails?.priceDetails?.insurance && (
-                                            <Text className="text-gray-600 text-xs mt-1">
-                                                Insurance: {paymentDetails.priceDetails.insurance}
-                                            </Text>
-                                        )}
-                                        {!!paymentDetails?.priceDetails?.others?.length && (
-                                            <Text className="text-gray-600 text-xs mt-1">
-                                                Others: {paymentDetails.priceDetails.others.join(', ')}
-                                            </Text>
-                                        )}
-                                        {paymentDetails?.paymentType === 'finance' && paymentDetails?.financeDetails && (
-                                            <View className="mt-2">
-                                                <Text className="text-gray-500 text-xs">Finance Details</Text>
-                                                <Text className="text-gray-700 text-xs mt-1">Financer: {paymentDetails.financeDetails.financer || '—'}</Text>
-                                                <Text className="text-gray-700 text-xs mt-1">Down Payment: {paymentDetails.financeDetails.downPayment || '—'}</Text>
-                                                <Text className="text-gray-700 text-xs mt-1">Tenure: {paymentDetails.financeDetails.tenure || '—'}</Text>
-                                                <Text className="text-gray-700 text-xs mt-1">EMI: {paymentDetails.financeDetails.emi || '—'}</Text>
-                                            </View>
-                                        )}
-                                    </View>
-                                )}
                             </>
                         ) : (
                             <View className="py-6 items-center justify-center bg-gray-50 rounded-xl">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -19,7 +19,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
 import axios from 'axios';
 import platformApi from '../src/api';
+import { bulkInsuranceUpload, uploadVehicleInsurance } from '../src/api';
 import { COLORS } from '../constants/colors';
+
+// ─── Custom Modal Component (matching booking activity pattern) ────────────────────────────────────────────────────────────
+const CustomModal = ({
+    visible,
+    children,
+    onClose,
+}: {
+    visible: boolean;
+    children: React.ReactNode;
+    onClose: () => void;
+}) => {
+    if (!visible) return null;
+    return (
+        <View className="absolute inset-0 z-50 flex-1">
+            <View className="flex-1 bg-black/50 justify-center">
+                <View className="bg-white rounded-xl m-4 max-h-96">{children}</View>
+            </View>
+        </View>
+    );
+};
 
 interface BulkInsuranceItem {
     tempId: string;
@@ -46,6 +67,8 @@ interface BulkInsuranceUploadProps {
     onClose: () => void;
     onSave: (insurances: any[]) => void;
     vehicleId: string;
+    chassisNumber?: string;
+    existingInsuranceData?: any[]; // Pass existing data to avoid conflicts
 }
 
 const insuranceTypes = [
@@ -59,7 +82,9 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
     visible,
     onClose,
     onSave,
-    vehicleId
+    vehicleId,
+    chassisNumber,
+    existingInsuranceData
 }) => {
     const [bulkUploads, setBulkUploads] = useState<BulkInsuranceItem[]>([]);
     const [insurers, setInsurers] = useState<Insurer[]>([]);
@@ -78,31 +103,43 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
     const [datePickerField, setDatePickerField] = useState<'validFrom' | 'validTo' | null>(null);
     const [selectedItemTempIdForDate, setSelectedItemTempIdForDate] = useState<string>('');
 
-    // Fetch insurers on component mount (like web version)
-    const fetchInsurers = async () => {
-        try {
-            console.log('Fetching insurers from /api/insurance');
-            const response = await platformApi.get('/api/insurance');
-            console.log('Insurers response:', response.data);
-            
-            if (response.data.code === 200) {
-                const insurerData = response.data.response?.data || [];
-                console.log('Setting insurers:', insurerData);
-                setInsurers(insurerData);
-                setFilteredInsurers(insurerData);
+    // Fetch insurers from API (matching web app)
+    useEffect(() => {
+        const fetchInsurers = async () => {
+            try {
+                setLoading(true);
+                const response = await platformApi.get("/api/insurance");
                 
-                // Create insurancePair lookup like web version
-                const pair: {[key: string]: string} = {};
-                for (let item of insurerData) {
-                    pair[item.id] = item.name;
+                if (response.data.code === 200) {
+                    const { response: apiResponse } = response.data;
+                    if (apiResponse.code === 200) {
+                        console.log('📋 Insurers data:', apiResponse.data);
+                        setInsurers(apiResponse.data);
+                        setFilteredInsurers(apiResponse.data);
+                        
+                        // Create insurance pair mapping like web app
+                        const pair: {[key: string]: string} = {};
+                        for (const item of apiResponse.data) {
+                            if (item.name) { // Only add if name exists
+                                pair[item.id] = item.name;
+                            }
+                        }
+                        console.log('🔗 Insurance pair mapping:', pair);
+                        setInsurancePair(pair);
+                    }
                 }
-                setInsurancePair(pair);
-                console.log('Insurance pair created:', pair);
+            } catch (error) {
+                console.error('Error fetching insurers:', error);
+                Alert.alert('Error', 'Failed to fetch insurers');
+            } finally {
+                setLoading(false);
             }
-        } catch (error) {
-            console.error('Error fetching insurers:', error);
+        };
+
+        if (visible) {
+            fetchInsurers();
         }
-    };
+    }, [visible]);
 
     // Search insurers (like web version)
     const searchInsurers = async (searchString: string) => {
@@ -132,17 +169,13 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
             }
         } catch (error) {
             console.error('Error searching insurers:', error);
-            // Fallback to client-side filtering
+            // Fallback to client-side filtering with null checks
             const filtered = insurers.filter(insurer =>
-                insurer.name.toLowerCase().includes(searchString.toLowerCase())
+                insurer.name && insurer.name.toLowerCase().includes(searchString.toLowerCase())
             );
             setFilteredInsurers(filtered);
         }
     };
-
-    React.useEffect(() => {
-        fetchInsurers();
-    }, []);
 
     const openInsurerModal = (tempId: string) => {
         setSelectedItemTempId(tempId);
@@ -166,7 +199,6 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
             });
 
             if (!result.canceled && result.assets) {
-                // Check file sizes (max 5MB per file to reduce server load)
                 const maxSize = 5 * 1024 * 1024; // 5MB in bytes
                 const oversizedFiles = result.assets.filter(file => file.size && file.size > maxSize);
                 
@@ -179,7 +211,6 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 }
 
                 const newItems: BulkInsuranceItem[] = result.assets.map(file => {
-                    // Match web version tempId format: `${Date.now()}-${file.uid}`
                     const tempId = `${Date.now()}-${file.uri?.split('/').pop() || 'file'}`;
                     return {
                         tempId,
@@ -195,7 +226,6 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
 
                 setBulkUploads(prev => [...prev, ...newItems]);
 
-                // Parse each document with longer delay between requests to prevent server overload
                 newItems.forEach((item, index) => {
                     setTimeout(() => {
                         parseInsuranceDoc(item.tempId, item.file);
@@ -208,21 +238,34 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
         }
     };
 
-    const parseInsuranceDoc = async (tempId: string, file: DocumentPicker.DocumentPickerAsset, retryCount = 0, useFallback = false) => {
-        const maxRetries = 3;
-        const baseDelay = 2000; // 2 seconds base delay
+    // Add empty row for manual entry (like web app)
+    const addEmptyInsuranceRow = () => {
+        const tempId = `manual-${Date.now()}`;
+        const emptyItem: BulkInsuranceItem = {
+            tempId,
+            file: {
+                uri: '',
+                name: 'Manual Entry',
+                size: 0,
+                mimeType: 'application/pdf'
+            } as DocumentPicker.DocumentPickerAsset,
+            insurer: undefined,
+            policyNumber: '',
+            insuranceType: '',
+            validFrom: undefined,
+            validTo: undefined,
+            parsing: false
+        };
         
+        setBulkUploads(prev => [...prev, emptyItem]);
+    };
+
+    const parseInsuranceDoc = async (tempId: string, file: DocumentPicker.DocumentPickerAsset) => {
         try {
-            // Debug: Check if token is available
-            const token = await AsyncStorage.getItem('token');
-            console.log('Token available for parsing:', token ? 'YES' : 'NO');
-            console.log('Using server:', useFallback ? 'TEST (fallback)' : 'PRODUCTION');
+            console.log('🔍 Parsing insurance document:', file.name);
             
             // Create FormData exactly like web version
             const formData = new FormData();
-            
-            // For React Native, we need to use the file object directly
-            // The web version uses: fd.append("file", file);
             formData.append('file', {
                 uri: file.uri,
                 type: file.mimeType || 'application/pdf',
@@ -230,40 +273,15 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 size: file.size
             } as any);
 
-            console.log('Making API call to /api/insurance/parse');
-            console.log('File details:', { 
-                name: file.name, 
-                size: file.size, 
-                type: file.mimeType,
-                uri: file.uri
-            });
+            console.log('📡 Making API call to /api/insurance/parse');
             
-            // Choose API instance based on fallback flag
-            const apiInstance = useFallback ? 
-                axios.create({
-                    baseURL: 'https://test.autocloud.in',
-                    headers: { 'Content-Type': 'application/json' }
-                }) : platformApi;
-            
-            // Add request interceptor for fallback API
-            if (useFallback) {
-                apiInstance.interceptors.request.use(async (config: any) => {
-                    const token = await AsyncStorage.getItem('token');
-                    if (token) {
-                        config.headers = config.headers || {};
-                        config.headers['x-access-token'] = token;
-                    }
-                    return config;
-                });
-            }
-            
-            // Add timeout to prevent hanging
-            const response = await apiInstance.post('/api/insurance/parse', formData, {
-                timeout: 45000, // 45 second timeout
+            // Use platformApi directly (same as web version)
+            const response = await platformApi.post('/api/insurance/parse', formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+                timeout: 30000, // 30 second timeout
             });
 
-            console.log('Parse response status:', response.status);
-            console.log('Parse response data:', response.data);
+            console.log('✅ Parse response:', response.data);
 
             const parsed = response?.data?.response?.data || response?.data?.data || {};
             let insuranceType = parsed.insuranceType || "1+5"; // Match web version exactly
@@ -275,7 +293,6 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                             ...item,
                             insurer: parsed.insurerId || item.insurer,
                             policyNumber: parsed.policyNumber || item.policyNumber,
-                            //insuranceType: parsed.insuranceType || item.insuranceType, // Match web comment
                             insuranceType: insuranceType, 
                             validFrom: parsed.validFrom
                                 ? moment(parsed.validFrom, "DD/MM/YYYY").toDate()
@@ -288,117 +305,42 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                         : item
                 )
             );
+            
+            console.log('✅ Successfully parsed document:', file.name);
         } catch (error: any) {
-            console.error('Failed to parse insurance doc:', error);
-            console.error('Error details:', {
-                message: error.message,
-                code: error.code,
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: error.response?.data,
-                server: useFallback ? 'TEST' : 'PRODUCTION'
-            });
+            console.error('❌ Failed to parse insurance doc:', error);
             
-            // If production server fails with 504/502/503 and we haven't tried fallback yet, try test server
-            if (!useFallback && (
-                error.response?.status === 504 || 
-                error.response?.status === 502 || 
-                error.response?.status === 503 ||
-                error.code === 'ECONNABORTED' ||
-                error.message?.includes('timeout') ||
-                error.message?.includes('Network Error') ||
-                !error.response // Network error
-            )) {
-                console.log('🔄 Production server failed, trying test server as fallback...');
-                setBulkUploads(prev =>
-                    prev.map(item =>
-                        item.tempId === tempId 
-                            ? { ...item, parsing: true, retryCount: 0 } 
-                            : item
-                    )
-                );
-                
-                // Try with test server
-                setTimeout(() => {
-                    parseInsuranceDoc(tempId, file, 0, true);
-                }, 1000);
-                return;
-            }
-            
-            // Check if we should retry (on fallback server)
-            if (useFallback && retryCount < maxRetries && (
-                error.response?.status === 504 || 
-                error.code === 'ECONNABORTED' ||
-                error.message?.includes('timeout') ||
-                error.message?.includes('Network Error') ||
-                !error.response // Network error
-            )) {
-                const delay = baseDelay * Math.pow(2, retryCount); // Exponential backoff
-                console.log(`Retrying parsing on test server in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
-                console.log(`Retry reason: ${error.response?.status || error.code || error.message}`);
-                
-                // Update UI to show retry status
-                setBulkUploads(prev =>
-                    prev.map(item =>
-                        item.tempId === tempId 
-                            ? { ...item, parsing: true, retryCount: retryCount + 1 } 
-                            : item
-                    )
-                );
-                
-                // Wait and retry
-                setTimeout(() => {
-                    parseInsuranceDoc(tempId, file, retryCount + 1, true);
-                }, delay);
-                return;
-            }
-            
-            // Handle specific error types
             let errorMessage = 'Could not prefill from document';
-            let showRetryButton = false;
             
             if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-                errorMessage = `Document parsing timed out on ${useFallback ? 'test' : 'production'} server. Please try again or fill details manually.`;
-                showRetryButton = true;
+                errorMessage = 'Document parsing timed out. Please try again or fill details manually.';
             } else if (error.response?.status === 504) {
-                errorMessage = `Server is currently busy (504 Gateway Timeout) on ${useFallback ? 'test' : 'production'} server. The parsing service may be overloaded. Please try again in a few moments or fill details manually.`;
-                showRetryButton = true;
-            } else if (error.response?.status === 502 || error.response?.status === 503) {
-                errorMessage = `Server error (${error.response.status}) on ${useFallback ? 'test' : 'production'} server. The service is temporarily unavailable. Please try again later or fill details manually.`;
-                showRetryButton = true;
-            } else if (error.response?.status === 401) {
-                errorMessage = 'Authentication error. Please log in again.';
+                errorMessage = 'Server is currently busy (504 Gateway Timeout). Please try again or fill details manually.';
             } else if (error.response?.status === 413) {
                 errorMessage = 'File too large. Please try with a smaller file.';
-            } else if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
-                errorMessage = 'Network connection error. Please check your internet connection and try again.';
-                showRetryButton = true;
+            } else if (error.response?.status === 401) {
+                errorMessage = 'Authentication error. Please log in again.';
             } else if (!error.response) {
-                errorMessage = 'Network error. Unable to connect to the server. Please check your internet connection and try again.';
-                showRetryButton = true;
+                errorMessage = 'Network error. Please check your internet connection and try again.';
             }
             
-            console.log('Final error message:', errorMessage);
-            Alert.alert(
-                'Parsing Error', 
-                errorMessage,
-                showRetryButton ? [
-                    { text: 'Fill Manually', style: 'cancel' },
-                    { 
-                        text: 'Retry', 
-                        onPress: () => {
-                            setBulkUploads(prev =>
-                                prev.map(item =>
-                                    item.tempId === tempId ? { ...item, parsing: true } : item
-                                )
-                            );
-                            setTimeout(() => {
-                                parseInsuranceDoc(tempId, file, 0, useFallback);
-                            }, 500);
-                        }
+            Alert.alert('Parsing Error', errorMessage, [
+                { text: 'Fill Manually', style: 'cancel' },
+                { 
+                    text: 'Retry', 
+                    onPress: () => {
+                        setBulkUploads(prev =>
+                            prev.map(item =>
+                                item.tempId === tempId ? { ...item, parsing: true } : item
+                            )
+                        );
+                        setTimeout(() => {
+                            parseInsuranceDoc(tempId, file);
+                        }, 1000);
                     }
-                ] : [{ text: 'OK', style: 'cancel' }]
-            );
+                }
+            ]);
+            
             setBulkUploads(prev =>
                 prev.map(item =>
                     item.tempId === tempId ? { ...item, parsing: false } : item
@@ -446,14 +388,13 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
             !policyNumber ||
             !insuranceType ||
             !validFrom ||
-            !validTo ||
-            !file
+            !validTo
         ) {
             Alert.alert('Warning', 'Fill all fields for this upload before saving');
             return;
         }
 
-        // Duplicate detection like web version
+        // Duplicate detection like web version - check against existing data too
         const duplicate =
             dataSource.some(
                 (row) =>
@@ -462,7 +403,11 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
             newData.some(
                 (row) =>
                     row.insurance?.id === insurer || row.policyNumber === policyNumber
-            );
+            ) ||
+            (existingInsuranceData && existingInsuranceData.some(
+                (row) =>
+                    row.insurer?.id === insurer || row.policyNumber === policyNumber
+            ));
 
         if (duplicate) {
             Alert.alert('Warning', 'Duplicate insurer or policy number');
@@ -477,6 +422,51 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 )
             );
 
+            let documentUrl = null;
+
+            // Only upload file if it's not a manual entry
+            if (file && file.uri && file.name !== 'Manual Entry') {
+                // Upload the document using the proper API
+                const formData = new FormData();
+                formData.append("profile", {
+                    uri: file.uri,
+                    type: file.mimeType || 'application/pdf',
+                    name: file.name,
+                    size: file.size
+                } as any);
+                formData.append("module", "vehicle");
+                formData.append("type", "Insurance");
+                formData.append("master", "Transaction Master");
+                formData.append("id", "");
+
+                const uploadRes = await uploadVehicleInsurance(formData);
+
+                if (uploadRes.data.code === 200) {
+                    const uploadedFile = uploadRes.data.response?.data || uploadRes.data.data;
+                    documentUrl = uploadedFile?.url || uploadedFile?.Location;
+                    
+                    if (!documentUrl) {
+                        console.error("No document URL in upload response");
+                        Alert.alert('Error', 'File uploaded but no URL received');
+                        setBulkUploads(prev =>
+                            prev.map(row =>
+                                row.tempId === item.tempId ? { ...row, savedLocally: false } : row
+                            )
+                        );
+                        return;
+                    }
+                } else {
+                    console.error("Upload failed:", uploadRes.data);
+                    Alert.alert('Error', 'Failed to upload file to server');
+                    setBulkUploads(prev =>
+                        prev.map(row =>
+                            row.tempId === item.tempId ? { ...row, savedLocally: false } : row
+                        )
+                    );
+                    return;
+                }
+            }
+
             // Create data object exactly like web version
             const data = {
                 id: "",
@@ -485,69 +475,28 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 insuranceType,
                 validFrom: moment(validFrom).toISOString(),
                 validTo: moment(validTo).toISOString(),
-                pdf: { file: { originFileObj: file } },
-                url: null,
+                pdf: file && file.uri ? { file: { originFileObj: file } } : null,
+                url: documentUrl,
             };
-
-            // Upload the document - match the web version format
-            const formData = new FormData();
-            formData.append("profile", {
-                uri: file.uri,
-                type: file.mimeType || 'application/pdf',
-                name: file.name,
-                size: file.size
-            } as any);
-            formData.append("module", "vehicle");
-            formData.append("type", "Insurance");
-            formData.append("master", "Transaction Master");
-            formData.append("id", "");
-
-            const uploadRes = await platformApi.post("/api/upload/vehicleInsurance", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-                timeout: 60000, // 60 second timeout
-            });
-
-            if (uploadRes.data.code === 200) {
-                const uploadedFile = uploadRes.data.response?.data || uploadRes.data.data;
-                const documentUrl = uploadedFile?.url || uploadedFile?.Location;
-                
-                if (documentUrl) {
-                    data.url = documentUrl;
-                    
-                    // Update all state arrays like web version
-                    setDataSource((prev: any[]) => [...prev, data]);
-                    setFormDataList((prev: any[]) => [...prev, data]);
-                    setNewData((prev: any[]) => [...prev, data]);
-                    
-                    // Mark as uploaded
-                    setBulkUploads(prev =>
-                        prev.map(row =>
-                            row.tempId === item.tempId 
-                                ? { ...row, uploaded: true, url: documentUrl } 
-                                : row
-                        )
-                    );
-                    
-                    Alert.alert('Success', 'Insurance uploaded and saved successfully');
-                } else {
-                    console.error("No document URL in upload response");
-                    Alert.alert('Error', 'File uploaded but no URL received');
-                }
-            } else {
-                console.error("Upload failed:", uploadRes.data);
-                Alert.alert('Error', 'Failed to upload file to server');
-                
-                // Revert saved status on failure
-                setBulkUploads(prev =>
-                    prev.map(row =>
-                        row.tempId === item.tempId ? { ...row, savedLocally: false } : row
-                    )
-                );
-            }
+            
+            // Update all state arrays like web version
+            setDataSource((prev: any[]) => [...prev, data]);
+            setFormDataList((prev: any[]) => [...prev, data]);
+            setNewData((prev: any[]) => [...prev, data]);
+            
+            // Mark as uploaded
+            setBulkUploads(prev =>
+                prev.map(row =>
+                    row.tempId === item.tempId 
+                        ? { ...row, uploaded: true, url: documentUrl } 
+                        : row
+                )
+            );
+            
+            Alert.alert('Success', 'Insurance saved successfully');
         } catch (error: any) {
             console.error('Error saving insurance:', error);
             
-            // Handle specific error types
             let errorMessage = 'Failed to save insurance';
             
             if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
@@ -587,55 +536,26 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
             const insuranceData: any[] = [];
             
             for (const item of itemsToSave) {
-                const { insurer, policyNumber, insuranceType, validFrom, validTo, file } = item;
+                const { insurer, policyNumber, insuranceType, validFrom, validTo, url } = item;
                 
-                // Upload the document - match the web version format
-                const formData = new FormData();
-                formData.append("profile", {
-                    uri: file.uri,
-                    type: file.mimeType || 'application/pdf',
-                    name: file.name,
-                    size: file.size
-                } as any);
-                formData.append("module", "vehicle");
-                formData.append("type", "Insurance");
-                formData.append("master", "Transaction Master");
-                formData.append("id", "");
-
-                const uploadRes = await platformApi.post("/api/upload/vehicleInsurance", formData, {
-                    headers: { "Content-Type": "multipart/form-data" },
-                    timeout: 60000,
+                // Add to insurance data array (file already uploaded in saveBulkItem)
+                insuranceData.push({
+                    id: "",
+                    insurer: insurer,
+                    policyNumber: policyNumber,
+                    insuranceType: insuranceType,
+                    chassisNumber: chassisNumber, // Add chassis number for validation
+                    validFrom: moment(validFrom).toISOString(),
+                    validTo: moment(validTo).toISOString(),
+                    pdf: (item.file && item.file.uri && item.file.name !== 'Manual Entry') ? {
+                        file: {
+                            originFileObj: {
+                                uid: item.file.uri
+                            }
+                        }
+                    } : null,
+                    url: url || null
                 });
-
-                if (uploadRes.data.code === 200) {
-                    const uploadedFile = uploadRes.data.response?.data || uploadRes.data.data;
-                    const documentUrl = uploadedFile?.url || uploadedFile?.Location;
-                    
-                    if (documentUrl) {
-                        insuranceData.push({
-                            id: "",
-                            insurer: insurer,
-                            policyNumber: policyNumber,
-                            insuranceType: insuranceType,
-                            validFrom: moment(validFrom).toISOString(),
-                            validTo: moment(validTo).toISOString(),
-                            pdf: {
-                                file: {
-                                    originFileObj: {
-                                        uid: file.uri
-                                    }
-                                }
-                            },
-                            url: documentUrl
-                        });
-                    } else {
-                        console.error("No document URL in upload response");
-                        Alert.alert(`Failed to upload ${file.name}`);
-                    }
-                } else {
-                    console.error("Upload failed:", uploadRes.data);
-                    Alert.alert(`Failed to upload ${file.name}`);
-                }
             }
 
             // Save all insurance data to database using bulk API
@@ -643,7 +563,7 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 const payload = { insuranceData };
                 
                 try {
-                    const bulkRes = await platformApi.post("/api/insurance/bulk", payload);
+                    const bulkRes = await bulkInsuranceUpload(payload);
                     
                     if (bulkRes.data.code === 200) {
                         // Remove all successfully saved items from bulkUploads
@@ -716,13 +636,19 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
     const renderInsuranceItem = (item: BulkInsuranceItem) => (
         <View key={item.tempId} className="bg-white border border-gray-200 rounded-lg p-4 mb-3">
             <View className="mb-3">
-                <Text className="text-sm font-medium text-gray-700 mb-1">File:</Text>
-                <Text className="text-sm text-gray-900">{item.file.name}</Text>
+                {item.file.name !== 'Manual Entry' ? (
+                    <>
+                        <Text className="text-sm font-medium text-gray-700 mb-1">File:</Text>
+                        <Text className="text-sm text-gray-900">{item.file.name}</Text>
+                    </>
+                ) : (
+                    <Text className="text-sm font-medium text-blue-600 mb-1">Manual Entry</Text>
+                )}
                 {item.parsing ? (
                     <Text className="text-sm text-blue-600 mt-1">
                         {item.retryCount ? `Retrying... (Attempt ${item.retryCount}/3)` : 'Prefilling from document...'}
                     </Text>
-                ) : !item.insurer && !item.policyNumber && !item.insuranceType && !item.validFrom && !item.validTo ? (
+                ) : !item.insurer && !item.policyNumber && !item.insuranceType && !item.validFrom && !item.validTo && item.file.name !== 'Manual Entry' ? (
                     <Text className="text-sm text-orange-600 mt-1">
                         ⚠️ Parsing failed. Server busy. Please fill details manually below.
                     </Text>
@@ -797,22 +723,10 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
 
             {/* Action Buttons */}
             <View className="flex-row">
-                {!item.parsing && (!item.insurer || !item.policyNumber || !item.insuranceType || !item.validFrom || !item.validTo) ? (
-                    <>
-                        <TouchableOpacity
-                            className="flex-1 bg-orange-500 rounded-lg py-2 px-4 mr-2"
-                            onPress={() => retryParsing(item.tempId, item.file)}
-                        >
-                            <Text className="text-white text-center font-medium">Retry Parse</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            className="flex-1 bg-red-600 rounded-lg py-2 px-4 ml-2"
-                            onPress={() => removeBulkItem(item.tempId)}
-                            style={{ backgroundColor: COLORS.red[600] }}
-                        >
-                            <Text className="text-white text-center font-medium">Remove</Text>
-                        </TouchableOpacity>
-                    </>
+                {item.parsing ? (
+                    <View className="flex-1 bg-gray-500 rounded-lg py-2 px-4">
+                        <Text className="text-white text-center font-medium">Parsing...</Text>
+                    </View>
                 ) : item.uploaded ? (
                     <>
                         <View className="flex-1 bg-green-500 rounded-lg py-2 px-4 mr-2">
@@ -879,32 +793,27 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                 </View>
 
                 <ScrollView className="flex-1 px-4 py-4">
-                    {/* Server Status Notice */}
-                    <View className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                        <View className="flex-row">
-                            <Ionicons name="warning" size={16} color="#d97706" className="mr-2 mt-0.5" />
-                            <View className="flex-1">
-                                <Text className="text-sm font-medium text-yellow-800">Server Notice</Text>
-                                <Text className="text-xs text-yellow-700 mt-1">
-                                    The insurance parsing service is currently experiencing high traffic. 
-                                    You can fill in the details manually below - the system will still save your documents properly.
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-
                     {/* Upload Button */}
                     <TouchableOpacity
-                        className="bg-blue-600 border border-blue-700 rounded-lg py-3 px-4 mb-2 flex-row items-center justify-center"
+                        className="bg-blue-600 border border-blue-700 rounded-lg py-3 px-4 mb-4 flex-row items-center justify-center"
                         onPress={handleBulkUpload}
                         style={{ backgroundColor: COLORS.primary }}
                     >
                         <Ionicons name="cloud-upload" size={20} color="white" className="mr-2" />
-                        <Text className="text-white font-medium">Upload Bulk Insurance</Text>
+                        <Text className="text-white font-medium">Upload PDF Files</Text>
+                    </TouchableOpacity>
+                    
+                    {/* Add Manual Entry Button */}
+                    <TouchableOpacity
+                        className="bg-gray-600 border border-gray-700 rounded-lg py-3 px-4 mb-4 flex-row items-center justify-center"
+                        onPress={addEmptyInsuranceRow}
+                    >
+                        <Ionicons name="add-circle" size={20} color="white" className="mr-2" />
+                        <Text className="text-white font-medium">Add Manual Entry</Text>
                     </TouchableOpacity>
                     
                     <Text className="text-xs text-gray-500 mb-4 text-center">
-                        💡 Tip: If server is busy, you can fill details manually after upload
+                        Upload PDF files to auto-extract details or add manual entry
                     </Text>
 
                     {/* Save All Button */}
@@ -957,43 +866,63 @@ const BulkInsuranceUpload: React.FC<BulkInsuranceUploadProps> = ({
                     </View>
                 )}
             
-            {/* Insurer Selection Modal */}
-            <Modal
-                visible={showInsurerModal}
-                animationType="slide"
-                presentationStyle="pageSheet"
-            >
-                <SafeAreaView className="flex-1 bg-gray-50">
-                    <View className="bg-white border-b border-gray-200 px-4 py-3 flex-row items-center justify-between">
-                        <TouchableOpacity onPress={() => setShowInsurerModal(false)} className="p-2">
-                            <Ionicons name="close" size={24} color={COLORS.gray[600]} />
+            {/* Insurer Selection Modal - using CustomModal pattern */}
+            <CustomModal visible={showInsurerModal} onClose={() => setShowInsurerModal(false)}>
+                <View className="p-4 border-b border-gray-200">
+                    <Text className="text-lg font-semibold">Select Insurer</Text>
+                </View>
+                
+                {/* Search Input */}
+                <View className="p-4 border-b border-gray-200">
+                    <TextInput
+                        className="border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                        placeholder="Search insurers..."
+                        value={insurerSearchText}
+                        onChangeText={(text) => {
+                            setInsurerSearchText(text);
+                            // Filter insurers based on search with null checks
+                            if (!text.trim()) {
+                                setFilteredInsurers(insurers);
+                            } else {
+                                const filtered = insurers.filter(insurer =>
+                                    insurer.name && insurer.name.toLowerCase().includes(text.toLowerCase())
+                                );
+                                setFilteredInsurers(filtered);
+                            }
+                        }}
+                    />
+                </View>
+                
+                {/* Insurers List */}
+                <ScrollView>
+                    {filteredInsurers.map(insurer => (
+                        <TouchableOpacity 
+                            key={insurer.id} 
+                            onPress={() => {
+                                updateBulkField(selectedItemTempId, 'insurer', insurer.id);
+                                setShowInsurerModal(false);
+                                setInsurerSearchText('');
+                                setFilteredInsurers(insurers);
+                            }} 
+                            className="p-4 border-b border-gray-100"
+                        >
+                            <Text className="text-gray-800">{insurer.name || 'Unknown Insurer'}</Text>
                         </TouchableOpacity>
-                        <Text className="text-lg font-semibold text-gray-900">Select Insurer</Text>
-                        <View className="w-8" />
-                    </View>
-                    
-                    <View className="p-4">
-                        <TextInput
-                            className="border border-gray-300 rounded-lg px-3 py-2 mb-4 bg-white"
-                            placeholder="Search insurers..."
-                            value={insurerSearchText}
-                            onChangeText={searchInsurers}
-                        />
-                        
-                        <ScrollView className="flex-1">
-                            {filteredInsurers.map((insurer) => (
-                                <TouchableOpacity
-                                    key={insurer.id}
-                                    className="bg-white border border-gray-200 rounded-lg p-3 mb-2"
-                                    onPress={() => selectInsurer(insurer)}
-                                >
-                                    <Text className="text-gray-800 font-medium">{insurer.name}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                </SafeAreaView>
-            </Modal>
+                    ))}
+                </ScrollView>
+                
+                {/* Cancel Button */}
+                <TouchableOpacity 
+                    onPress={() => {
+                        setShowInsurerModal(false);
+                        setInsurerSearchText('');
+                        setFilteredInsurers(insurers);
+                    }} 
+                    className="p-4 border-t border-gray-200"
+                >
+                    <Text className="text-center text-gray-600">Cancel</Text>
+                </TouchableOpacity>
+            </CustomModal>
             
             {/* Date Picker Modal */}
             {showDatePicker && (

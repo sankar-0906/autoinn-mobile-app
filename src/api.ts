@@ -4,8 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
-const FALLBACK_ENDPOINT = 'https://test.autocloud.in/';
+// const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
+const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
 
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
@@ -20,7 +20,7 @@ const platformApi = axios.create({
 
 // Create fallback API instance for test server
 const fallbackApi = axios.create({
-  baseURL: FALLBACK_ENDPOINT,
+  baseURL: DEFAULT_ENDPOINT,
   headers: {
     'Content-Type': 'application/json',
   }
@@ -505,6 +505,11 @@ export const uploadVehicleInsurance = (fileData: FormData) => {
   });
 };
 
+// Bulk Insurance Upload API - matching web project
+export const bulkInsuranceUpload = (insuranceData: { insuranceData: any[] }) => {
+  return platformApi.post('/api/insurance/bulk', insuranceData);
+};
+
 // Authentication APIs - matching web project
 export const authoriseBooking = (bookingId: string, password: string, status: string) => {
   return platformApi.post('/api/booking/authorise', { 
@@ -621,6 +626,11 @@ export const authorizeBooking = (bookingId: string, password: string, status: st
     status,
     bookingId
   });
+};
+
+export const generateQuotationPDF = (quotationId: string, withBrochure: boolean = false) => {
+  const brochureParam = withBrochure ? '?withBrochure=true' : '';
+  return platformApi.get(`/api/quotation/generatePDF/${quotationId}${brochureParam}`);
 };
 
 export default platformApi;

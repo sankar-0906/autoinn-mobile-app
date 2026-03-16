@@ -1,36 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
-    ScrollView,
-    TouchableOpacity,
     TextInput,
+    TouchableOpacity,
+    Modal,
+    ScrollView,
     KeyboardAvoidingView,
     Platform,
-    RefreshControl,
-    Modal,
-    Dimensions,
     Alert,
+    RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../navigation/types';
-import {
-    Calendar,
-    FileText,
-    ChevronDown,
-    Clock,
-    ChevronLeft,
-    Edit2,
-} from 'lucide-react-native';
+import { RouteProp } from '@react-navigation/native';
+import { useToast } from '../../src/ToastContext';
+import { Search, ChevronRight, Plus, FileText, X, Calendar, ChevronDown, Clock, ChevronLeft, Edit2 } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQuotationId } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
-import { useToast } from '../../src/ToastContext';
 import { TimePickerModal } from '../../components/TimePickerModal';
+import { RootStackParamList } from '../../navigation/types';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -161,7 +153,7 @@ const RadioOption = ({
 );
 
 export default function AddQuotationScreen({ navigation, route }: any) {
-    const selectedVehicle = route.params?.selectedVehicle;
+    const initialSelectedVehicle = route.params?.selectedVehicle;
 
     // Form state
     const [branch, setBranch] = useState('');
@@ -185,6 +177,15 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const [lookupStatus, setLookupStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const lastLookupRef = useRef('');
 
+    // Multi-vehicle state (like web app)
+    const [selectedVehicles, setSelectedVehicles] = useState<any[]>(() => 
+        initialSelectedVehicle ? [initialSelectedVehicle] : []
+    );
+    const [editingVehicleIndex, setEditingVehicleIndex] = useState<number | null>(null);
+    
+    // Associated vehicles state (like web app) - from customer.purchasedVehicle
+    const [associatedVehicles, setAssociatedVehicles] = useState<any[]>([]);
+
     const [branchOptions, setBranchOptions] = useState<Array<{ label: string; value: string }>>([]);
     const [executiveOptions, setExecutiveOptions] = useState<Array<{ label: string; value: string }>>([]);
     const [loadingBranches, setLoadingBranches] = useState(false);
@@ -194,12 +195,125 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-    const [associatedVehicles, setAssociatedVehicles] = useState<Array<{ regNo: string; name: string }>>([]);
 
     const [saving, setSaving] = useState(false);
     const toast = useToast();
 
     const clearFieldError = (key: string) => setFieldErrors(prev => ({ ...prev, [key]: '' }));
+
+    // Multi-vehicle management functions (like web app)
+    const addVehicle = (vehicle: any) => {
+        console.log('🚀 Adding vehicle with paymentDetails:', vehicle.paymentDetails);
+        
+        const vehicleData = {
+            ...vehicle,
+            vehicleDetail: { id: vehicle.id, modelName: vehicle.name },
+            // Preserve original price structure for colors and images
+            originalPrice: vehicle.price, // Store original price with colors
+            price: vehicle.priceDetails?.breakdown || {},
+            priceDetails: vehicle.priceDetails,
+            // Preserve payment details properly - don't override with defaults
+            paymentDetails: vehicle.paymentDetails || {
+                paymentType: 'cash',
+                financerId: null,
+                downPayment: null,
+                financerTenure: { data: [] },
+            },
+        };
+        
+        console.log('✅ Final vehicleData paymentDetails:', vehicleData.paymentDetails);
+        setSelectedVehicles([...selectedVehicles, vehicleData]);
+    };
+
+    const removeVehicle = (index: number) => {
+        const newVehicles = [...selectedVehicles];
+        newVehicles.splice(index, 1);
+        setSelectedVehicles(newVehicles);
+    };
+
+    const editVehicle = (index: number) => {
+        setEditingVehicleIndex(index);
+        const vehicle = selectedVehicles[index];
+        // Open in VIEW MODE (like web) - read-only with Price → Payment steps
+        // Ensure we pass complete vehicle data including original price for colors
+        navigation.navigate('SelectPrice', {
+            vehicleId: vehicle.vehicleDetail?.id || vehicle.id,
+            vehicleData: {
+                ...vehicle,
+                // Preserve original price structure for colors/image
+                price: vehicle.originalPrice || vehicle.price,
+                // Keep existing data
+                priceDetails: vehicle.priceDetails,
+                paymentDetails: vehicle.paymentDetails,
+                vehicleDetail: vehicle.vehicleDetail,
+            },
+            returnTo: 'AddQuotation',
+            viewMode: true, // View mode like web
+            paymentDetails: vehicle.paymentDetails,
+        });
+    };
+
+    const editVehicleInEditMode = (index: number) => {
+        setEditingVehicleIndex(index);
+        const vehicle = selectedVehicles[index];
+        // Open in EDIT MODE - full editing capabilities
+        // Ensure we pass complete vehicle data including original price for colors
+        navigation.navigate('SelectPrice', {
+            vehicleId: vehicle.vehicleDetail?.id || vehicle.id,
+            vehicleData: {
+                ...vehicle,
+                // Preserve original price structure for colors/image
+                price: vehicle.originalPrice || vehicle.price,
+                // Keep existing data
+                priceDetails: vehicle.priceDetails,
+                paymentDetails: vehicle.paymentDetails,
+                vehicleDetail: vehicle.vehicleDetail,
+            },
+            returnTo: 'AddQuotation',
+            viewMode: false, // Edit mode
+            paymentDetails: vehicle.paymentDetails,
+        });
+    };
+
+    const handleVehicleSelectionReturn = (route: any) => {
+        const { selectedVehicle: returnedVehicle, vehicleData, paymentDetails: returnedPaymentDetails } = route.params || {};
+        console.log('🔄 AddQuotation - Vehicle selection return:', {
+            returnedVehicle,
+            vehicleData,
+            returnedPaymentDetails
+        });
+        
+        if (returnedVehicle || vehicleData) {
+            const vehicle = returnedVehicle || vehicleData;
+            
+            // Ensure paymentDetails are properly attached to the vehicle
+            const updatedVehicle = {
+                ...vehicle,
+                paymentDetails: returnedPaymentDetails || vehicle.paymentDetails
+            };
+            
+            console.log('🚀 AddQuotation - Final vehicle with paymentDetails:', updatedVehicle);
+            
+            if (editingVehicleIndex !== null) {
+                // Update existing vehicle
+                const newVehicles = [...selectedVehicles];
+                newVehicles[editingVehicleIndex] = updatedVehicle;
+                setSelectedVehicles(newVehicles);
+                setEditingVehicleIndex(null);
+            } else {
+                // Add new vehicle
+                addVehicle(updatedVehicle);
+            }
+        }
+    };
+
+    // Handle vehicle selection return from navigation
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            handleVehicleSelectionReturn(route);
+        });
+        return unsubscribe;
+    }, [route.params]);
 
     const validate = () => {
         const errors: Record<string, string> = {};
@@ -224,7 +338,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
             errors.expectedPurchaseDate = 'Past purchase date not allowed';
         }
         if (!enquiryType) errors.enquiryType = 'Enquiry Type is required';
-        if (!selectedVehicle) errors.vehicleName = 'Please select a vehicle';
+        if (selectedVehicles.length === 0) errors.vehicleName = 'Please select at least one vehicle';
 
         setFieldErrors(errors);
 
@@ -882,29 +996,95 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             <ErrorText message={fieldErrors.enquiryType} />
                         </View>
 
-                        {/* Vehicle Name */}
+                        {/* Vehicle Name - Multi-vehicle Tag Display */}
                         <View className="mb-4">
                             <FormLabel label="Vehicle Name" required />
+                            
+                            {/* Vehicle Tags Display (like web app) */}
+                            <View className="flex-row flex-wrap gap-2 mb-3">
+                                {selectedVehicles.length > 0 ? (
+                                    selectedVehicles.map((vehicle, index) => {
+                                        // Get the model name from various possible fields
+                                        const modelName = vehicle.name || 
+                                                         vehicle.vehicleDetail?.modelName || 
+                                                         vehicle.modelName || 
+                                                         vehicle.model?.modelName ||
+                                                         `Vehicle ${index + 1}`;
+                                        
+                                        console.log(`🏷️ Tag ${index}:`, { modelName, vehicle });
+                                        
+                                        return (
+                                            <View 
+                                                key={index}
+                                                className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 flex-row items-center min-w-[120px]"
+                                            >
+                                                {/* Main tag text - VIEW MODE (like web) */}
+                                                <TouchableOpacity
+                                                    onPress={() => editVehicle(index)}
+                                                    className="flex-1 min-w-[80px]"
+                                                >
+                                                    <Text 
+                                                        className="text-teal-800 font-bold text-sm" 
+                                                        numberOfLines={2}
+                                                        ellipsizeMode="tail"
+                                                        style={{ minWidth: 80 }}
+                                                    >
+                                                        {modelName}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                                
+                                                {/* Edit button - EDIT MODE (like web) */}
+                                                <TouchableOpacity
+                                                    onPress={() => editVehicleInEditMode(index)}
+                                                    className="ml-1 bg-blue-500 rounded-full w-5 h-5 items-center justify-center flex-shrink-0"
+                                                >
+                                                    <Edit2 size={12} color="white" />
+                                                </TouchableOpacity>
+                                                
+                                                {/* Delete button */}
+                                                <TouchableOpacity
+                                                    onPress={() => removeVehicle(index)}
+                                                    className="ml-1 bg-teal-600 rounded-full w-5 h-5 items-center justify-center flex-shrink-0"
+                                                >
+                                                    <Text className="text-white text-xs leading-none">×</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        );
+                                    })
+                                ) : (
+                                    <Text className="text-gray-400 text-sm italic">No vehicles selected</Text>
+                                )}
+                            </View>
+
+                            {/* Instructions */}
+                            <View className="mb-3 flex-row gap-4">
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-teal-600 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Tap to view</Text>
+                                </View>
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-blue-500 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Edit</Text>
+                                </View>
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-3 h-3 bg-red-500 rounded-full" />
+                                    <Text className="text-xs text-gray-600">Remove</Text>
+                                </View>
+                            </View>
+
+                            {/* Add Vehicle Button */}
                             <TouchableOpacity
                                 onPress={() => {
-                                    if (selectedVehicle) {
-                                        navigation.navigate('SelectPrice', {
-                                            vehicleId: selectedVehicle.id,
-                                            returnTo: 'AddQuotation',
-                                            viewMode: true,
-                                            paymentDetails: selectedVehicle.paymentDetails,
-                                        });
-                                    } else {
-                                        navigation.navigate('SelectModel', { returnTo: 'AddQuotation' });
-                                    }
+                                    setEditingVehicleIndex(null);
+                                    navigation.navigate('SelectModel', { returnTo: 'AddQuotation' });
                                     clearFieldError('vehicleName');
                                 }}
                                 className={`bg-white border rounded-xl px-4 h-12 flex-row items-center justify-center ${fieldErrors.vehicleName ? 'border-red-500' : 'border-gray-200'}`}
                                 activeOpacity={0.7}
                             >
-                                <FileText size={16} color={COLORS.primary} />
+                                <Plus size={16} color={COLORS.primary} />
                                 <Text className="text-teal-600 font-bold ml-2">
-                                    {selectedVehicle ? 'View/Change Vehicle' : 'Select Vehicle'}
+                                    Add Vehicle
                                 </Text>
                             </TouchableOpacity>
                             <ErrorText message={fieldErrors.vehicleName} />
@@ -918,36 +1098,18 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                     <Text className="text-white text-sm font-bold flex-1">Reg No.</Text>
                                     <Text className="text-white text-sm font-bold flex-1">Vehicle</Text>
                                 </View>
-                                {selectedVehicle && (
-                                    <View className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
-                                        <Text className="text-gray-600 text-sm flex-1">-</Text>
-                                        <Text className="text-gray-900 text-sm flex-1 font-medium">{selectedVehicle.name}</Text>
-                                        <TouchableOpacity
-                                            onPress={() => navigation.navigate('SelectPrice', {
-                                                vehicleId: selectedVehicle.id,
-                                                returnTo: 'AddQuotation',
-                                                viewMode: true,
-                                                paymentDetails: selectedVehicle.paymentDetails,
-                                            })}
-                                        >
-                                            <Edit2 size={14} color={COLORS.primary} />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
                                 {associatedVehicles.length > 0 ? (
-                                    associatedVehicles.map((v, i) => (
-                                        <View key={`${v.regNo}-${i}`} className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
-                                            <Text className="text-gray-600 text-sm flex-1">{v.regNo}</Text>
-                                            <Text className="text-gray-900 text-sm flex-1 font-medium">{v.name}</Text>
+                                    associatedVehicles.map((vehicle, index) => (
+                                        <View key={`${vehicle.regNo || 'assoc'}-${index}`} className="px-4 py-3 flex-row items-center border-t border-gray-50 bg-white">
+                                            <Text className="text-gray-600 text-sm flex-1">{vehicle.regNo || '-'}</Text>
+                                            <Text className="text-gray-900 text-sm flex-1 font-medium">{vehicle.name || '-'}</Text>
                                             <View className="w-4" />
                                         </View>
                                     ))
                                 ) : (
-                                    !selectedVehicle && (
-                                        <View className="py-8 items-center justify-center">
-                                            <Text className="text-gray-400 text-sm">No Data</Text>
-                                        </View>
-                                    )
+                                    <View className="py-8 items-center justify-center">
+                                        <Text className="text-gray-400 text-sm">No Data</Text>
+                                    </View>
                                 )}
                             </View>
                         </View>
@@ -1042,45 +1204,49 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             const { QuotationId, id: seqId, customerId } = genData.response.data;
 
                             const finalFollowUpTime = followUpTime.trim() || '12:00';
-                            const tenureData = selectedVehicle.financeDetails?.tenure
-                                ? { data: [{ tenure: selectedVehicle.financeDetails.tenure, emi: selectedVehicle.financeDetails.emi }] }
-                                : { data: [] };
-
-                            // Build price object matching autoinn-fe flat format
-                            const priceObj = {
-                                showroomPrice: Number(selectedVehicle.priceDetails?.breakdown?.showroomPrice || selectedVehicle.priceDetails?.totalAmount || 0),
-                                roadTax: Number(selectedVehicle.priceDetails?.breakdown?.roadTax || 0),
-                                handlingCharges: Number(selectedVehicle.priceDetails?.breakdown?.handlingCharges || 0),
-                                registrationFee: Number(selectedVehicle.priceDetails?.breakdown?.registrationFee || 0),
-                                tcs: Number(selectedVehicle.priceDetails?.breakdown?.tcs || 0),
-                                insuranceVId: null,
-                                totalAmount: Number(selectedVehicle.priceDetails?.totalAmount || 0),
-                                insurance1plus5: Number(selectedVehicle.priceDetails?.breakdown?.insurance1plus5 || 0),
-                                insurance5plus5: Number(selectedVehicle.priceDetails?.breakdown?.insurance5plus5 || 0),
-                                insurance1plus5ZD: Number(selectedVehicle.priceDetails?.breakdown?.insurance1plus5ZD || 0),
-                                insurance5plus5ZD: Number(selectedVehicle.priceDetails?.breakdown?.insurance5plus5ZD || 0),
-                                warrantyPrice: Number(selectedVehicle.priceDetails?.breakdown?.warrantyPrice || 0),
-                                amc: Number(selectedVehicle.priceDetails?.breakdown?.amc || 0),
-                                rsa: Number(selectedVehicle.priceDetails?.breakdown?.rsa || 0),
-                                otherCharges: Number(selectedVehicle.priceDetails?.breakdown?.otherCharges || 0),
-                                discount: Number(selectedVehicle.priceDetails?.breakdown?.discount || 0),
-                            };
-
-                            // Build vehicle array matching autoinn-fe flat format
+                            
+                            // Build vehicle array matching autoinn-fe flat format (multi-vehicle support)
                             // autoinn-fe sends: { vehicleDetail: modelId, price: priceObj, paymentDetails: {...}, financer, downPayment, financerTenure }
-                            const vehicleArr = [{
-                                vehicleDetail: { id: String(selectedVehicle.id), modelName: selectedVehicle.name || '' },
-                                price: priceObj,
-                                paymentDetails: {
-                                    paymentType: selectedVehicle.paymentType || 'cash',
-                                    financerId: selectedVehicle.financeDetails?.financer || null,
-                                    downPayment: selectedVehicle.financeDetails?.downPayment || null,
-                                    financerTenure: tenureData,
-                                },
-                                financer: selectedVehicle.paymentType === 'finance' ? (selectedVehicle.financeDetails?.financer || null) : null,
-                                downPayment: selectedVehicle.paymentType === 'finance' ? (selectedVehicle.financeDetails?.downPayment || null) : null,
-                                financerTenure: selectedVehicle.paymentType === 'finance' ? tenureData : { data: [] },
-                            }];
+                            const vehicleArr = selectedVehicles.map((vehicle) => {
+                                // Use paymentDetails from SelectPayment (correct structure)
+                                const paymentDetails = vehicle.paymentDetails || {};
+                                const tenureData = paymentDetails?.financerTenure || { data: [] };
+
+                                const priceObj = {
+                                    showroomPrice: Number(vehicle.priceDetails?.breakdown?.showroomPrice || vehicle.priceDetails?.totalAmount || 0),
+                                    roadTax: Number(vehicle.priceDetails?.breakdown?.roadTax || 0),
+                                    handlingCharges: Number(vehicle.priceDetails?.breakdown?.handlingCharges || 0),
+                                    registrationFee: Number(vehicle.priceDetails?.breakdown?.registrationFee || 0),
+                                    tcs: Number(vehicle.priceDetails?.breakdown?.tcs || 0),
+                                    insuranceVId: null,
+                                    totalAmount: Number(vehicle.priceDetails?.totalAmount || 0),
+                                    insurance1plus5: Number(vehicle.priceDetails?.breakdown?.insurance1plus5 || 0),
+                                    insurance5plus5: Number(vehicle.priceDetails?.breakdown?.insurance5plus5 || 0),
+                                    insurance1plus5ZD: Number(vehicle.priceDetails?.breakdown?.insurance1plus5ZD || 0),
+                                    insurance5plus5ZD: Number(vehicle.priceDetails?.breakdown?.insurance5plus5ZD || 0),
+                                    warrantyPrice: Number(vehicle.priceDetails?.breakdown?.warrantyPrice || 0),
+                                    amc: Number(vehicle.priceDetails?.breakdown?.amc || 0),
+                                    rsa: Number(vehicle.priceDetails?.breakdown?.rsa || 0),
+                                    otherCharges: Number(vehicle.priceDetails?.breakdown?.otherCharges || 0),
+                                    discount: Number(vehicle.priceDetails?.breakdown?.discount || 0),
+                                };
+
+                                console.log('🚀 Building vehicle with paymentDetails:', paymentDetails);
+
+                                return {
+                                    vehicleDetail: { id: String(vehicle.vehicleDetail?.id || vehicle.id), modelName: vehicle.vehicleDetail?.modelName || vehicle.name || '' },
+                                    price: priceObj,
+                                    paymentDetails: {
+                                        paymentType: paymentDetails?.paymentType || 'cash',
+                                        financerId: paymentDetails?.financerId || null,
+                                        downPayment: paymentDetails?.downPayment || null,
+                                        financerTenure: tenureData,
+                                    },
+                                    financer: paymentDetails?.paymentType === 'finance' ? (paymentDetails?.financerId || null) : null,
+                                    downPayment: paymentDetails?.paymentType === 'finance' ? (paymentDetails?.downPayment || null) : null,
+                                    financerTenure: paymentDetails?.paymentType === 'finance' ? tenureData : { data: [] },
+                                };
+                            });
 
                             // Build quotation matching autoinn-fe structure exactly
                             // autoinn-fe spreads ...provisional (proCustomer data) into the quotation
@@ -1126,7 +1292,10 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
                             if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
                                 toast.success('Quotation saved successfully');
-                                navigation.goBack();
+                                
+                                // Go back to QuotationList page (correct flow)
+                                console.log('🚀 Quotation saved, going back to QuotationList');
+                                navigation.navigate('Main', { screen: 'Quotations' });
                             } else {
                                 const errMsg = createRes.data.response?.message || createRes.data.message || 'Unable to save quotation';
                                 toast.error(errMsg);
