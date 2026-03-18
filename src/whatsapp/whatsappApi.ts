@@ -156,7 +156,9 @@ export const sendWhatsAppMessage = async (data: WhatsAppTemplateData): Promise<W
 
     return response.data;
   } catch (error) {
-    console.error('Error sending WhatsApp message via API:', error);
+    // Non-critical: tracking fails when backend is unreachable from device (e.g. different network).
+    // WhatsApp still opens successfully — this is handled by the caller.
+    console.warn('[WhatsApp tracking] Could not reach sendSms API:', (error as any)?.message || error);
     throw error;
   }
 };

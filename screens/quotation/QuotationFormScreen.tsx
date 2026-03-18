@@ -24,7 +24,8 @@ import { ENDPOINT, getQuotationById, generateQuotationPDF } from '../../src/api'
 import { handleWhatsAppShare, WhatsAppTemplateData } from '../../src/whatsapp';
 // shareMessOnWhatsApp.ts was a test file — now removed, logic merged into whatsappApi.ts
 import { Calendar as RNCalendar } from 'react-native-calendars';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useToast } from '../../src/ToastContext';
 import { useBranch } from '../../src/context/branch';
@@ -69,6 +70,8 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
     const [showExpectedPicker, setShowExpectedPicker] = useState(false);
     const [scheduleDateValue, setScheduleDateValue] = useState<Date | null>(null);
     const [expectedDateValue, setExpectedDateValue] = useState<Date | null>(null);
+    const [showDownloadModal, setShowDownloadModal] = useState(false);
+    const [pdfDownloading, setPdfDownloading] = useState(false);
     const toast = useToast();
 
     const formatDate = (value?: string) => {
@@ -434,21 +437,102 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
         }
     };
 
-    const handleDownloadPDF = async () => {
+    // ─── PDF: Save to Device (Downloads folder via SAF) ──────────────────────
+    const handleSaveToDevice = async () => {
         try {
-            toast.success('Preparing PDF download...');
+            setPdfDownloading(true);
+            setShowDownloadModal(false);
 
-            // Construct the PDF URL directly to match web endpoint
-            const baseUrl = ENDPOINT.replace(/\/$/, ''); // Remove trailing slash
+            // 1. Download PDF to app cache dir first
+            const baseUrl = ENDPOINT.replace(/\/$/, '');
             const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
+            // Sanitize: replace '/', spaces and special chars → no sub-directories
+            const safeId = (quotation?.quotationId || id).replace(/[^a-zA-Z0-9_-]/g, '_');
+            const fileName = `Quotation_${safeId}.pdf`;
+            const localUri = `${FileSystem.cacheDirectory}${fileName}`;
 
-            // Open the PDF URL for download - this will show PDF in browser like web
-            await Linking.openURL(pdfUrl);
-            toast.success('Opening PDF for download...');
+            toast.success('Downloading PDF…');
 
+            // Auth token required — without it API returns HTML error page, not PDF
+            const token = await AsyncStorage.getItem('token');
+            const { uri: cachedUri } = await FileSystem.downloadAsync(pdfUrl, localUri, {
+                headers: token ? { 'x-access-token': token } : {},
+            });
+
+            // 2. Use StorageAccessFramework to write into Downloads
+            //    (MediaLibrary.createAssetAsync only supports media files — DCIM — not PDFs)
+            const { StorageAccessFramework } = FileSystem;
+            const downloadsUri = StorageAccessFramework.getUriForDirectoryInRoot('Download');
+            const perms = await StorageAccessFramework.requestDirectoryPermissionsAsync(downloadsUri);
+
+            if (!perms.granted) {
+                toast.error('Please grant access to the Downloads folder.');
+                return;
+            }
+
+            // 3. Create the file inside the user-selected folder
+            const destUri = await StorageAccessFramework.createFileAsync(
+                perms.directoryUri,
+                fileName,
+                'application/pdf',
+            );
+
+            // 4. Read cached bytes and write to destination
+            const base64 = await FileSystem.readAsStringAsync(cachedUri, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            await StorageAccessFramework.writeAsStringAsync(destUri, base64, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+
+            toast.success(`✅ Saved to Downloads: ${fileName}`);
         } catch (error) {
-            console.error('Error downloading PDF:', error);
-            toast.error('Failed to download PDF. Please try again.');
+            console.error('Error saving PDF to device:', error);
+            toast.error('Failed to save PDF. Please try again.');
+        } finally {
+            setPdfDownloading(false);
+        }
+    };
+
+    // ─── PDF: Share (Google Drive / email / WhatsApp / etc.) ──────────────────
+    const handleSharePDF = async () => {
+        try {
+            setPdfDownloading(true);
+            setShowDownloadModal(false);
+
+            // 1. Download to cache first
+            const baseUrl = ENDPOINT.replace(/\/$/, '');
+            const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
+            // Sanitize: replace '/', spaces and special chars so they don't create sub-directories
+            const safeId = (quotation?.quotationId || id).replace(/[^a-zA-Z0-9_-]/g, '_');
+            const fileName = `Quotation_${safeId}.pdf`;
+            const localUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+            toast.success('Preparing PDF…');
+
+            // Auth token required — without it API returns HTML error page, not PDF
+            const token = await AsyncStorage.getItem('token');
+            const { uri } = await FileSystem.downloadAsync(pdfUrl, localUri, {
+                headers: token ? { 'x-access-token': token } : {},
+            });
+
+            // 2. Open system share sheet (Google Drive, email, WA, etc.)
+            const canShare = await Sharing.isAvailableAsync();
+            if (!canShare) {
+                toast.error('Sharing is not available on this device.');
+                return;
+            }
+
+            await Sharing.shareAsync(uri, {
+                mimeType: 'application/pdf',
+                dialogTitle: `Share Quotation ${quotation?.quotationId || id}`,
+                UTI: 'com.adobe.pdf',        // iOS only, ignored on Android
+            });
+        } catch (error) {
+            console.error('Error sharing PDF:', error);
+            toast.error('Failed to share PDF. Please try again.');
+        } finally {
+            setPdfDownloading(false);
         }
     };
 
@@ -466,8 +550,12 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         <Share2 size={18} color="#0d9488" />
                         <Text className="text-teal-600 text-sm font-medium ml-2"> WhatsApp</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={handleDownloadPDF} className="p-2 bg-blue-100 rounded-full">
-                        <Download size={18} color="#2563eb" />
+                    <TouchableOpacity
+                        onPress={() => setShowDownloadModal(true)}
+                        disabled={pdfDownloading}
+                        className="p-2 bg-blue-100 rounded-full"
+                    >
+                        <Download size={18} color={pdfDownloading ? '#93c5fd' : '#2563eb'} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -909,6 +997,86 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             </Modal>
 
 
+            {/* ─── PDF Download Options Modal ──────────────────────────────── */}
+            <Modal
+                visible={showDownloadModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowDownloadModal(false)}
+            >
+                <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={() => setShowDownloadModal(false)}
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+                >
+                    <TouchableOpacity activeOpacity={1}>
+                        <View style={{
+                            backgroundColor: '#fff',
+                            borderTopLeftRadius: 20,
+                            borderTopRightRadius: 20,
+                            paddingTop: 12,
+                            paddingBottom: 36,
+                            paddingHorizontal: 20,
+                        }}>
+                            {/* Handle bar */}
+                            <View style={{ width: 40, height: 4, backgroundColor: '#e5e7eb', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+
+                            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 6 }}>
+                                Download Quotation PDF
+                            </Text>
+                            <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 24 }}>
+                                {quotation?.quotationId || id}
+                            </Text>
+
+                            {/* Save to Device */}
+                            <TouchableOpacity
+                                onPress={handleSaveToDevice}
+                                style={{
+                                    flexDirection: 'row', alignItems: 'center',
+                                    backgroundColor: '#eff6ff', borderRadius: 14,
+                                    padding: 16, marginBottom: 12,
+                                }}
+                            >
+                                <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                                    <Download size={22} color="#fff" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e40af' }}>Save to Device</Text>
+                                    <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Download PDF to your phone's storage</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            {/* Share — Google Drive / email / etc. */}
+                            <TouchableOpacity
+                                onPress={handleSharePDF}
+                                style={{
+                                    flexDirection: 'row', alignItems: 'center',
+                                    backgroundColor: '#f0fdf4', borderRadius: 14,
+                                    padding: 16, marginBottom: 12,
+                                }}
+                            >
+                                <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                                    <Share2 size={22} color="#fff" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#15803d' }}>Share / Save to Drive</Text>
+                                    <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Google Drive, email, WhatsApp, and more</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            {/* Cancel */}
+                            <TouchableOpacity
+                                onPress={() => setShowDownloadModal(false)}
+                                style={{ alignItems: 'center', paddingVertical: 14, marginTop: 4 }}
+                            >
+                                <Text style={{ fontSize: 15, color: '#6b7280', fontWeight: '600' }}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+
         </SafeAreaView>
+
     );
 }
