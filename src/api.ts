@@ -11,7 +11,7 @@ export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
 
 const platformApi = axios.create({
-  
+
   baseURL: ENDPOINT,
   headers: {
     'Content-Type': 'application/json',
@@ -34,7 +34,7 @@ const addRequestInterceptor = (apiInstance: any) => {
       if (token) {
         config.headers = config.headers || {};
         config.headers['x-access-token'] = token;
-        
+
         // Debug: Log token for authorization requests
         if (config.url?.includes('/authorise')) {
           console.log('🔐 Authorization Request - Token present:', !!token);
@@ -57,24 +57,24 @@ platformApi.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { config, code } = error;
-    
+
     // Retry logic for timeouts and 504 errors
     if ((code === 'ECONNABORTED' || error.response?.status === 504) && !config._retry) {
       config._retry = true;
       config._retryCount = config._retryCount || 0;
-      
+
       if (config._retryCount < 3) {
         config._retryCount += 1;
         console.log(`🔄 Retrying request (attempt ${config._retryCount}/3):`, config.url);
-        
+
         // Exponential backoff: 1s, 2s, 4s
         const delay = 1000 * Math.pow(2, config._retryCount - 1);
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         return platformApi(config);
       }
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -92,7 +92,7 @@ export const getUserCount = () => {
 };
 
 export const getQuotations = (body: any) => {
-  console.log("endpoint : ",ENDPOINT);
+  console.log("endpoint : ", ENDPOINT);
   return platformApi.post('/api/quotation/get', body);
 };
 
@@ -512,10 +512,10 @@ export const bulkInsuranceUpload = (insuranceData: { insuranceData: any[] }) => 
 
 // Authentication APIs - matching web project
 export const authoriseBooking = (bookingId: string, password: string, status: string) => {
-  return platformApi.post('/api/booking/authorise', { 
-    bookingId, 
-    password, 
-    status 
+  return platformApi.post('/api/booking/authorise', {
+    bookingId,
+    password,
+    status
   });
 };
 

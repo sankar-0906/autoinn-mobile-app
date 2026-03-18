@@ -18,10 +18,11 @@ import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { Calendar, Clock, Share2, ChevronLeft, ArrowRight, Download, MapPin } from 'lucide-react-native';
+import { savePDFToDevice, sharePDF } from '../../src/utils/pdfDownloadUtils';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { ENDPOINT, getQuotationById, generateQuotationPDF } from '../../src/api';
-import { handleWhatsAppShare, WhatsAppTemplateData } from '../../src/whatsapp';
+import { buildQuotationTemplateMessage, openWhatsApp, WhatsAppTemplateData } from '../../src/whatsapp';
 // shareMessOnWhatsApp.ts was a test file — now removed, logic merged into whatsappApi.ts
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -172,8 +173,9 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
         // Look up coordinates from BranchContext (reliable source) by branch ID
         const matchedBranch = branchId ? branches.find(b => b.id === branchId) : null;
-        const branchLat: number | null = matchedBranch?.lat ?? null;
-        const branchLon: number | null = matchedBranch?.lon ?? null;
+        // Removed location-based logic - lat/lon no longer available
+        const branchLat: number | null = null;
+        const branchLon: number | null = null;
 
         console.log(`📍 [QuotationForm] Branch: ${branchName} | lat: ${branchLat} | lon: ${branchLon}`);
         const executiveName = quotation?.assignedExecutive?.profile?.employeeName || quotation?.executive?.profile?.employeeName || '-';
@@ -423,117 +425,59 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 } : undefined,
             };
 
-            const result = await handleWhatsAppShare(templateData);
+            console.log('📤 WhatsApp template payload (all details):', templateData);
+            const message = await buildQuotationTemplateMessage(templateData);
+            if (!message) {
+                toast.error('WhatsApp template not found');
+                return;
+            }
+            console.log('📝 WhatsApp rendered template:', message);
 
-            if (result.success) {
-                toast.success('WhatsApp opened successfully!');
+            const opened = await openWhatsApp(customerPhone, message);
+            if (opened) {
+                toast.success('WhatsApp opened with template');
             } else {
-                toast.error('Failed to open WhatsApp. Please try again.');
+                toast.error('WhatsApp not available');
             }
 
         } catch (error) {
             console.error('Error sharing on WhatsApp:', error);
-            toast.error('Failed to open WhatsApp. Please try again.');
+            toast.error('Failed to send WhatsApp template. Please try again.');
         }
     };
 
     // ─── PDF: Save to Device (Downloads folder via SAF) ──────────────────────
     const handleSaveToDevice = async () => {
-        try {
-            setPdfDownloading(true);
-            setShowDownloadModal(false);
-
-            // 1. Download PDF to app cache dir first
-            const baseUrl = ENDPOINT.replace(/\/$/, '');
-            const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
-            // Sanitize: replace '/', spaces and special chars → no sub-directories
-            const safeId = (quotation?.quotationId || id).replace(/[^a-zA-Z0-9_-]/g, '_');
-            const fileName = `Quotation_${safeId}.pdf`;
-            const localUri = `${FileSystem.cacheDirectory}${fileName}`;
-
-            toast.success('Downloading PDF…');
-
-            // Auth token required — without it API returns HTML error page, not PDF
-            const token = await AsyncStorage.getItem('token');
-            const { uri: cachedUri } = await FileSystem.downloadAsync(pdfUrl, localUri, {
-                headers: token ? { 'x-access-token': token } : {},
-            });
-
-            // 2. Use StorageAccessFramework to write into Downloads
-            //    (MediaLibrary.createAssetAsync only supports media files — DCIM — not PDFs)
-            const { StorageAccessFramework } = FileSystem;
-            const downloadsUri = StorageAccessFramework.getUriForDirectoryInRoot('Download');
-            const perms = await StorageAccessFramework.requestDirectoryPermissionsAsync(downloadsUri);
-
-            if (!perms.granted) {
-                toast.error('Please grant access to the Downloads folder.');
-                return;
-            }
-
-            // 3. Create the file inside the user-selected folder
-            const destUri = await StorageAccessFramework.createFileAsync(
-                perms.directoryUri,
-                fileName,
-                'application/pdf',
-            );
-
-            // 4. Read cached bytes and write to destination
-            const base64 = await FileSystem.readAsStringAsync(cachedUri, {
-                encoding: FileSystem.EncodingType.Base64,
-            });
-            await StorageAccessFramework.writeAsStringAsync(destUri, base64, {
-                encoding: FileSystem.EncodingType.Base64,
-            });
-
-            toast.success(`✅ Saved to Downloads: ${fileName}`);
-        } catch (error) {
-            console.error('Error saving PDF to device:', error);
-            toast.error('Failed to save PDF. Please try again.');
-        } finally {
-            setPdfDownloading(false);
-        }
+        setPdfDownloading(true);
+        setShowDownloadModal(false);
+        
+        await savePDFToDevice({
+            id,
+            documentId: quotation?.quotationId || id,
+            documentType: 'Quotation',
+            apiEndpoint: 'quotation',
+            onSuccess: (message) => toast.success(message),
+            onError: (message) => toast.error(message),
+        });
+        
+        setPdfDownloading(false);
     };
 
     // ─── PDF: Share (Google Drive / email / WhatsApp / etc.) ──────────────────
     const handleSharePDF = async () => {
-        try {
-            setPdfDownloading(true);
-            setShowDownloadModal(false);
-
-            // 1. Download to cache first
-            const baseUrl = ENDPOINT.replace(/\/$/, '');
-            const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
-            // Sanitize: replace '/', spaces and special chars so they don't create sub-directories
-            const safeId = (quotation?.quotationId || id).replace(/[^a-zA-Z0-9_-]/g, '_');
-            const fileName = `Quotation_${safeId}.pdf`;
-            const localUri = `${FileSystem.cacheDirectory}${fileName}`;
-
-            toast.success('Preparing PDF…');
-
-            // Auth token required — without it API returns HTML error page, not PDF
-            const token = await AsyncStorage.getItem('token');
-            const { uri } = await FileSystem.downloadAsync(pdfUrl, localUri, {
-                headers: token ? { 'x-access-token': token } : {},
-            });
-
-            // 2. Open system share sheet (Google Drive, email, WA, etc.)
-            const canShare = await Sharing.isAvailableAsync();
-            if (!canShare) {
-                toast.error('Sharing is not available on this device.');
-                return;
-            }
-
-            await Sharing.shareAsync(uri, {
-                mimeType: 'application/pdf',
-                dialogTitle: `Share Quotation ${quotation?.quotationId || id}`,
-                UTI: 'com.adobe.pdf',        // iOS only, ignored on Android
-            });
-        } catch (error) {
-            console.error('Error sharing PDF:', error);
-            toast.error('Failed to share PDF. Please try again.');
-        } finally {
-            setPdfDownloading(false);
-        }
+        setPdfDownloading(true);
+        setShowDownloadModal(false);
+        
+        await sharePDF({
+            id,
+            documentId: quotation?.quotationId || id,
+            documentType: 'Quotation',
+            apiEndpoint: 'quotation',
+            onSuccess: (message) => toast.success(message),
+            onError: (message) => toast.error(message),
+        });
+        
+        setPdfDownloading(false);
     };
 
     return (
@@ -586,8 +530,8 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                             <FormLabel label="Branch" required />
                             <TextInput value={derived.branchName} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
 
-                            {/* Google Maps link for branch location */}
-                            {derived.branchLat != null && derived.branchLon != null && (
+                            {/* Google Maps link for branch location - hidden but kept for later use */}
+                            {/* {derived.branchLat != null && derived.branchLon != null && (
                                 <TouchableOpacity
                                     activeOpacity={0.75}
                                     onPress={() =>
@@ -624,7 +568,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                                         </Text>
                                     </View>
                                 </TouchableOpacity>
-                            )}
+                            )} */}
                         </View>
 
                         <View className="mb-4">

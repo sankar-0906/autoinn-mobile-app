@@ -16,6 +16,7 @@ import AccessoryModal from '../../components/AccessoryModal';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton, HeaderWithBack, useBackButton, backNavigationHelpers } from '../../components/ui/BackButton';
+import { useBranch } from '../../src/context/branch';
 import * as DocumentPicker from 'expo-document-picker';
 import {
     getBranches,
@@ -129,6 +130,7 @@ export default function BookingActivityScreen({
     const insets = useSafeAreaInsets();
     const scrollViewRef = useRef<ScrollView>(null);
     const vehicleSectionRef = useRef<View>(null);
+    const { nearestBranch } = useBranch();
 
     // Determine the back navigation target based on how we got here
     const getBackNavigationTarget = () => {
@@ -269,6 +271,7 @@ export default function BookingActivityScreen({
     const [customerDob, setCustomerDob] = useState('');
     const [generatedCustomerId, setGeneratedCustomerId] = useState('');
     const [customerData, setCustomerData] = useState<any>(null);
+    const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const [selectedFinancerId, setSelectedFinancerId] = useState('');
 
@@ -286,6 +289,44 @@ export default function BookingActivityScreen({
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchObj, setSelectedBranchObj] = useState<any>(null);
     const [selectedVehicleObj, setSelectedVehicleObj] = useState<any>(null);
+
+    // Auto-fill nearest branch when branches are loaded (do not override user choice)
+    useEffect(() => {
+        if (branch || branches.length === 0) return;
+
+        const nearestMatch = nearestBranch
+            ? branches.find((b: any) => b.id === nearestBranch.id)
+            : null;
+
+        if (nearestMatch) {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+            setBranch(nearestMatch.name);
+            setSelectedBranchObj(nearestMatch);
+            return;
+        }
+
+        // Wait briefly for nearestBranch; fallback to first branch if it doesn't arrive
+        if (!fallbackTimerRef.current) {
+            fallbackTimerRef.current = setTimeout(() => {
+                if (!nearestBranch?.id && !branch && branches.length > 0) {
+                    const fallback = branches[0];
+                    setBranch(fallback.name);
+                    setSelectedBranchObj(fallback);
+                }
+                fallbackTimerRef.current = null;
+            }, 1200);
+        }
+
+        return () => {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+        };
+    }, [branch, branches, nearestBranch]);
 
     // ── Vehicle fields ─────────────────────────────────────────────────────
     const [manufacturer, setManufacturer] = useState('India Yamaha Motors Private Limited');
@@ -614,20 +655,17 @@ export default function BookingActivityScreen({
         ];
         try {
             const response = await getBranches();
-            if (response.data.code === 200 && response.data.data?.length > 0) {
-                const list = response.data.data;
+            const data = response?.data;
+            const listRaw = data?.response?.data ?? data?.data ?? data?.response ?? [];
+            const list = Array.isArray(listRaw) ? listRaw : listRaw ? [listRaw] : [];
+
+            if (data?.code === 200 && list.length > 0) {
                 setBranches(list);
-                setBranch(list[0].name);
-                setSelectedBranchObj(list[0]);
             } else {
                 setBranches(mockBranches);
-                setBranch('Devanahalli');
-                setSelectedBranchObj(mockBranches[0]);
             }
         } catch {
             setBranches(mockBranches);
-            setBranch('Devanahalli');
-            setSelectedBranchObj(mockBranches[0]);
         }
     };
 

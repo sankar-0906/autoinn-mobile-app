@@ -1,8 +1,8 @@
 export interface Branch {
   id: string;
   name: string;
-  lat?: number;
-  lon?: number;
+  lat?: number | null;
+  lon?: number | null;
   address?: string;
   city?: string;
   state?: string;
@@ -13,13 +13,11 @@ export interface Branch {
 export interface BranchContextType {
   branches: Branch[];
   selectedBranch: Branch | null;
-  nearestBranch: Branch | null;
   employeeBranch: Branch | null;
+  nearestBranch: Branch | null;
   isLoading: boolean;
   error: string | null;
   setBranches: (branches: Branch[]) => void;
   setSelectedBranch: (branch: Branch | null) => void;
   fetchBranches: () => Promise<void>;
-  getCurrentLocation: () => Promise<{ latitude: number; longitude: number } | null>;
-  calculateNearestBranch: (userLat: number, userLon: number) => Branch | null;
 }

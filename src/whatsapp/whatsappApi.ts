@@ -145,6 +145,52 @@ export const shareQuotationViaWhatsApp = async (
 };
 
 /**
+ * Build Quotation WhatsApp template message from payload
+ * Uses the Quotation Generation SMS template structure
+ */
+export const fetchQuotationTemplateText = async (): Promise<string> => {
+  try {
+    const response = await platformApi.get('/api/sms');
+    const templates =
+      response?.data?.response?.data ||
+      response?.data?.response?.getSms ||
+      response?.data?.response ||
+      [];
+
+    const match = Array.isArray(templates)
+      ? templates.find(
+          (t: any) =>
+            t?.module === 'Quotations' &&
+            t?.submodule === 'Quotation Generation SMS'
+        )
+      : null;
+
+    return match?.text || '';
+  } catch (error) {
+    console.error('Error fetching quotation template:', error);
+    return '';
+  }
+};
+
+export const buildQuotationTemplateMessage = async (data: WhatsAppTemplateData): Promise<string> => {
+  const template = await fetchQuotationTemplateText();
+
+  if (!template) {
+    return '';
+  }
+
+  const replacements: Record<string, string> = {
+    cname: data.cname || '',
+    slex: data.slex || data.assignedExecutive?.name || '',
+    vname: Array.isArray(data.vname) ? data.vname.join(', ') : (data.vname || ''),
+    link: data.link || '',
+    dlr: data.dlr || data.branchName || '',
+  };
+
+  return template.replace(/\$\{(\w+)\}/g, (_, key) => (replacements[key] ?? ''));
+};
+
+/**
  * Send WhatsApp message via API (for tracking purposes)
  */
 export const sendWhatsAppMessage = async (data: WhatsAppTemplateData): Promise<WhatsAppResponse> => {

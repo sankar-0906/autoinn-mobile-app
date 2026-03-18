@@ -30,6 +30,10 @@ export type RootStackParamList = {
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
     VehicleDetails: { vehicle: any; mode?: 'view' | 'edit'; selectedVehicleData?: any };
     FollowUpQuotationForm: { customerName?: string; customerPhone?: string; locality?: string; customerType?: string; gender?: string };
+    // Job Cards
+    AddJobCard: undefined;
+    JobCardFilters: undefined;
+    UpdateCustomer: { customerName?: string; mobileNo?: string };
 };
 
 export type TabParamList = {

@@ -25,7 +25,6 @@ import { TimePickerModal } from '../../components/TimePickerModal';
 import { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../src/context/auth/AuthContext';
 import { usePermissions } from '../../src/hooks/usePermissions';
-import { useQuotationBranchAutoFill } from '../../src/utils/branch-autofill';
 import { useBranch } from '../../src/context/branch';
 import { AccessDeniedScreen } from '../../src/components/ui/AccessDeniedScreen';
 
@@ -161,18 +160,11 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const { user } = useAuth();
     const { isManager } = usePermissions(); // Move hook call to top level
 
-    // 🎯 Branch auto-fill: GPS nearest → Employee assigned → First available
-    const {
-        autoFilledBranchId,
-        autoFilledBranchName,
-        isAutoFilling,
-        error: branchError,
-        branchPriority,
-        retryAutoFill,
-    } = useQuotationBranchAutoFill();
-
-    // Use branch context to get branch data
-    const { branches, isLoading: branchLoading } = useBranch();
+    // 🎯 Global Branch Service: GPS nearest → Employee assigned → First available
+    const { branches, selectedBranch, nearestBranch, isLoading: branchLoading, error: branchError } = useBranch();
+    // Helper functions to match the old interface
+    const getBranchId = () => selectedBranch?.id || nearestBranch?.id || null;
+    const getBranchName = () => selectedBranch?.name || nearestBranch?.name || '-';
 
     const initialSelectedVehicle = route.params?.selectedVehicle;
 
@@ -207,11 +199,11 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     // Associated vehicles state (like web app) - from customer.purchasedVehicle
     const [associatedVehicles, setAssociatedVehicles] = useState<any[]>([]);
 
-    // Branch options from context
+    // Branch options from global branch service
     const branchOptions = useMemo(() =>
-        branches.map((branch) => ({ label: branch.name, value: branch.id }))
+        branches.map((branch: any) => ({ label: branch.name, value: branch.id }))
         , [branches]);
-    const [executiveOptions, setExecutiveOptions] = useState<Array<{ label: string; value: string }>>([]);
+    const [executiveOptionsList, setExecutiveOptionsList] = useState<Array<{ label: string; value: string }>>([]);
     const [loadingExecutives, setLoadingExecutives] = useState(false);
     const [loadingCustomer, setLoadingCustomer] = useState(false);
     const [pendingExecutive, setPendingExecutive] = useState<{ id?: string; name?: string } | null>(null);
@@ -445,12 +437,12 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
 
     const autoSelectExecutive = (execId?: string, execName?: string) => {
-        if (execId && executiveOptions.some((e) => e.value === execId)) {
+        if (execId && executiveOptionsList.some((e) => e.value === execId)) {
             setSalesExecutive(execId);
             return;
         }
         if (execName) {
-            const match = executiveOptions.find((e) => e.label?.includes(execName));
+            const match = executiveOptionsList.find((e) => e.label?.includes(execName));
             if (match) setSalesExecutive(match.value);
         }
     };
@@ -498,7 +490,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
                 console.log('✅ AddQuotation - Filtered executives:', filtered);
                 console.log('📈 AddQuotation - Executive options count:', filtered.length);
-                setExecutiveOptions(filtered);
+                setExecutiveOptionsList(filtered);
 
                 // Get logged-in user profile to auto-select as sales executive
                 try {
@@ -555,11 +547,11 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                     }
                 }
             } else {
-                setExecutiveOptions([]);
+                setExecutiveOptionsList([]);
             }
         } catch (e) {
             console.error('💥 AddQuotation - Error in fetchExecutives:', e);
-            setExecutiveOptions([]);
+            setExecutiveOptionsList([]);
         } finally {
             setLoadingExecutives(false);
         }
@@ -662,18 +654,16 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         }
     };
 
-    // Auto-fill branch using the Quotation-specific hook
+    // Auto-fill branch using the global branch service
     useEffect(() => {
-        if (autoFilledBranchId && !branch) {
-            console.log(
-                '🎯 AddQuotation – Auto-filling branch:',
-                autoFilledBranchName,
-                '(' + autoFilledBranchId + ')',
-                'Priority:', branchPriority,
-            );
-            setBranch(autoFilledBranchId);
+        const autoBranchId = getBranchId();
+        const autoBranchName = getBranchName();
+
+        if (autoBranchId && !branch && !branchLoading) {
+            console.log('🎯 AddQuotation – Auto-filling branch:', autoBranchName, `(${autoBranchId})`);
+            setBranch(autoBranchId);
         }
-    }, [autoFilledBranchId, branchPriority]);
+    }, [getBranchId, getBranchName, branch, branchLoading]);
 
     useEffect(() => {
         console.log('🏢 AddQuotation - Branch changed to:', branch);
@@ -689,7 +679,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     useEffect(() => {
         if (!pendingExecutive) return;
         autoSelectExecutive(pendingExecutive.id, pendingExecutive.name);
-    }, [executiveOptions]);
+    }, [executiveOptionsList]);
 
     useEffect(() => {
         const digits = customerPhone.replace(/\D/g, '');
@@ -795,7 +785,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             <SelectField
                                 placeholder="Select Executive"
                                 value={salesExecutive}
-                                options={executiveOptions}
+                                options={executiveOptionsList}
                                 onSelect={(v) => { setSalesExecutive(v); clearFieldError('salesExecutive'); }}
                                 error={fieldErrors.salesExecutive}
                                 modalVisible={showExecutiveModal}

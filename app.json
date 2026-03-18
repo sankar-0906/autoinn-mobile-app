@@ -4,11 +4,11 @@
         "slug": "autocloud-mobile-app",
         "version": "1.0.0",
         "orientation": "portrait",
-        "icon": "./assets/icon.png",
+        "icon": "./assets/464dc6d161864c69f60b59f4ad74113c00404235.png",
         "userInterfaceStyle": "light",
         "newArchEnabled": true,
         "splash": {
-            "image": "./assets/splash-icon.png",
+            "image": "./assets/464dc6d161864c69f60b59f4ad74113c00404235.png",
             "resizeMode": "contain",
             "backgroundColor": "#ffffff"
         },
@@ -24,7 +24,7 @@
         },
         "android": {
             "adaptiveIcon": {
-                "foregroundImage": "./assets/adaptive-icon.png",
+                "foregroundImage": "./assets/464dc6d161864c69f60b59f4ad74113c00404235.png",
                 "backgroundColor": "#ffffff"
             },
             "edgeToEdgeEnabled": true,

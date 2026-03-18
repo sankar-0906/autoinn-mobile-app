@@ -28,6 +28,9 @@ import VehicleDetailsScreen from '../screens/customer/VehicleDetailsScreen';
 import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
 import ConfirmBookingScreen from '../screens/customer/ConfirmBookingScreen';
 import { RootStackParamList } from './types';
+import AddJobCardScreen from '../screens/job-cards/AddJobCardScreen';
+import JobCardFiltersScreen from '../screens/job-cards/JobCardFiltersScreen';
+import UpdateCustomerScreen from '../screens/job-cards/UpdateCustomerScreen';
 
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -66,6 +69,9 @@ export default function AppNavigator() {
             <Stack.Screen name="AdvancedBooking" component={AdvancedBookingScreen} />
             <Stack.Screen name="FollowUps" component={FollowUpsScreen} />
             <Stack.Screen name="FollowUpDetail" component={FollowUpDetailScreen} />
+            <Stack.Screen name="AddJobCard" component={AddJobCardScreen} />
+            <Stack.Screen name="JobCardFilters" component={JobCardFiltersScreen} />
+            <Stack.Screen name="UpdateCustomer" component={UpdateCustomerScreen} />
         </Stack.Navigator>
     );
 }
