@@ -3039,7 +3039,7 @@ function CustomerDetailsScreenComponent() {
                         <View className="flex-row justify-between mb-3">
                             <View>
                                 <Text className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">JOB ORDER ID</Text>
-                                <Text className="text-sm font-bold text-teal-600">{job.jobCardId || job.id}</Text>
+                                <Text className="text-sm font-bold text-teal-600">{job.id}</Text>
                             </View>
                             <View className="items-end">
                                 <Text className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">DATE</Text>

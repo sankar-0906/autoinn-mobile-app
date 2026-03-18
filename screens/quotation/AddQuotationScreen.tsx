@@ -23,6 +23,11 @@ import { getBranches, getCustomerByPhoneNo, getUsers, createQuotation, generateQ
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { TimePickerModal } from '../../components/TimePickerModal';
 import { RootStackParamList } from '../../navigation/types';
+import { useAuth } from '../../src/context/auth/AuthContext';
+import { usePermissions } from '../../src/hooks/usePermissions';
+import { useQuotationBranchAutoFill } from '../../src/utils/branch-autofill';
+import { useBranch } from '../../src/context/branch';
+import { AccessDeniedScreen } from '../../src/components/ui/AccessDeniedScreen';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -153,6 +158,22 @@ const RadioOption = ({
 );
 
 export default function AddQuotationScreen({ navigation, route }: any) {
+    const { user } = useAuth();
+    const { isManager } = usePermissions(); // Move hook call to top level
+
+    // 🎯 Branch auto-fill: GPS nearest → Employee assigned → First available
+    const {
+        autoFilledBranchId,
+        autoFilledBranchName,
+        isAutoFilling,
+        error: branchError,
+        branchPriority,
+        retryAutoFill,
+    } = useQuotationBranchAutoFill();
+
+    // Use branch context to get branch data
+    const { branches, isLoading: branchLoading } = useBranch();
+
     const initialSelectedVehicle = route.params?.selectedVehicle;
 
     // Form state
@@ -178,17 +199,19 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     const lastLookupRef = useRef('');
 
     // Multi-vehicle state (like web app)
-    const [selectedVehicles, setSelectedVehicles] = useState<any[]>(() => 
+    const [selectedVehicles, setSelectedVehicles] = useState<any[]>(() =>
         initialSelectedVehicle ? [initialSelectedVehicle] : []
     );
     const [editingVehicleIndex, setEditingVehicleIndex] = useState<number | null>(null);
-    
+
     // Associated vehicles state (like web app) - from customer.purchasedVehicle
     const [associatedVehicles, setAssociatedVehicles] = useState<any[]>([]);
 
-    const [branchOptions, setBranchOptions] = useState<Array<{ label: string; value: string }>>([]);
+    // Branch options from context
+    const branchOptions = useMemo(() =>
+        branches.map((branch) => ({ label: branch.name, value: branch.id }))
+        , [branches]);
     const [executiveOptions, setExecutiveOptions] = useState<Array<{ label: string; value: string }>>([]);
-    const [loadingBranches, setLoadingBranches] = useState(false);
     const [loadingExecutives, setLoadingExecutives] = useState(false);
     const [loadingCustomer, setLoadingCustomer] = useState(false);
     const [pendingExecutive, setPendingExecutive] = useState<{ id?: string; name?: string } | null>(null);
@@ -204,7 +227,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
     // Multi-vehicle management functions (like web app)
     const addVehicle = (vehicle: any) => {
         console.log('🚀 Adding vehicle with paymentDetails:', vehicle.paymentDetails);
-        
+
         const vehicleData = {
             ...vehicle,
             vehicleDetail: { id: vehicle.id, modelName: vehicle.name },
@@ -220,7 +243,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                 financerTenure: { data: [] },
             },
         };
-        
+
         console.log('✅ Final vehicleData paymentDetails:', vehicleData.paymentDetails);
         setSelectedVehicles([...selectedVehicles, vehicleData]);
     };
@@ -282,18 +305,18 @@ export default function AddQuotationScreen({ navigation, route }: any) {
             vehicleData,
             returnedPaymentDetails
         });
-        
+
         if (returnedVehicle || vehicleData) {
             const vehicle = returnedVehicle || vehicleData;
-            
+
             // Ensure paymentDetails are properly attached to the vehicle
             const updatedVehicle = {
                 ...vehicle,
                 paymentDetails: returnedPaymentDetails || vehicle.paymentDetails
             };
-            
+
             console.log('🚀 AddQuotation - Final vehicle with paymentDetails:', updatedVehicle);
-            
+
             if (editingVehicleIndex !== null) {
                 // Update existing vehicle
                 const newVehicles = [...selectedVehicles];
@@ -432,53 +455,37 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         }
     };
 
-    const fetchBranches = async () => {
-        setLoadingBranches(true);
-        try {
-            const res = await getBranches();
-            const data = res?.data;
-            if (data && data.code === 200 && data.response?.code === 200) {
-                const list = data.response.data || [];
-                const options = list.map((b: any) => ({ label: b.name, value: b.id }));
-                setBranchOptions(options);
-
-                if (!branch && options.length > 0) {
-                    const profileRaw = await AsyncStorage.getItem('userProfile');
-                    const profile = profileRaw ? JSON.parse(profileRaw) : null;
-                    const branchData = profile?.branch || profile?.profile?.branch;
-                    const normalizeBranchId = (b: any) => (typeof b === 'string' ? b : b?.id || b?._id);
-                    const profileBranch = Array.isArray(branchData)
-                        ? normalizeBranchId(branchData[0])
-                        : normalizeBranchId(branchData);
-                    const initial =
-                        options.find((option: { label: string; value: string }) => option.value === profileBranch) ||
-                        options[0];
-                    setBranch(initial.value);
-                }
-            } else {
-                setBranchOptions([]);
-            }
-        } catch (e) {
-            setBranchOptions([]);
-        } finally {
-            setLoadingBranches(false);
-        }
-    };
-
     const fetchExecutives = async (branchId: string) => {
-        if (!branchId) return;
+        console.log('🎯 AddQuotation - fetchExecutives called with branchId:', branchId);
+        if (!branchId) {
+            console.log('❌ AddQuotation - No branchId provided');
+            return;
+        }
         setLoadingExecutives(true);
         try {
-            const res = await getUsers({ size: 1000, page: 1 });
+            console.log('👤 AddQuotation - isManager:', isManager); // Use component-level isManager
+
+            const res = await getUsers({
+                size: 1000,
+                page: 1,
+                manager: isManager // Use component-level isManager
+            });
+            console.log('📞 AddQuotation - API call with manager:', isManager);
             const data = res?.data;
+            console.log('📊 AddQuotation - API response:', data);
+
             if (data && data.code === 200 && data.response?.code === 200) {
                 const users = Array.isArray(data.response?.data?.users) ? data.response.data.users : [];
+                console.log('👥 AddQuotation - Total users fetched:', users.length);
+
                 const filtered = users
                     .filter((user: any) => {
                         const departmentType = Array.isArray(user?.profile?.department?.departmentType)
                             ? user.profile.department.departmentType
                             : [];
                         const isSales = departmentType.includes('Sales');
+                        // console.log('🔍 User:', user?.profile?.employeeName, 'Sales:', isSales, 'Status:', user?.status);
+
                         if (!isSales || user?.status !== true) return false;
                         const br = user?.profile?.branch;
                         const branches = Array.isArray(br) ? br : br ? [br] : [];
@@ -488,15 +495,16 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         label: `${user?.profile?.employeeName || 'Executive'}${user?.profile?.employeeId ? ` (${user.profile.employeeId})` : ''}`,
                         value: user.id,
                     }));
+
+                console.log('✅ AddQuotation - Filtered executives:', filtered);
+                console.log('📈 AddQuotation - Executive options count:', filtered.length);
                 setExecutiveOptions(filtered);
-                
+
                 // Get logged-in user profile to auto-select as sales executive
                 try {
-                    const profileRaw = await AsyncStorage.getItem('userProfile');
-                    const profile = profileRaw ? JSON.parse(profileRaw) : null;
-                    const loggedInUserId = profile?.id || profile?._id;
-                    
-                    // Auto-select logic
+                    const loggedInUserId = user?.id; // Use component-level user
+
+                    // Auto-select logic based on manager access
                     if (filtered.length > 0) {
                         if (pendingExecutive?.id) {
                             const match = filtered.find((o: any) => o.value === pendingExecutive.id);
@@ -507,16 +515,36 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             if (match) setSalesExecutive(match.value);
                             else setSalesExecutive(filtered[0].value);
                         } else if (!salesExecutive) {
-                            // Auto-select logged-in user if found in executives list
-                            if (loggedInUserId) {
-                                const loggedInExecutive = filtered.find((o: any) => o.value === loggedInUserId);
-                                if (loggedInExecutive) {
-                                    setSalesExecutive(loggedInExecutive.value);
+                            if (isManager) { // Use component-level isManager
+                                // Manager: Auto-select logged-in user if found, otherwise first
+                                if (loggedInUserId) {
+                                    const loggedInExecutive = filtered.find((o: any) => o.value === loggedInUserId);
+                                    if (loggedInExecutive) {
+                                        setSalesExecutive(loggedInExecutive.value);
+                                        console.log('👨‍💼 Manager - Auto-selected logged-in user:', loggedInExecutive.label);
+                                    } else {
+                                        setSalesExecutive(filtered[0].value);
+                                        console.log('🤷 Manager - Logged-in user not in list, selected first:', filtered[0].label);
+                                    }
                                 } else {
                                     setSalesExecutive(filtered[0].value);
+                                    console.log('🤷 Manager - No logged-in user ID, selected first:', filtered[0].label);
                                 }
                             } else {
-                                setSalesExecutive(filtered[0].value);
+                                // Non-manager: Auto-select self if found, otherwise first
+                                if (loggedInUserId) {
+                                    const loggedInExecutive = filtered.find((o: any) => o.value === loggedInUserId);
+                                    if (loggedInExecutive) {
+                                        setSalesExecutive(loggedInExecutive.value);
+                                        console.log('👤 Non-manager - Auto-selected self:', loggedInExecutive.label);
+                                    } else {
+                                        setSalesExecutive(filtered[0].value);
+                                        console.log('🤷 Non-manager - Self not in list, selected first:', filtered[0].label);
+                                    }
+                                } else {
+                                    setSalesExecutive(filtered[0].value);
+                                    console.log('🤷 Non-manager - No logged-in user ID, selected first:', filtered[0].label);
+                                }
                             }
                         }
                     }
@@ -530,6 +558,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                 setExecutiveOptions([]);
             }
         } catch (e) {
+            console.error('💥 AddQuotation - Error in fetchExecutives:', e);
             setExecutiveOptions([]);
         } finally {
             setLoadingExecutives(false);
@@ -633,12 +662,26 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         }
     };
 
+    // Auto-fill branch using the Quotation-specific hook
     useEffect(() => {
-        fetchBranches();
-    }, []);
+        if (autoFilledBranchId && !branch) {
+            console.log(
+                '🎯 AddQuotation – Auto-filling branch:',
+                autoFilledBranchName,
+                '(' + autoFilledBranchId + ')',
+                'Priority:', branchPriority,
+            );
+            setBranch(autoFilledBranchId);
+        }
+    }, [autoFilledBranchId, branchPriority]);
 
     useEffect(() => {
-        if (!branch) return;
+        console.log('🏢 AddQuotation - Branch changed to:', branch);
+        if (!branch) {
+            console.log('🚫 AddQuotation - No branch selected, skipping executive fetch');
+            return;
+        }
+        console.log('✅ AddQuotation - Branch selected, fetching executives');
         setSalesExecutive('');
         fetchExecutives(branch);
     }, [branch]);
@@ -699,7 +742,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
         setPendingExecutive(null);
         lastLookupRef.current = '';
         setFieldErrors({});
-        fetchBranches().finally(() => setRefreshing(false));
+        setRefreshing(false);
     };
 
     const STATUS_STEPS = ['Quoted', 'Booked', 'Sold'];
@@ -743,13 +786,12 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 modalVisible={showBranchModal}
                                 setModalVisible={setShowBranchModal}
                             />
-                            {loadingBranches && (
-                                <Text className="text-xs text-gray-400 mt-1">Loading branches...</Text>
-                            )}
+
                         </View>
 
                         <View>
                             <FormLabel label="Sales Executive" required />
+
                             <SelectField
                                 placeholder="Select Executive"
                                 value={salesExecutive}
@@ -1022,22 +1064,22 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                         {/* Vehicle Name - Multi-vehicle Tag Display */}
                         <View className="mb-4">
                             <FormLabel label="Vehicle Name" required />
-                            
+
                             {/* Vehicle Tags Display (like web app) */}
                             <View className="flex-row flex-wrap gap-2 mb-3">
                                 {selectedVehicles.length > 0 ? (
                                     selectedVehicles.map((vehicle, index) => {
                                         // Get the model name from various possible fields
-                                        const modelName = vehicle.name || 
-                                                         vehicle.vehicleDetail?.modelName || 
-                                                         vehicle.modelName || 
-                                                         vehicle.model?.modelName ||
-                                                         `Vehicle ${index + 1}`;
-                                        
+                                        const modelName = vehicle.name ||
+                                            vehicle.vehicleDetail?.modelName ||
+                                            vehicle.modelName ||
+                                            vehicle.model?.modelName ||
+                                            `Vehicle ${index + 1}`;
+
                                         console.log(`🏷️ Tag ${index}:`, { modelName, vehicle });
-                                        
+
                                         return (
-                                            <View 
+                                            <View
                                                 key={index}
                                                 className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 flex-row items-center min-w-[120px]"
                                             >
@@ -1046,8 +1088,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                                     onPress={() => editVehicle(index)}
                                                     className="flex-1 min-w-[80px]"
                                                 >
-                                                    <Text 
-                                                        className="text-teal-800 font-bold text-sm" 
+                                                    <Text
+                                                        className="text-teal-800 font-bold text-sm"
                                                         numberOfLines={2}
                                                         ellipsizeMode="tail"
                                                         style={{ minWidth: 80 }}
@@ -1055,7 +1097,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                                         {modelName}
                                                     </Text>
                                                 </TouchableOpacity>
-                                                
+
                                                 {/* Edit button - EDIT MODE (like web) */}
                                                 <TouchableOpacity
                                                     onPress={() => editVehicleInEditMode(index)}
@@ -1063,7 +1105,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                                 >
                                                     <Edit2 size={12} color="white" />
                                                 </TouchableOpacity>
-                                                
+
                                                 {/* Delete button */}
                                                 <TouchableOpacity
                                                     onPress={() => removeVehicle(index)}
@@ -1227,7 +1269,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             const { QuotationId, id: seqId, customerId } = genData.response.data;
 
                             const finalFollowUpTime = followUpTime.trim() || '12:00';
-                            
+
                             // Build vehicle array matching autoinn-fe flat format (multi-vehicle support)
                             // autoinn-fe sends: { vehicleDetail: modelId, price: priceObj, paymentDetails: {...}, financer, downPayment, financerTenure }
                             const vehicleArr = selectedVehicles.map((vehicle) => {
@@ -1315,7 +1357,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
                             if (createRes.data.code === 200 && createRes.data.response?.code === 200) {
                                 toast.success('Quotation saved successfully');
-                                
+
                                 // Go back to QuotationList page (correct flow)
                                 console.log('🚀 Quotation saved, going back to QuotationList');
                                 navigation.navigate('Main', { screen: 'Quotations' });

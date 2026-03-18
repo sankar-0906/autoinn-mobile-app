@@ -17,14 +17,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
-import { Calendar, Clock, Share2, ChevronLeft, ArrowRight, Download } from 'lucide-react-native';
+import { Calendar, Clock, Share2, ChevronLeft, ArrowRight, Download, MapPin } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { ENDPOINT, getQuotationById, generateQuotationPDF } from '../../src/api';
+import { handleWhatsAppShare, WhatsAppTemplateData } from '../../src/whatsapp';
+// shareMessOnWhatsApp.ts was a test file — now removed, logic merged into whatsappApi.ts
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useToast } from '../../src/ToastContext';
+import { useBranch } from '../../src/context/branch';
 
 type QuotationFormRouteProp = RouteProp<RootStackParamList, 'QuotationForm'>;
 type QuotationFormNavigationProp = StackNavigationProp<RootStackParamList, 'QuotationForm'>;
@@ -42,6 +45,8 @@ const STATUS_STEPS = ['Quoted', 'Booked', 'Sold'];
 export default function QuotationFormScreen({ navigation, route }: { navigation: QuotationFormNavigationProp; route: QuotationFormRouteProp }) {
     const { id, selectedVehicle, paymentDetails, viewMode } = route.params;
     const isViewMode = viewMode !== undefined ? !!viewMode : true;
+
+    const { branches } = useBranch(); // All branches with lat/lon from context
 
     console.log('🚀 QuotationFormScreen - Route params:', {
         id,
@@ -92,10 +97,10 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
     useEffect(() => {
         if (!id) return;
-        
+
         console.log('📋 QuotationFormScreen - selectedVehicle exists:', !!selectedVehicle);
         console.log('📋 QuotationFormScreen - paymentDetails exists:', !!paymentDetails);
-        
+
         // Always fetch quotation data for customer details, even if we have selectedVehicle
         // This ensures we have all the quotation metadata
         console.log('📋 Fetching quotation data for metadata');
@@ -157,13 +162,24 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
         // Get customer information from quotation data (always available now)
         const branchName = quotation?.branch?.name || quotation?.assignedBranch?.name || '-';
+        const branchId = quotation?.branch?.id || quotation?.assignedBranch?.id || null;
+
+        // Debug: see what branch data the API actually returns
+        console.log('🔵 [QuotationForm] quotation.branch raw:', JSON.stringify(quotation?.branch));
+
+        // Look up coordinates from BranchContext (reliable source) by branch ID
+        const matchedBranch = branchId ? branches.find(b => b.id === branchId) : null;
+        const branchLat: number | null = matchedBranch?.lat ?? null;
+        const branchLon: number | null = matchedBranch?.lon ?? null;
+
+        console.log(`📍 [QuotationForm] Branch: ${branchName} | lat: ${branchLat} | lon: ${branchLon}`);
         const executiveName = quotation?.assignedExecutive?.profile?.employeeName || quotation?.executive?.profile?.employeeName || '-';
         const customerPhone = quotation?.quotationPhone || quotation?.proCustomer?.phone || quotation?.customer?.contacts?.[0]?.phone || '-';
         const rawName = quotation?.customerName || (quotation?.customer ? quotation.customer.name : quotation?.proCustomer?.name) || '';
         const customerName = rawName || '-';
         const locality = quotation?.locality || (quotation?.proCustomer ? quotation.proCustomer.locality : quotation?.customer?.address?.locality) || '-';
         const scheduleDate = scheduleDateValue || quotation?.scheduleDateAndTime || quotation?.scheduleDate;
-        
+
         // Extract time from ISO string if it's an ISO format, otherwise use as-is
         let scheduleTime = quotation?.scheduleTime || '';
         if (scheduleTime && scheduleTime.includes('T') && scheduleTime.includes('Z')) {
@@ -179,7 +195,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 scheduleTime = timeMatch[1];
             }
         }
-        
+
         const customerType = quotation?.customerType || quotation?.customer?.customerType || '-';
         const enquiryType = quotation?.enquiryType || '-';
         const remarks = quotation?.remarks || '';
@@ -193,16 +209,16 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
         let viewVehicleId = null;
         let vehicleName = 'Select Vehicle';
         let hasVehicle = false;
-        let associatedVehicles = [];
+        let associatedVehicles: { regNo: string; name: string }[] = [];
 
         if (selectedVehicle) {
             // Use selectedVehicle from navigation (this has the finance data)
             console.log('🎯 Using selectedVehicle from navigation for display');
             console.log('🎯 selectedVehicle paymentDetails:', selectedVehicle.paymentDetails);
             console.log('🎯 selectedVehicle priceDetails:', selectedVehicle.priceDetails);
-            
+
             viewVehicleData = selectedVehicle;
-            
+
             // Priority: paymentDetails from route params > selectedVehicle.paymentDetails > default
             viewPaymentDetails = paymentDetails || selectedVehicle.paymentDetails || {
                 paymentType: 'cash',
@@ -211,17 +227,17 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 financerTenure: { data: [] },
                 priceDetails: selectedVehicle.priceDetails || selectedVehicle.price
             };
-            
+
             viewVehicleId = selectedVehicle.id;
             vehicleName = selectedVehicle.name || selectedVehicle.modelName || 'Selected Vehicle';
             hasVehicle = true;
-            
+
             console.log('🎯 Final viewPaymentDetails:', viewPaymentDetails);
         } else {
             // Fall back to API data
             console.log('📋 No selectedVehicle, falling back to API data');
-            const fallbackVehicle = Array.isArray(quotation?.vehicle) && quotation.vehicle.length > 0 
-                ? quotation.vehicle[0] 
+            const fallbackVehicle = Array.isArray(quotation?.vehicle) && quotation.vehicle.length > 0
+                ? quotation.vehicle[0]
                 : null;
 
             if (fallbackVehicle) {
@@ -231,10 +247,10 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 console.log('📋 fallbackVehicle.downPayment:', fallbackVehicle.downPayment);
                 console.log('📋 fallbackVehicle.financerTenure:', fallbackVehicle.financerTenure);
                 console.log('📋 fallbackVehicle.paymentDetails:', fallbackVehicle.paymentDetails);
-                
+
                 hasVehicle = true;
                 vehicleName = fallbackVehicle.vehicleDetail?.modelName || fallbackVehicle.vehicleDetail?.modelCode || 'Vehicle';
-                
+
                 const junctionPrice = fallbackVehicle?.price;
                 const resolvedPrice = Array.isArray(junctionPrice) ? junctionPrice[0] : junctionPrice;
                 const vehicleMasterId = fallbackVehicle?.vehicleDetail?.id || null;
@@ -257,7 +273,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                             parsedTenure = { data: [] };
                         }
                     }
-                    
+
                     viewPaymentDetails = {
                         paymentType: fallbackVehicle.financer ? 'finance' : 'cash',
                         financerId: fallbackVehicle.financer,
@@ -306,6 +322,8 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
         return {
             branchName,
+            branchLat,
+            branchLon,
             executiveName,
             customerPhone,
             customerName,
@@ -325,11 +343,11 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             viewVehicleId,
             hasVehicle,
         };
-    }, [quotation, selectedVehicle, paymentDetails]);
+    }, [quotation, selectedVehicle, paymentDetails, branches]);
 
     const onRefresh = () => {
         setRefreshing(true);
-        
+
         // If we have selectedVehicle, we should still refresh the quotation metadata
         // but preserve the selectedVehicle data
         getQuotationById(id)
@@ -337,7 +355,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 const data = res?.data;
                 const quotationData = data?.response?.data || null;
                 setQuotation(quotationData);
-                
+
                 // Update form fields from quotation data
                 if (quotationData?.customer?.gender) {
                     const g = String(quotationData.customer.gender).toLowerCase();
@@ -354,7 +372,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 const expectedRaw = quotationData?.expectedPurchaseDate || quotationData?.expectedDateOfPurchase;
                 const expectedDate = expectedRaw ? new Date(expectedRaw) : null;
                 setExpectedDateValue(expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : null);
-                
+
                 if (selectedVehicle) {
                     toast.success('Refreshed quotation details, vehicle data preserved');
                 }
@@ -368,27 +386,48 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
 
     const handleShareOnWhatsApp = async () => {
         try {
-            // Get customer phone number
-            const customerPhone = derived.customerPhone.replace(/\D/g, ''); // Remove non-digits
-            
-            if (customerPhone && customerPhone !== '-') {
-                // Open WhatsApp directly to customer's chat with personalized message
-                const message = `Dear ${derived.customerName},\n\n📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n🔹 *Sales Executive*: ${derived.executiveName}\n\n📋 Thank you for your interest! We will send you the complete quotation PDF shortly with all pricing details and specifications.\n\n🤝 Feel free to call us if you have any questions.\n\n📞 *Contact*: +91${derived.customerPhone || 'Contact Number'}`;
-                
-                const whatsappUrl = `https://wa.me/91${customerPhone}?text=${encodeURIComponent(message)}`;
-                
-                await Linking.openURL(whatsappUrl);
-                toast.success('Opening WhatsApp chat with quotation details...');
-                
-            } else {
-                // Fallback to general WhatsApp if no customer number
-                const message = `📄 *Quotation Details*\n\n🔹 *Quotation ID*: ${quotation?.quotationId || id}\n🔹 *Customer*: ${derived.customerName}\n🔹 *Vehicle*: ${derived.vehicleName}\n🔹 *Branch*: ${derived.branchName}\n\n✅ Ready to share quotation with customer!`;
-                
-                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-                await Linking.openURL(whatsappUrl);
-                toast.success('Opening WhatsApp with quotation details...');
+            if (!quotation) {
+                toast.error('Quotation data not available');
+                return;
             }
-            
+
+            const rawPhone = derived.customerPhone.replace(/\D/g, '');
+            const customerPhone = rawPhone && rawPhone !== '-' ? `91${rawPhone}` : '';
+
+            const templateData: WhatsAppTemplateData = {
+                qtno: quotation.quotationId || id,
+                cname: derived.customerName,
+                phone: customerPhone,
+                vname: [derived.vehicleName],
+                slex: derived.executiveName,
+                link: `${ENDPOINT}/api/quotation/generatePdf/${quotation.id}?withBrochure=true`,
+                linkWithoutBrochure: `${ENDPOINT}/api/quotation/generatePdf/${quotation.id}`,
+                dlr: derived.branchName,
+                customerId: quotation.customerId,
+                id: quotation.id,
+                // Branch coordinates → map URL appended in generateWhatsAppTemplate
+                branchLat: derived.branchLat,
+                branchLon: derived.branchLon,
+                branchName: derived.branchName !== '-' ? derived.branchName : undefined,
+                assignedExecutive: quotation.executive ? {
+                    id: quotation.executive.id,
+                    name: derived.executiveName,
+                    phone: quotation.executive.phone,
+                } : undefined,
+                assignedBranch: quotation.branch ? {
+                    id: quotation.branch.id,
+                    name: derived.branchName,
+                } : undefined,
+            };
+
+            const result = await handleWhatsAppShare(templateData);
+
+            if (result.success) {
+                toast.success('WhatsApp opened successfully!');
+            } else {
+                toast.error('Failed to open WhatsApp. Please try again.');
+            }
+
         } catch (error) {
             console.error('Error sharing on WhatsApp:', error);
             toast.error('Failed to open WhatsApp. Please try again.');
@@ -398,15 +437,15 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
     const handleDownloadPDF = async () => {
         try {
             toast.success('Preparing PDF download...');
-            
+
             // Construct the PDF URL directly to match web endpoint
             const baseUrl = ENDPOINT.replace(/\/$/, ''); // Remove trailing slash
             const pdfUrl = `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`;
-            
+
             // Open the PDF URL for download - this will show PDF in browser like web
             await Linking.openURL(pdfUrl);
             toast.success('Opening PDF for download...');
-            
+
         } catch (error) {
             console.error('Error downloading PDF:', error);
             toast.error('Failed to download PDF. Please try again.');
@@ -458,6 +497,46 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                         <View className="mb-4">
                             <FormLabel label="Branch" required />
                             <TextInput value={derived.branchName} editable={!isViewMode} className="h-12 bg-gray-100 border border-gray-300 rounded-xl px-4 text-gray-800" />
+
+                            {/* Google Maps link for branch location */}
+                            {derived.branchLat != null && derived.branchLon != null && (
+                                <TouchableOpacity
+                                    activeOpacity={0.75}
+                                    onPress={() =>
+                                        Linking.openURL(
+                                            `https://www.google.com/maps?q=${derived.branchLat},${derived.branchLon}`,
+                                        )
+                                    }
+                                    style={{
+                                        backgroundColor: '#f0fdf4',
+                                        borderColor: '#bbf7d0',
+                                        borderWidth: 1,
+                                        borderRadius: 10,
+                                        padding: 10,
+                                        marginTop: 8,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                    }}
+                                >
+                                    <MapPin size={18} color="#ef4444" fill="#ef4444" />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ fontSize: 11, color: '#15803d', fontWeight: '600' }}>
+                                            Google Map
+                                        </Text>
+                                        <Text
+                                            style={{
+                                                fontSize: 11,
+                                                color: '#166534',
+                                                textDecorationLine: 'underline',
+                                            }}
+                                            numberOfLines={1}
+                                        >
+                                            {`https://www.google.com/maps?q=${derived.branchLat},${derived.branchLon}`}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            )}
                         </View>
 
                         <View className="mb-4">
@@ -601,7 +680,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                                         console.log('� QUOTATIONFORM VEHICLE CLICKED!');
                                         console.log('� QUOTATIONFORM VEHICLE CLICKED!');
                                         console.log('� QUOTATIONFORM VEHICLE CLICKED!');
-                                        
+
                                         // Use actual customer payment details
                                         const actualPaymentDetails = derived.viewPaymentDetails || {
                                             paymentType: 'cash',
@@ -610,9 +689,9 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                                             financerTenure: { data: [] },
                                             priceDetails: derived.viewPaymentDetails?.priceDetails
                                         };
-                                        
+
                                         console.log('🚀 Using actual payment details:', actualPaymentDetails);
-                                        
+
                                         navigation.navigate('SelectPrice', {
                                             vehicleId: derived.viewVehicleId!,
                                             vehicleData: {

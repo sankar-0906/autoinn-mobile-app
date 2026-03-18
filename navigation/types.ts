@@ -22,7 +22,6 @@ export type RootStackParamList = {
     CustomerEdit: { customerId?: string; customerName?: string };
     ConfirmBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
-    JobCardsList: undefined;
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
     BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean; cameFrom?: string };
     BookingConfirmActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
