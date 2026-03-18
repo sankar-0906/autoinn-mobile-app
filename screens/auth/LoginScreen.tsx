@@ -13,7 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login, getCurrentUser } from '../../src/api';
+import { login } from '../../src/api';
+import { useAuth } from '../../src/context';
 import { Eye, EyeOff, Lock, Phone, Check } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
 import { useToast } from '../../src/ToastContext';
@@ -27,6 +28,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
     const [rememberMe, setRememberMe] = useState(false);
     const [loading, setLoading] = useState(false);
     const toast = useToast();
+    const { login: authLogin } = useAuth();
 
     useEffect(() => {
         (async () => {
@@ -57,40 +59,15 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
 
         setLoading(true);
         try {
-            const resp = await login(phone, password);
-
-
-            const data = resp?.data;
-            if (data && data.code === 200 && data.response && data.response.code === 200) {
-                const token = data.response.data.token;
-                if (token) {
-                    await AsyncStorage.setItem('token', token);
-                }
-
-                // fetch current user profile
-                try {
-                    const me = await getCurrentUser();
-                    const meData = me?.data;
-
-                    if (meData && meData.code === 200 && meData.response && meData.response.code === 200) {
-                        console.log("User Logged In --");
-
-                        await AsyncStorage.setItem('userProfile', JSON.stringify(meData.response.data));
-                    }
-                } catch (e) {
-                    // ignore profile fetch errors for now 8637432140
-                }
-
-                await AsyncStorage.setItem('isLoggedIn', 'true');
-                await AsyncStorage.setItem('userPhone', phone);
+            const success = await authLogin(phone, password);
+            
+            if (success) {
                 if (rememberMe) {
                     await AsyncStorage.setItem('rememberMe', 'true');
                     await AsyncStorage.setItem('rememberPhone', phone);
                     await AsyncStorage.setItem('rememberPassword', password);
                 } else {
-                    await AsyncStorage.removeItem('rememberMe');
-                    await AsyncStorage.removeItem('rememberPhone');
-                    await AsyncStorage.removeItem('rememberPassword');
+                    await AsyncStorage.multiRemove(['rememberMe', 'rememberPhone', 'rememberPassword']);
                 }
 
                 navigation.reset({
@@ -98,8 +75,7 @@ export default function LoginScreen({ navigation }: { navigation: LoginScreenNav
                     routes: [{ name: 'Main' }],
                 });
             } else {
-                const msg = (data && data.response && data.response.message) || 'Invalid credentials';
-                toast.error(msg);
+                toast.error('Invalid credentials');
             }
         } catch (error) {
             console.error('Login error', error);

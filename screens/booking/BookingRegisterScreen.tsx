@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -15,6 +15,8 @@ import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
+import { useBranch } from '../../src/context/branch';
+import { SelectField } from '../../components/ui/SelectField';
 
 const TABS = ['customer', 'vehicle', 'payment'] as const;
 
@@ -26,20 +28,6 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
         {label}
         {required && <Text className="text-red-500"> *</Text>}
     </Text>
-);
-
-// Select Field Component
-const SelectField = ({ label, value, onPress, required = false }: any) => (
-    <View className="mb-4">
-        <FormLabel label={label} required={required} />
-        <TouchableOpacity
-            onPress={onPress}
-            className="mt-1.5 px-3 py-2.5 border border-gray-300 rounded-lg bg-white flex-row items-center justify-between"
-        >
-            <Text className={value ? 'text-gray-900' : 'text-gray-500'}>{value || 'Select...'}</Text>
-            <ChevronDown size={18} color={COLORS.gray[400]} />
-        </TouchableOpacity>
-    </View>
 );
 
 // Text Input Field Component
@@ -80,11 +68,26 @@ const CurrencyField = ({ label, value, onChangeText, placeholder }: any) => (
 );
 
 export default function BookingRegisterScreen({ navigation }: { navigation: BookingRegisterNavigationProp }) {
+    console.log('🚀 BookingRegisterScreen - Component mounted');
+    
     const [activeTab, setActiveTab] = useState<'customer' | 'vehicle' | 'payment'>('customer');
+
+    // 🎯 Global Branch Service: GPS nearest → First available
+    const { branches, selectedBranch, nearestBranch, isLoading: branchLoading, error: branchError } = useBranch();
+    // Helper functions to match the old interface
+    const getBranchId = () => nearestBranch?.id || branches[0]?.id || null;
+    const getBranchName = () => nearestBranch?.name || branches[0]?.name || '-';
+
+    const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Branch options from global branch service
+    const branchOptions = useMemo(() =>
+        branches.map((branch: any) => ({ label: branch.name, value: branch.id }))
+        , [branches]);
 
     // Customer Data State
     const [customerData, setCustomerData] = useState({
-        branch: 'Devanahalli',
+        branch: '',
         phone: '',
         customerName: '',
         fatherName: '',
@@ -159,6 +162,45 @@ export default function BookingRegisterScreen({ navigation }: { navigation: Book
         navigation.goBack();
     };
 
+    // Auto-fill branch using the global branch service
+    useEffect(() => {
+        console.log('🔍 BookingRegister - Branch state:', { customerDataBranch: customerData.branch, branchLoading, selectedBranch, nearestBranch });
+        const autoBranchId = getBranchId();
+        const autoBranchName = getBranchName();
+        
+        console.log('🔍 BookingRegister - Auto branch data:', { autoBranchId, autoBranchName });
+
+        if (customerData.branch || branchLoading) return;
+
+        if (nearestBranch?.id) {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+            console.log('🎯 BookingRegister – Auto-filling nearest branch:', nearestBranch.name, `(${nearestBranch.id})`);
+            setCustomerData(prev => ({ ...prev, branch: nearestBranch.id }));
+            return;
+        }
+
+        // Wait briefly for nearestBranch; fallback to first branch if it doesn't arrive
+        if (!fallbackTimerRef.current && branches.length > 0) {
+            fallbackTimerRef.current = setTimeout(() => {
+                if (!nearestBranch?.id && !customerData.branch && branches.length > 0) {
+                    console.log('⚠️ BookingRegister – Nearest not ready, using first branch:', branches[0].name, `(${branches[0].id})`);
+                    setCustomerData(prev => ({ ...prev, branch: branches[0].id }));
+                }
+                fallbackTimerRef.current = null;
+            }, 1200);
+        }
+
+        return () => {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+        };
+    }, [branches, customerData.branch, branchLoading, nearestBranch, selectedBranch, getBranchId, getBranchName]);
+
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
             {/* Header */}
@@ -224,13 +266,27 @@ export default function BookingRegisterScreen({ navigation }: { navigation: Book
 }
 
 function CustomerTab({ data, setData }: any) {
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    
+    // Get branch options from global context
+    const { branches } = useBranch();
+    const branchOptions = useMemo(() =>
+        branches.map((branch: any) => ({ label: branch.name, value: branch.id }))
+        , [branches]);
+
     return (
         <View>
-            <TextInputField
-                label="Branch"
-                value={data.branch}
-                editable={false}
-            />
+            <View className="mb-4">
+                <FormLabel label="Branch" required />
+                <SelectField
+                    placeholder="Select Branch"
+                    value={data.branch}
+                    options={branchOptions}
+                    onSelect={(v) => setData(prev => ({ ...prev, branch: v }))}
+                    modalVisible={showBranchModal}
+                    setModalVisible={setShowBranchModal}
+                />
+            </View>
             <TextInputField
                 label="Phone"
                 placeholder="9876543210"

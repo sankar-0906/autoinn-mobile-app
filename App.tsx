@@ -33,18 +33,24 @@ ErrorUtils.setGlobalHandler((error, isFatal) => {
 });
 
 import { ToastProvider } from './src/ToastContext';
+import { AuthProvider } from './src/context/auth/AuthContext';
+import { BranchProvider } from './src/context/branch';
 
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ToastProvider>
-          <NavigationContainer>
-            <AppNavigator />
-          </NavigationContainer>
-        </ToastProvider>
-        <StatusBar style="auto" />
+        <AuthProvider>
+          <BranchProvider>
+            <ToastProvider>
+              <NavigationContainer>
+                <AppNavigator />
+              </NavigationContainer>
+            </ToastProvider>
+          </BranchProvider>
+        </AuthProvider>
       </SafeAreaProvider>
+      <StatusBar style="auto" />
     </GestureHandlerRootView>
   );
 }
