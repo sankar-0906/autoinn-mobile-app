@@ -241,7 +241,7 @@ export const handleWhatsAppShare = async (
       try {
         // Optionally track the message via API
         await sendWhatsAppMessage(templateData);
-        return { success: true, tracked: true };
+        return { success: true, tracked: true }; 
       } catch (trackingError) {
         console.warn('WhatsApp opened but tracking failed:', trackingError);
         return { success: true, tracked: false };
