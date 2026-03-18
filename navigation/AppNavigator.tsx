@@ -29,6 +29,7 @@ import AdvancedBookingScreen from '../screens/booking/AdvancedBookingScreen';
 import ConfirmBookingScreen from '../screens/customer/ConfirmBookingScreen';
 import { RootStackParamList } from './types';
 
+
 const Stack = createStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {

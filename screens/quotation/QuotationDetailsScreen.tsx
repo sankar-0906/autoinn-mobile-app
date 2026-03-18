@@ -6,15 +6,19 @@ import {
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { ChevronLeft, Calendar, User, MapPin, Truck, FileText } from 'lucide-react-native';
+import { ChevronLeft, Calendar, User, MapPin, Truck, FileText, Share2 } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { handleWhatsAppShare, WhatsAppTemplateData } from '../../src/whatsapp';
+import { ENDPOINT } from '../../src/api';
+import { useToast } from '../../src/ToastContext';
 
 type QuotationDetailsRouteProp = RouteProp<RootStackParamList, 'QuotationDetails'>;
 type NavigationProp = StackNavigationProp<RootStackParamList, 'QuotationDetails'>;
@@ -22,6 +26,51 @@ type NavigationProp = StackNavigationProp<RootStackParamList, 'QuotationDetails'
 export default function QuotationDetailsScreen({ navigation, route }: { navigation: NavigationProp; route: QuotationDetailsRouteProp }) {
     const { id } = route.params;
     const [status, setStatus] = useState(0);
+    const toast = useToast();
+
+    const handleShareOnWhatsApp = async () => {
+        try {
+            // Prepare mock quotation data (in real app, this would come from API)
+            const templateData: WhatsAppTemplateData = {
+                qtno: id,
+                cname: 'Rajesh Kumar',
+                phone: '919876543210',
+                vname: ['Ray ZR 125 Fi Hybrid Disc'],
+                slex: 'Sales Executive (+91-9876543210)',
+                link: `${ENDPOINT}/api/quotation/generatePdf/${id}?withBrochure=true`,
+                linkWithoutBrochure: `${ENDPOINT}/api/quotation/generatePdf/${id}`,
+                dlr: 'Main Branch',
+                customerId: '123',
+                id: id,
+                assignedExecutive: {
+                    id: 1,
+                    name: 'Sales Executive',
+                    phone: '+919876543210'
+                },
+                assignedBranch: {
+                    id: 1,
+                    name: 'Main Branch'
+                }
+            };
+
+            // Use the WhatsApp API to handle sharing
+            const result = await handleWhatsAppShare(templateData);
+            
+            if (result.success) {
+                if (result.tracked) {
+                    toast.success('WhatsApp opened and message tracked successfully!');
+                } else {
+                    toast.success('WhatsApp opened successfully!');
+                }
+            } else {
+                toast.error('Failed to open WhatsApp');
+            }
+            
+        } catch (error) {
+            console.error('Error sharing on WhatsApp:', error);
+            toast.error('Failed to open WhatsApp. Please try again.');
+        }
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
@@ -112,6 +161,13 @@ export default function QuotationDetailsScreen({ navigation, route }: { navigati
                                 className="flex-1"
                                 onPress={() => { }}
                                 icon={<FileText size={18} color={COLORS.primary} />}
+                            />
+                            <Button
+                                title="Share"
+                                variant="outline"
+                                className="flex-1"
+                                onPress={handleShareOnWhatsApp}
+                                icon={<Share2 size={18} color={COLORS.primary} />}
                             />
                             <Button
                                 title="Follow-Up"

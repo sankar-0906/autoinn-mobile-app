@@ -1,128 +1,126 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
-    FlatList,
     TouchableOpacity,
     TextInput,
     ScrollView,
     Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Plus, Phone, Clipboard, Clock, CheckCircle, ChevronRight } from 'lucide-react-native';
+import { Search, Filter, ChevronDown, X } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
+import { PendingSection } from './sections/PendingSection';
+import { InProgressSection } from './sections/InProgressSection';
+import { CompletedSection } from './sections/CompletedSection';
+import { JobCard } from '../../types/job-cards';
 
-interface JobCard {
-    id: string;
-    regNo: string;
-    customerName: string;
-    model: string;
-    serviceType: string;
-    date: string;
-    time: string;
-    status: "Vehicle Received" | "In Progress" | "Completed";
-    progress: number;
-}
-
-const mockJobCards: JobCard[] = [
+const MOCK_JOB_CARDS: JobCard[] = [
     {
         id: "JDE25-26/1053",
         regNo: "KA04JK3463",
         customerName: "Srinivas",
         model: "Alpha Disc",
         serviceType: "Paid (AW)",
+        mechanic: "-",
+        supervisor: "-",
+        serviceNumber: "-",
+        kms: 2000,
         date: "19-02-2026",
         time: "5:14:11 PM",
         status: "Vehicle Received",
         progress: 0,
     },
     {
-        id: "JDE25-26/1052",
-        regNo: "KA10EH8261",
-        customerName: "Guru Prasad",
-        model: "Ray ZR 125 Fi Hybrid Disc",
-        serviceType: "PDI",
-        date: "05-02-2026",
-        time: "3:57:42 PM",
-        status: "Vehicle Received",
-        progress: 0,
+        id: "JDE25-26/3520",
+        regNo: "KA04JKA2508",
+        customerName: "Aidan",
+        model: "R3",
+        serviceType: "Minor",
+        mechanic: "Mechanic V",
+        supervisor: "Supervisor A",
+        serviceNumber: "SRV-2508",
+        kms: 65850,
+        date: "29-10-2025",
+        time: "10:47:51 AM",
+        status: "In Progress",
+        progress: 50,
+    },
+    {
+        id: "JDE25-26/4559",
+        regNo: "KA05Y4893",
+        customerName: "Mohan",
+        model: "FZ S V2",
+        serviceType: "Minor",
+        mechanic: "Mechanic P",
+        supervisor: "Supervisor D",
+        serviceNumber: "SRV-4893",
+        kms: 65106,
+        date: "15-03-2026",
+        time: "9:54:11 AM",
+        status: "Completed",
+        progress: 100,
     },
 ];
 
-const TABS = ["Pending", "In Progress", "Completed", "All"];
+const TABS = ['Pending', 'In Progress', 'Completed', 'All'];
 
-export default function JobCardsListScreen() {
+export default function JobCardsListScreen({ navigation }: { navigation: any }) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState("Pending");
+    const [activeTab, setActiveTab] = useState('Pending');
+    const [loading, setLoading] = useState(false);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [showLimitOptions, setShowLimitOptions] = useState(false);
 
-    const filteredJobCards = mockJobCards.filter((jc) => {
-        if (activeTab === "Pending" && jc.status !== "Vehicle Received") return false;
-        if (activeTab === "In Progress" && jc.status !== "In Progress") return false;
-        if (activeTab === "Completed" && jc.status !== "Completed") return false;
+    const filteredData = useMemo(() => {
+        let data = MOCK_JOB_CARDS;
 
+        // Filter by Tab
+        if (activeTab === 'Pending') {
+            data = data.filter(item => item.status === 'Vehicle Received');
+        } else if (activeTab === 'In Progress') {
+            data = data.filter(item => item.status === 'In Progress');
+        } else if (activeTab === 'Completed') {
+            data = data.filter(item => item.status === 'Completed');
+        }
+
+        // Filter by Search
         if (searchQuery) {
-            return (
-                jc.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                jc.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                jc.regNo.toLowerCase().includes(searchQuery.toLowerCase())
+            const query = searchQuery.toLowerCase();
+            data = data.filter(item =>
+                item.id.toLowerCase().includes(query) ||
+                item.customerName.toLowerCase().includes(query) ||
+                item.regNo.toLowerCase().includes(query)
             );
         }
-        return true;
-    });
 
-    const renderJobCardItem = ({ item }: { item: JobCard }) => (
-        <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4 mx-4">
-            <View className="flex-row justify-between items-start mb-3">
-                <View>
-                    <Text className="text-teal-600 font-bold">{item.id}</Text>
-                    <Text className="text-gray-900 font-bold text-lg mt-0.5">{item.regNo}</Text>
-                </View>
-                <View className="bg-gray-100 px-3 py-1 rounded-full">
-                    <Text className="text-gray-600 text-xs font-bold uppercase">{item.status}</Text>
-                </View>
-            </View>
+        return data;
+    }, [activeTab, searchQuery]);
 
-            <View className="space-y-2 mb-4">
-                <View className="flex-row justify-between">
-                    <Text className="text-gray-500 text-sm">Customer</Text>
-                    <Text className="text-gray-900 font-medium">{item.customerName}</Text>
-                </View>
-                <View className="flex-row justify-between">
-                    <Text className="text-gray-500 text-sm">Model</Text>
-                    <Text className="text-gray-900 font-medium">{item.model}</Text>
-                </View>
-                <View className="flex-row justify-between">
-                    <Text className="text-gray-500 text-sm">Service</Text>
-                    <Text className="text-gray-900 font-medium">{item.serviceType}</Text>
-                </View>
-            </View>
+    const handleItemPress = (id: string) => {
+        // Navigate to job card details (future)
+        console.log('Pressed item:', id);
+    };
 
-            <View className="flex-row justify-between items-center pt-3 border-t border-gray-50">
-                <View className="flex-row items-center">
-                    <Clock size={14} color={COLORS.gray[400]} />
-                    <Text className="text-gray-500 text-xs ml-1">{item.date} {item.time}</Text>
-                </View>
-                <TouchableOpacity className="bg-teal-50 px-3 py-1.5 rounded-lg flex-row items-center border border-teal-100">
-                    <Phone size={14} color={COLORS.primary} />
-                    <Text className="text-teal-700 text-xs font-bold ml-1">Call</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Progress */}
-            <View className="mt-4 flex-row items-center justify-between px-2">
-                {[0, 50, 100].map((p, idx) => (
-                    <View key={idx} className="items-center">
-                        <View className={`w-3 h-3 rounded-full ${item.progress >= p ? 'bg-teal-600' : 'bg-gray-200'}`} />
-                    </View>
-                ))}
-                <View className="absolute top-1.5 left-4 right-4 h-0.5 bg-gray-100 -z-10" />
-            </View>
-        </View>
-    );
+    const renderSection = () => {
+        switch (activeTab) {
+            case 'Pending':
+                return <PendingSection data={filteredData} onItemPress={handleItemPress} loading={loading} onRefresh={() => { }} />;
+            case 'In Progress':
+                return <InProgressSection data={filteredData} onItemPress={handleItemPress} loading={loading} onRefresh={() => { }} />;
+            case 'Completed':
+                return <CompletedSection data={filteredData} onItemPress={handleItemPress} loading={loading} onRefresh={() => { }} />;
+            case 'All':
+                return <PendingSection data={filteredData} onItemPress={handleItemPress} loading={loading} onRefresh={() => { }} />;
+            default:
+                return null;
+        }
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
-            <View className="bg-white px-4 pb-4 pt-2 shadow-sm">
+            {/* Header */}
+            <View className="bg-white px-4 pb-4 pt-2 shadow-sm z-20" style={{ elevation: 8 }}>
                 <View className="items-center pt-2 pb-4">
                     <Image
                         source={require('../../assets/464dc6d161864c69f60b59f4ad74113c00404235.png')}
@@ -131,43 +129,101 @@ export default function JobCardsListScreen() {
                     />
                 </View>
                 <View className="flex-row items-center justify-between mb-4">
-                    <Text className="text-2xl font-bold text-gray-900">Job Cards</Text>
-                    <TouchableOpacity className="w-10 h-10 bg-teal-600 rounded-full items-center justify-center">
-                        <Plus color="white" size={24} />
+                    <View className="flex-row items-center">
+                        <Text className="text-[20px] font-bold text-gray-900 mr-3">
+                            Job Card [{filteredData.length}]
+                        </Text>
+                        <View className="relative">
+                            <TouchableOpacity
+                                onPress={() => setShowLimitOptions((prev) => !prev)}
+                                className="h-9 min-w-[55px] px-3 border border-gray-300 rounded-md bg-gray-100 flex-row items-center justify-center"
+                            >
+                                <Text className="text-sm font-medium text-gray-700 mr-1">{itemsPerPage}</Text>
+                                <ChevronDown size={14} color="#6B7280" />
+                            </TouchableOpacity>
+                            {showLimitOptions && (
+                                <View
+                                    className="absolute top-10 left-0 z-50 bg-white border border-gray-300 rounded-md overflow-hidden shadow-sm"
+                                    style={{ elevation: 20 }}
+                                >
+                                    {[10, 25, 50, 100].map((limit) => (
+                                        <TouchableOpacity
+                                            key={limit}
+                                            onPress={() => {
+                                                setItemsPerPage(limit);
+                                                setShowLimitOptions(false);
+                                            }}
+                                            className={`px-3 py-2 ${itemsPerPage === limit ? 'bg-teal-50' : 'bg-white'}`}
+                                        >
+                                            <Text className={`text-sm ${itemsPerPage === limit ? 'text-teal-700 font-semibold' : 'text-gray-700'}`}>
+                                                {limit}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                    <TouchableOpacity
+                        className="px-4 h-10 bg-teal-600 rounded-lg items-center justify-center"
+                    >
+                        <Text className="text-white font-semibold text-sm">Add Job Card</Text>
                     </TouchableOpacity>
                 </View>
 
-                <View className="flex-row items-center bg-gray-100 rounded-xl px-4 h-12">
-                    <Search size={20} color={COLORS.gray[400]} />
-                    <TextInput
-                        placeholder="Search Job Order"
-                        className="flex-1 ml-2 text-gray-900"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                    />
+                {/* Search */}
+                <View className="flex-row items-center">
+                    <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-4 h-12">
+                        <Search size={20} color={COLORS.gray[400]} />
+                        <TextInput
+                            placeholder="Search Job Order"
+                            className="flex-1 ml-2 text-gray-900"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')} className="ml-2 p-1">
+                                <X size={16} color={COLORS.gray[400]} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <TouchableOpacity className="ml-3 bg-teal-50 p-3 rounded-xl">
+                        <Filter size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
                 </View>
             </View>
 
+            {/* Tabs */}
             <View className="bg-white">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
+                >
                     {TABS.map((tab) => (
                         <TouchableOpacity
                             key={tab}
                             onPress={() => setActiveTab(tab)}
-                            className={`mr-3 px-6 py-2 rounded-full border ${activeTab === tab ? 'bg-teal-600 border-teal-600' : 'bg-white border-gray-200'}`}
+                            className={`mr-3 px-6 py-2 rounded-full border ${activeTab === tab
+                                ? 'bg-teal-600 border-teal-600'
+                                : 'bg-white border-gray-200'
+                                }`}
                         >
-                            <Text className={`text-sm font-bold ${activeTab === tab ? 'text-white' : 'text-gray-600'}`}>{tab}</Text>
+                            <Text
+                                className={`text-sm font-bold capitalize ${activeTab === tab ? 'text-white' : 'text-gray-600'
+                                    }`}
+                            >
+                                {tab}
+                            </Text>
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
             </View>
 
-            <FlatList
-                data={filteredJobCards}
-                renderItem={renderJobCardItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={{ paddingVertical: 16 }}
-            />
+            {/* List Content */}
+            <View className="flex-1">
+                {renderSection()}
+            </View>
         </SafeAreaView>
     );
 }
