@@ -31,6 +31,7 @@ import { RootStackParamList } from './types';
 import AddJobCardScreen from '../screens/job-cards/AddJobCardScreen';
 import JobCardFiltersScreen from '../screens/job-cards/JobCardFiltersScreen';
 import UpdateCustomerScreen from '../screens/job-cards/UpdateCustomerScreen';
+import LocationGateScreen from '../screens/location/LocationGateScreen';
 
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -38,11 +39,12 @@ const Stack = createStackNavigator<RootStackParamList>();
 export default function AppNavigator() {
     return (
         <Stack.Navigator
-            initialRouteName="Login"
+            initialRouteName="LocationGate"
             screenOptions={{
                 headerShown: false,
             }}
         >
+            <Stack.Screen name="LocationGate" component={LocationGateScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Main" component={TabNavigator} />
             <Stack.Screen name="QuotationDetails" component={QuotationDetailsScreen} />

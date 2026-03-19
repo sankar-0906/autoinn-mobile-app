@@ -29,36 +29,36 @@ export const getCompanyInfo = async (): Promise<string> => {
 /**
  * Generates dynamic WhatsApp message template
  */
-export const generateWhatsAppTemplate = async (data: WhatsAppMessageData): Promise<string> => {
-  try {
-    // Fetch company name dynamically
-    const companyName = data.companyName || await getCompanyInfo();
+// export const generateWhatsAppTemplate = async (data: WhatsAppMessageData): Promise<string> => {
+//   try {
+//     // Fetch company name dynamically
+//     const companyName = data.companyName || await getCompanyInfo();
 
-    // Line 1 – Enquiry greeting
-    const line1 = `Thank you for your enquiry${companyName ? ` with ${companyName}` : ''}.`;
+//     // Line 1 – Enquiry greeting
+//     const line1 = `Thank you for your enquiry${companyName ? ` with ${companyName}` : ''}.`;
 
-    // Line 2 – Sales executive info
-    const line2 = data.salesName && data.salesNo
-      ? `You can reach out to our Sales Executive ${data.salesName} - ${data.salesNo}.`
-      : 'We will get back to you shortly.';
+//     // Line 2 – Sales executive info
+//     const line2 = data.salesName && data.salesNo
+//       ? `You can reach out to our Sales Executive ${data.salesName} - ${data.salesNo}.`
+//       : 'We will get back to you shortly.';
 
-    // Line 3 – Branch map URL (only if coordinates are available)
-    const mapUrl =
-      data.branchLat != null && data.branchLon != null
-        ? `https://www.google.com/maps?q=${data.branchLat},${data.branchLon}`
-        : null;
-    const line3 = mapUrl
-      ? `Find our ${data.branchName ? data.branchName + ' ' : ''}branch using this map URL: ${mapUrl}`
-      : null;
+//     // Line 3 – Branch map URL (only if coordinates are available)
+//     const mapUrl =
+//       data.branchLat != null && data.branchLon != null
+//         ? `https://www.google.com/maps?q=${data.branchLat},${data.branchLon}`
+//         : null;
+//     const line3 = mapUrl
+//       ? `Find our ${data.branchName ? data.branchName + ' ' : ''}branch using this map URL: ${mapUrl}`
+//       : null;
 
-    // Join non-null lines
-    return [line1, line2, line3].filter(Boolean).join('\n');
+//     // Join non-null lines
+//     return [line1, line2, line3].filter(Boolean).join('\n');
 
-  } catch (error) {
-    console.error('Error generating WhatsApp template:', error);
-    return 'Thank you for your enquiry. We will get back to you shortly.';
-  }
-};
+//   } catch (error) {
+//     console.error('Error generating WhatsApp template:', error);
+//     return 'Thank you for your enquiry. We will get back to you shortly.';
+//   }
+// };
 
 /**
  * Opens WhatsApp with pre-filled message
@@ -103,46 +103,46 @@ export const openWhatsApp = async (phoneNumber: string, message: string): Promis
 /**
  * Share quotation via WhatsApp with dynamic template
  */
-export const shareQuotationViaWhatsApp = async (
-  templateData: WhatsAppTemplateData,
-  phoneNumber?: string
-): Promise<boolean> => {
-  try {
-    // Use provided phone number or fallback to template data
-    const phone = phoneNumber || templateData.phone || '';
+// export const shareQuotationViaWhatsApp = async (
+//   templateData: WhatsAppTemplateData,
+//   phoneNumber?: string
+// ): Promise<boolean> => {
+//   try {
+//     // Use provided phone number or fallback to template data
+//     const phone = phoneNumber || templateData.phone || '';
 
-    if (!phone) {
-      Alert.alert('Error', 'Customer phone number is required');
-      return false;
-    }
+//     if (!phone) {
+//       Alert.alert('Error', 'Customer phone number is required');
+//       return false;
+//     }
 
-    // Prepare WhatsApp message data
-    const messageData: WhatsAppMessageData = {
-      customerNo: phone,
-      salesName: templateData.assignedExecutive?.name,
-      salesNo: templateData.assignedExecutive?.phone,
-      companyName: '', // Will be fetched dynamically
-      quotationId: templateData.qtno,
-      customerName: templateData.cname,
-      vehicleNames: Array.isArray(templateData.vname) ? templateData.vname : [templateData.vname || ''],
-      link: templateData.link,
-      // Branch location for map URL
-      branchLat: templateData.branchLat,
-      branchLon: templateData.branchLon,
-      branchName: templateData.branchName,
-    };
+//     // Prepare WhatsApp message data
+//     const messageData: WhatsAppMessageData = {
+//       customerNo: phone,
+//       salesName: templateData.assignedExecutive?.name,
+//       salesNo: templateData.assignedExecutive?.phone,
+//       companyName: '', // Will be fetched dynamically
+//       quotationId: templateData.qtno,
+//       customerName: templateData.cname,
+//       vehicleNames: Array.isArray(templateData.vname) ? templateData.vname : [templateData.vname || ''],
+//       link: templateData.link,
+//       // Branch location for map URL
+//       branchLat: templateData.branchLat,
+//       branchLon: templateData.branchLon,
+//       branchName: templateData.branchName,
+//     };
 
-    // Generate dynamic message template
-    const message = await generateWhatsAppTemplate(messageData);
+//     // Generate dynamic message template
+//     const message = await generateWhatsAppTemplate(messageData);
 
-    // Open WhatsApp with the message
-    return await openWhatsApp(phone, message);
-  } catch (error) {
-    console.error('Error sharing quotation via WhatsApp:', error);
-    Alert.alert('Error', 'Failed to share quotation via WhatsApp');
-    return false;
-  }
-};
+//     // Open WhatsApp with the message
+//     return await openWhatsApp(phone, message);
+//   } catch (error) {
+//     console.error('Error sharing quotation via WhatsApp:', error);
+//     Alert.alert('Error', 'Failed to share quotation via WhatsApp');
+//     return false;
+//   }
+// };
 
 /**
  * Build Quotation WhatsApp template message from payload
@@ -229,14 +229,15 @@ export const checkWhatsAppStatus = async (messageId: string, whatsAppId: string)
 /**
  * Main function to handle WhatsApp sharing with both direct opening and API tracking
  */
-export const handleWhatsAppShare = async (
-  templateData: WhatsAppTemplateData,
-  phoneNumber?: string
-): Promise<{ success: boolean; tracked?: boolean }> => {
-  try {
-    // First, try to open WhatsApp directly for immediate sharing
-    const whatsappOpened = await shareQuotationViaWhatsApp(templateData, phoneNumber);
+// export const handleWhatsAppShare = async (
+//   templateData: WhatsAppTemplateData,
+//   phoneNumber?: string
+// ): Promise<{ success: boolean; tracked?: boolean }> => {
+//   try {
+//     // First, try to open WhatsApp directly for immediate sharing
+//     const whatsappOpened = await shareQuotationViaWhatsApp(templateData, phoneNumber);
 
+<<<<<<< HEAD
     if (whatsappOpened) {
       try {
         // Optionally track the message via API
@@ -247,10 +248,22 @@ export const handleWhatsAppShare = async (
         return { success: true, tracked: false };
       }
     }
+=======
+//     if (whatsappOpened) {
+//       try {
+//         // Optionally track the message via API
+//         await sendWhatsAppMessage(templateData);
+//         return { success: true, tracked: true };
+//       } catch (trackingError) {
+//         console.warn('WhatsApp opened but tracking failed:', trackingError);
+//         return { success: true, tracked: false };
+//       }
+//     }
+>>>>>>> e34393b (WhatsApp Message and Branch Auto-Fill feature Updated)
 
-    return { success: false };
-  } catch (error) {
-    console.error('Error in WhatsApp share flow:', error);
-    return { success: false };
-  }
-};
+//     return { success: false };
+//   } catch (error) {
+//     console.error('Error in WhatsApp share flow:', error);
+//     return { success: false };
+//   }
+// };

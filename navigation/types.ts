@@ -1,6 +1,7 @@
 
 
 export type RootStackParamList = {
+    LocationGate: undefined;
     Login: undefined;
     Main: undefined;
     QuotationDetails: { id: string };

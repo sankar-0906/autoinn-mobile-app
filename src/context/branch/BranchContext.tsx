@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { getBranches } from '../../api';
@@ -126,45 +127,63 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   }, [branches]);
 
   // Nearest Branch Logic
-  useEffect(() => {
-    console.log('📍 BranchContext - Nearest branch effect triggered, branches count:', branches.length);
+  const computeNearestBranch = async () => {
+    console.log('📍 BranchContext - Computing nearest branch, branches count:', branches.length);
     if (branches.length === 0) return;
 
-    const findNearest = async () => {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('📍 BranchContext - Permission to access location was denied');
-          setNearestBranch(branches[0]);
-          return;
-        }
-
-        let location = await Location.getCurrentPositionAsync({});
-        const userLat = location.coords.latitude;
-        const userLon = location.coords.longitude;
-
-        let nearest = branches[0];
-        let minDistance = -1;
-
-        branches.forEach((branch) => {
-          if (branch.lat != null && branch.lon != null) {
-            const distance = getDistance(userLat, userLon, branch.lat, branch.lon);
-            if (minDistance === -1 || distance < minDistance) {
-              minDistance = distance;
-              nearest = branch;
-            }
-          }
-        });
-
-        console.log('📍 BranchContext - Nearest branch set:', nearest?.name);
-        setNearestBranch(nearest || branches[0]);
-      } catch (err) {
-        console.error('💥 BranchContext - Error getting nearest branch:', err);
+    try {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        console.log('📍 BranchContext - Location services disabled, skipping permission prompt');
         setNearestBranch(branches[0]);
+        return;
+      }
+
+      const perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        console.log('📍 BranchContext - Location permission not granted, skipping prompt');
+        setNearestBranch(branches[0]);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const userLat = location.coords.latitude;
+      const userLon = location.coords.longitude;
+
+      let nearest = branches[0];
+      let minDistance = -1;
+
+      branches.forEach((branch) => {
+        if (branch.lat != null && branch.lon != null) {
+          const distance = getDistance(userLat, userLon, branch.lat, branch.lon);
+          if (minDistance === -1 || distance < minDistance) {
+            minDistance = distance;
+            nearest = branch;
+          }
+        }
+      });
+
+      console.log('📍 BranchContext - Nearest branch set:', nearest?.name);
+      setNearestBranch(nearest || branches[0]);
+    } catch (err) {
+      console.error('💥 BranchContext - Error getting nearest branch:', err);
+      setNearestBranch(branches[0]);
+    }
+  };
+
+  useEffect(() => {
+    console.log('📍 BranchContext - Nearest branch effect triggered, branches count:', branches.length);
+    computeNearestBranch();
+  }, [branches]);
+
+  useEffect(() => {
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        computeNearestBranch();
       }
     };
-
-    findNearest();
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
   }, [branches]);
 
   const value: BranchContextType = {
