@@ -1,6 +1,7 @@
 
 
 export type RootStackParamList = {
+    LocationGate: undefined;
     Login: undefined;
     Main: undefined;
     QuotationDetails: { id: string };
@@ -22,7 +23,6 @@ export type RootStackParamList = {
     CustomerEdit: { customerId?: string; customerName?: string };
     ConfirmBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
-    JobCardsList: undefined;
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
     BookingActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean; cameFrom?: string };
     BookingConfirmActivity: { id?: string; customerName?: string; customerId?: string; customerPhone?: string; selectedVehicle?: any; scrollToSection?: string; isAdvancedBooking?: boolean; isConfirmBooking?: boolean };
@@ -31,6 +31,10 @@ export type RootStackParamList = {
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
     VehicleDetails: { vehicle: any; mode?: 'view' | 'edit'; selectedVehicleData?: any };
     FollowUpQuotationForm: { customerName?: string; customerPhone?: string; locality?: string; customerType?: string; gender?: string };
+    // Job Cards
+    AddJobCard: undefined;
+    JobCardFilters: undefined;
+    UpdateCustomer: { customerName?: string; mobileNo?: string; customerId?: string };
 };
 
 export type TabParamList = {

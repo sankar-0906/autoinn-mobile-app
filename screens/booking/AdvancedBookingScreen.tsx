@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -18,6 +18,8 @@ import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { getCustomerByPhoneNo } from '../../src/api';
+import { useBranch } from '../../src/context/branch';
+import { SelectField } from '../../components/ui/SelectField';
 
 type AdvancedBookingNavigationProp = StackNavigationProp<RootStackParamList, 'AdvancedBooking'>;
 
@@ -29,9 +31,10 @@ interface PhoneNumber {
     dnd: string;
 }
 
-export default function AdvancedBookingScreen() {
+export default function AdvancedBookingScreen({ navigation }: { navigation: AdvancedBookingNavigationProp }) {
+    console.log('🚀 AdvancedBookingScreen - Component mounted');
+
     const route = useRoute();
-    const navigation = useNavigation<AdvancedBookingNavigationProp>();
     const { customerId, customerName, phoneNumbers } = route.params as {
         customerId?: string;
         customerName?: string;
@@ -46,8 +49,21 @@ export default function AdvancedBookingScreen() {
         { id: 3, label: 'Payment Data', icon: 'card-outline' },
     ];
 
+    // 🎯 Global Branch Service: GPS nearest → First available
+    const { branches, selectedBranch, nearestBranch, isLoading: branchLoading, error: branchError } = useBranch();
+    // Helper functions to match the old interface
+    const getBranchId = () => nearestBranch?.id || branches[0]?.id || null;
+    const getBranchName = () => nearestBranch?.name || branches[0]?.name || '-';
+
     // Form state
     const [branch, setBranch] = useState('');
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Branch options from global branch service
+    const branchOptions = useMemo(() =>
+        branches.map((branch: any) => ({ label: branch.name, value: branch.id }))
+        , [branches]);
     const [phone, setPhone] = useState('');
     const [customerFullName, setCustomerFullName] = useState('');
     const [fatherName, setFatherName] = useState('');
@@ -131,7 +147,6 @@ export default function AdvancedBookingScreen() {
     const [hp, setHp] = useState('');
 
     // Dropdown data
-    const [branches, setBranches] = useState<any[]>([]);
     const [countries, setCountries] = useState<any[]>([]);
     const [states, setStates] = useState<any[]>([]);
     const [cities, setCities] = useState<any[]>([]);
@@ -199,19 +214,45 @@ export default function AdvancedBookingScreen() {
         }
     };
 
-    const fetchBranches = async () => {
-        try {
-            const mockBranches = [
-                { id: '1', name: 'Main Branch' },
-                { id: '2', name: 'North Branch' },
-                { id: '3', name: 'South Branch' },
-            ];
-            setBranches(mockBranches);
-            setBranch((prev) => prev || mockBranches[0]?.name || '');
-        } catch (error) {
-            console.error('Error fetching branches:', error);
+    // Auto-fill branch using the global branch service
+    useEffect(() => {
+        console.log('🔍 AdvancedBooking - Branch state:', { branch, branchLoading, selectedBranch, nearestBranch });
+        const autoBranchId = getBranchId();
+        const autoBranchName = getBranchName();
+        
+        console.log('🔍 AdvancedBooking - Auto branch data:', { autoBranchId, autoBranchName });
+
+        if (branchLoading) return;
+        if (branch) return;
+
+        if (nearestBranch?.id) {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+            console.log('🎯 AdvancedBooking – Auto-filling nearest branch:', nearestBranch.name, `(${nearestBranch.id})`);
+            setBranch(nearestBranch.id);
+            return;
         }
-    };
+
+        // Wait briefly for nearestBranch; fallback to first branch if it doesn't arrive
+        if (!fallbackTimerRef.current && branches.length > 0) {
+            fallbackTimerRef.current = setTimeout(() => {
+                if (!nearestBranch?.id && !branch && branches.length > 0) {
+                    console.log('⚠️ AdvancedBooking – Nearest not ready, using first branch:', branches[0].name, `(${branches[0].id})`);
+                    setBranch(branches[0].id);
+                }
+                fallbackTimerRef.current = null;
+            }, 1200);
+        }
+
+        return () => {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+        };
+    }, [branches, branch, branchLoading, nearestBranch, selectedBranch, getBranchId, getBranchName]);
 
     const fetchManufacturers = async () => {
         try {
@@ -414,7 +455,6 @@ export default function AdvancedBookingScreen() {
     // Initialize data on component mount
     useEffect(() => {
         fetchCountries();
-        fetchBranches();
         fetchManufacturers();
         fetchFinanciers();
         fetchSalesOfficers();
@@ -526,11 +566,13 @@ export default function AdvancedBookingScreen() {
                     <Text className="text-sm font-medium text-gray-700 mb-2 mt-2">
                         <Text className="text-red-500">*</Text> Branch
                     </Text>
-                    <TextInput
+                    <SelectField
+                        placeholder="Select Branch"
                         value={branch}
-                        onChangeText={setBranch}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
-                        editable={false}
+                        options={branchOptions}
+                        onSelect={(v) => setBranch(v)}
+                        modalVisible={showBranchModal}
+                        setModalVisible={setShowBranchModal}
                     />
                 </View>
 

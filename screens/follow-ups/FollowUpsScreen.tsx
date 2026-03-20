@@ -15,6 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { getFollowUps } from '../../src/api';
 import { ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface FollowUp {
     id: string; // phone as unique identifier for this list
@@ -97,6 +98,12 @@ export default function FollowUpsScreen({ navigation }: { navigation: FollowUpsN
         setCurrentPage(1);
     }, [searchQuery, activeTab, itemsPerPage]);
 
+    useFocusEffect(
+        useCallback(() => {
+            fetchFollowUps();
+        }, [fetchFollowUps])
+    );
+
     // Listen for quotation status updates to refresh FollowUps
     useEffect(() => {
         const subscription = DeviceEventEmitter.addListener('refreshFollowUps', () => {
@@ -104,6 +111,15 @@ export default function FollowUpsScreen({ navigation }: { navigation: FollowUpsN
             fetchFollowUps();
         });
 
+        return () => {
+            subscription.remove();
+        };
+    }, [fetchFollowUps]);
+
+    useEffect(() => {
+        const subscription = DeviceEventEmitter.addListener('refreshBranches', () => {
+            fetchFollowUps();
+        });
         return () => {
             subscription.remove();
         };

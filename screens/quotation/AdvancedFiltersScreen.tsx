@@ -533,9 +533,11 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
                         <View className="flex-row items-center justify-between mb-3">
                             <Text className="text-gray-900 font-bold text-lg">Select Expected Purchase Start Date</Text>
-                            <TouchableOpacity onPress={() => setShowExpectedStartPicker(false)}>
-                                <X size={20} color={COLORS.gray[700]} />
-                            </TouchableOpacity>
+                            <View className="flex-row items-center">
+                                <TouchableOpacity onPress={() => setShowExpectedStartPicker(false)}>
+                                    <X size={20} color={COLORS.gray[700]} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <RNCalendar
                             current={expectedStartDate ? expectedStartDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
@@ -575,9 +577,11 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
                         <View className="flex-row items-center justify-between mb-3">
                             <Text className="text-gray-900 font-bold text-lg">Select Expected Purchase End Date</Text>
-                            <TouchableOpacity onPress={() => setShowExpectedEndPicker(false)}>
-                                <X size={20} color={COLORS.gray[700]} />
-                            </TouchableOpacity>
+                            <View className="flex-row items-center">
+                                <TouchableOpacity onPress={() => setShowExpectedEndPicker(false)}>
+                                    <X size={20} color={COLORS.gray[700]} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <RNCalendar
                             current={expectedEndDate ? expectedEndDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
@@ -617,9 +621,11 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
                         <View className="flex-row items-center justify-between mb-3">
                             <Text className="text-gray-900 font-bold text-lg">Select Quotation Issued Start Date</Text>
-                            <TouchableOpacity onPress={() => setShowIssuedStartPicker(false)}>
-                                <X size={20} color={COLORS.gray[700]} />
-                            </TouchableOpacity>
+                            <View className="flex-row items-center">
+                                <TouchableOpacity onPress={() => setShowIssuedStartPicker(false)}>
+                                    <X size={20} color={COLORS.gray[700]} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <RNCalendar
                             current={issuedStartDate ? issuedStartDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
@@ -659,9 +665,11 @@ export default function AdvancedFiltersScreen({ navigation }: any) {
                     <Pressable className="mx-4 bg-white rounded-2xl p-3 w-full max-w-sm" onPress={() => {}}>
                         <View className="flex-row items-center justify-between mb-3">
                             <Text className="text-gray-900 font-bold text-lg">Select Quotation Issued End Date</Text>
-                            <TouchableOpacity onPress={() => setShowIssuedEndPicker(false)}>
-                                <X size={20} color={COLORS.gray[700]} />
-                            </TouchableOpacity>
+                            <View className="flex-row items-center">
+                                <TouchableOpacity onPress={() => setShowIssuedEndPicker(false)}>
+                                    <X size={20} color={COLORS.gray[700]} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <RNCalendar
                             current={issuedEndDate ? issuedEndDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}

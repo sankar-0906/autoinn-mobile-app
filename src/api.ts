@@ -5,13 +5,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
 // const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
-const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
-
+// const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
+const DEFAULT_ENDPOINT = 'http://10.176.131.232:4000'
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
 
 const platformApi = axios.create({
-  
+
   baseURL: ENDPOINT,
   headers: {
     'Content-Type': 'application/json',
@@ -34,7 +34,7 @@ const addRequestInterceptor = (apiInstance: any) => {
       if (token) {
         config.headers = config.headers || {};
         config.headers['x-access-token'] = token;
-        
+
         // Debug: Log token for authorization requests
         if (config.url?.includes('/authorise')) {
           console.log('🔐 Authorization Request - Token present:', !!token);
@@ -57,24 +57,24 @@ platformApi.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { config, code } = error;
-    
+
     // Retry logic for timeouts and 504 errors
     if ((code === 'ECONNABORTED' || error.response?.status === 504) && !config._retry) {
       config._retry = true;
       config._retryCount = config._retryCount || 0;
-      
+
       if (config._retryCount < 3) {
         config._retryCount += 1;
         console.log(`🔄 Retrying request (attempt ${config._retryCount}/3):`, config.url);
-        
+
         // Exponential backoff: 1s, 2s, 4s
         const delay = 1000 * Math.pow(2, config._retryCount - 1);
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         return platformApi(config);
       }
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -87,12 +87,17 @@ export const getCurrentUser = () => {
   return platformApi.get('/api/user/currentUser');
 };
 
+// Update token based on selected branches (matches web behaviour)
+export const updateUserTokenBranches = (branchIds: string[]) => {
+  return platformApi.post('/api/user/token', { branch: branchIds });
+};
+
 export const getUserCount = () => {
   return platformApi.get('/api/user/count');
 };
 
 export const getQuotations = (body: any) => {
-  console.log("endpoint : ",ENDPOINT);
+  console.log("endpoint : ", ENDPOINT);
   return platformApi.post('/api/quotation/get', body);
 };
 
@@ -505,6 +510,12 @@ export const uploadVehicleInsurance = (fileData: FormData) => {
   });
 };
 
+export const uploadJobOrderImage = (fileData: FormData) => {
+  return platformApi.post('/api/upload/image', fileData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
 // Bulk Insurance Upload API - matching web project
 export const bulkInsuranceUpload = (insuranceData: { insuranceData: any[] }) => {
   return platformApi.post('/api/insurance/bulk', insuranceData);
@@ -512,10 +523,10 @@ export const bulkInsuranceUpload = (insuranceData: { insuranceData: any[] }) => 
 
 // Authentication APIs - matching web project
 export const authoriseBooking = (bookingId: string, password: string, status: string) => {
-  return platformApi.post('/api/booking/authorise', { 
-    bookingId, 
-    password, 
-    status 
+  return platformApi.post('/api/booking/authorise', {
+    bookingId,
+    password,
+    status
   });
 };
 
