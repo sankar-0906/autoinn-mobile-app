@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Filter, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../../constants/colors';
 import { PendingSection } from './sections/PendingSection';
@@ -18,6 +18,8 @@ import { InProgressSection } from './sections/InProgressSection';
 import { CompletedSection } from './sections/CompletedSection';
 import { useJobCards } from '../../src/hooks/job-cards/useJobCards';
 import type { TabStatus, JobCardRecord, JobCardFilter } from '../../types/job-cards';
+import { useBranch } from '../../src/context/branch';
+import { DeviceEventEmitter } from 'react-native';
 
 const TABS: { label: string; apiStatus: TabStatus }[] = [
     { label: 'Pending', apiStatus: 'PENDING' },
@@ -27,6 +29,8 @@ const TABS: { label: string; apiStatus: TabStatus }[] = [
 ];
 
 export default function JobCardsListScreen({ navigation }: { navigation: any }) {
+    const route = useRoute<any>();
+    const { selectedBranches } = useBranch();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTabIndex, setActiveTabIndex] = useState(0);
     const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -119,10 +123,29 @@ export default function JobCardsListScreen({ navigation }: { navigation: any }) 
     // Re-fetch when screen comes into focus (e.g. after returning from filter screen)
     useFocusEffect(
         useCallback(() => {
+            const shouldClear = route?.params?.clearSearch;
+            const effectiveSearch = shouldClear ? '' : searchQuery;
+            if (shouldClear) setSearchQuery('');
+            loadAndFetch(currentTabStatus, effectiveSearch, 1);
+            setPage(1);
+            if (route?.params?.refresh || route?.params?.clearSearch) {
+                navigation.setParams({ refresh: undefined, clearSearch: undefined });
+            }
+        }, [currentTabStatus, searchQuery, route?.params?.clearSearch, route?.params?.refresh])
+    );
+
+    useEffect(() => {
+        loadAndFetch(currentTabStatus, searchQuery, 1);
+        setPage(1);
+    }, [selectedBranches]);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('refreshBranches', () => {
             loadAndFetch(currentTabStatus, searchQuery, 1);
             setPage(1);
-        }, [currentTabStatus])
-    );
+        });
+        return () => sub.remove();
+    }, [currentTabStatus, searchQuery, loadAndFetch]);
 
     // Handle tab switch
     const handleTabChange = (index: number) => {

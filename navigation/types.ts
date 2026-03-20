@@ -1,6 +1,7 @@
 
 
 export type RootStackParamList = {
+    LocationGate: undefined;
     Login: undefined;
     Main: undefined;
     QuotationDetails: { id: string };
@@ -33,7 +34,7 @@ export type RootStackParamList = {
     // Job Cards
     AddJobCard: undefined;
     JobCardFilters: undefined;
-    UpdateCustomer: { customerName?: string; mobileNo?: string };
+    UpdateCustomer: { customerName?: string; mobileNo?: string; customerId?: string };
 };
 
 export type TabParamList = {

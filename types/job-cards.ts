@@ -33,7 +33,12 @@ export interface JobCardVehicle {
     engineNo?: string;
     batteryNo?: string;
     insuranceExpiryDate?: string;
+    dateOfSale?: string;
+    mfg?: string;
+    mfgDate?: string;
     vehicle: JobCardVehicleModel;
+    manufacturer?: { id?: string; name?: string };
+    image?: Array<{ url?: string; color?: string; colorCode?: string; code?: string }>;
     color?: JobCardColor;
     customer?: Array<{ id: string; customer: JobCardCustomer }>;
     jobOrder?: any[];

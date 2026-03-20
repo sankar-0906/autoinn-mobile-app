@@ -5,8 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
 // const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
-const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
-
+const DEFAULT_ENDPOINT = 'https://test.autocloud.in/'; //10.176.131.13
+// const DEFAULT_ENDPOINT = 'http://10.176.131.232:4000'
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
 
@@ -85,6 +85,11 @@ export const login = (phone: string, password: string) => {
 
 export const getCurrentUser = () => {
   return platformApi.get('/api/user/currentUser');
+};
+
+// Update token based on selected branches (matches web behaviour)
+export const updateUserTokenBranches = (branchIds: string[]) => {
+  return platformApi.post('/api/user/token', { branch: branchIds });
 };
 
 export const getUserCount = () => {
@@ -501,6 +506,12 @@ export const deleteVehicleFile = (deleteData: { delid?: string; type?: string; u
 
 export const uploadVehicleInsurance = (fileData: FormData) => {
   return platformApi.post('/api/upload/vehicleInsurance', fileData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const uploadJobOrderImage = (fileData: FormData) => {
+  return platformApi.post('/api/upload/image', fileData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
 };

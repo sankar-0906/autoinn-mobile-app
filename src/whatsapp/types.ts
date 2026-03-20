@@ -7,6 +7,7 @@ export interface WhatsAppTemplateData {
   link?: string;
   linkWithoutBrochure?: string;
   dlr?: string;
+  gmLink?: string;
   customerId?: string;
   id?: string;
   assignedBranch?: {

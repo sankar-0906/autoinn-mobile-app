@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { getBranches } from '../../api';
@@ -37,6 +38,7 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   console.log('🌐 BranchProvider - Provider mounted');
   
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranches, setSelectedBranchesState] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   const [employeeBranch, setEmployeeBranch] = useState<Branch | null>(null);
   const [nearestBranch, setNearestBranch] = useState<Branch | null>(null);
@@ -115,6 +117,20 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   useEffect(() => {
     console.log('🌐 BranchContext - Initializing, fetching branches...');
     fetchBranches();
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('selectedBranches');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setSelectedBranchesState(parsed);
+            console.log('🧭 BranchContext - Loaded selected branches:', parsed.length);
+          }
+        }
+      } catch (err) {
+        console.error('💥 BranchContext - Error loading selected branches:', err);
+      }
+    })();
   }, []);
 
   // Get employee branch when branches are loaded
@@ -125,56 +141,113 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
     }
   }, [branches]);
 
-  // Nearest Branch Logic
+  // Set default selected branch (Devanahalli) when nothing is selected yet
   useEffect(() => {
-    console.log('📍 BranchContext - Nearest branch effect triggered, branches count:', branches.length);
+    if (!branches.length || selectedBranches.length) return;
+    const byName = branches.find((b) => {
+      const name = b.name?.toLowerCase() || '';
+      return name === 'devanahalli' || name === 'devanhalli' || name.includes('devan');
+    });
+    const fallback = byName || employeeBranch || nearestBranch || branches[0];
+    if (fallback) {
+      const next = [fallback];
+      setSelectedBranchesState(next);
+      setSelectedBranch(fallback);
+      AsyncStorage.setItem('selectedBranches', JSON.stringify(next)).catch((err) => {
+        console.error('💥 BranchContext - Failed to persist default branch:', err);
+      });
+    }
+  }, [branches, employeeBranch, nearestBranch, selectedBranches.length]);
+
+  // Reconcile selected branches with latest branch list
+  useEffect(() => {
+    if (!branches.length || !selectedBranches.length) return;
+    const selectedIds = new Set(selectedBranches.map((b) => b.id));
+    const reconciled = branches.filter((b) => selectedIds.has(b.id));
+    if (reconciled.length !== selectedBranches.length) {
+      setSelectedBranchesState(reconciled);
+    }
+    if (!selectedBranch && reconciled.length > 0) {
+      setSelectedBranch(reconciled[0]);
+    }
+  }, [branches, selectedBranches, selectedBranch]);
+
+  // Nearest Branch Logic
+  const computeNearestBranch = async () => {
+    console.log('📍 BranchContext - Computing nearest branch, branches count:', branches.length);
     if (branches.length === 0) return;
 
-    const findNearest = async () => {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('📍 BranchContext - Permission to access location was denied');
-          setNearestBranch(branches[0]);
-          return;
-        }
-
-        let location = await Location.getCurrentPositionAsync({});
-        const userLat = location.coords.latitude;
-        const userLon = location.coords.longitude;
-
-        let nearest = branches[0];
-        let minDistance = -1;
-
-        branches.forEach((branch) => {
-          if (branch.lat != null && branch.lon != null) {
-            const distance = getDistance(userLat, userLon, branch.lat, branch.lon);
-            if (minDistance === -1 || distance < minDistance) {
-              minDistance = distance;
-              nearest = branch;
-            }
-          }
-        });
-
-        console.log('📍 BranchContext - Nearest branch set:', nearest?.name);
-        setNearestBranch(nearest || branches[0]);
-      } catch (err) {
-        console.error('💥 BranchContext - Error getting nearest branch:', err);
+    try {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        console.log('📍 BranchContext - Location services disabled, skipping permission prompt');
         setNearestBranch(branches[0]);
+        return;
+      }
+
+      const perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        console.log('📍 BranchContext - Location permission not granted, skipping prompt');
+        setNearestBranch(branches[0]);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const userLat = location.coords.latitude;
+      const userLon = location.coords.longitude;
+
+      let nearest = branches[0];
+      let minDistance = -1;
+
+      branches.forEach((branch) => {
+        if (branch.lat != null && branch.lon != null) {
+          const distance = getDistance(userLat, userLon, branch.lat, branch.lon);
+          if (minDistance === -1 || distance < minDistance) {
+            minDistance = distance;
+            nearest = branch;
+          }
+        }
+      });
+
+      console.log('📍 BranchContext - Nearest branch set:', nearest?.name);
+      setNearestBranch(nearest || branches[0]);
+    } catch (err) {
+      console.error('💥 BranchContext - Error getting nearest branch:', err);
+      setNearestBranch(branches[0]);
+    }
+  };
+
+  useEffect(() => {
+    console.log('📍 BranchContext - Nearest branch effect triggered, branches count:', branches.length);
+    computeNearestBranch();
+  }, [branches]);
+
+  useEffect(() => {
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        computeNearestBranch();
       }
     };
-
-    findNearest();
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
   }, [branches]);
 
   const value: BranchContextType = {
     branches,
+    selectedBranches,
     selectedBranch,
     employeeBranch,
     nearestBranch,
     isLoading,
     error,
     setBranches,
+    setSelectedBranches: (next: Branch[]) => {
+      setSelectedBranchesState(next);
+      setSelectedBranch(next.length ? next[0] : null);
+      AsyncStorage.setItem('selectedBranches', JSON.stringify(next)).catch((err) => {
+        console.error('💥 BranchContext - Failed to persist selected branches:', err);
+      });
+    },
     setSelectedBranch,
     fetchBranches,
   };

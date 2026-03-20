@@ -23,7 +23,7 @@ export const Toast = ({ message, type, onHide }: ToastProps) => {
         const timer = setTimeout(() => {
             setVisible(false);
             onHide();
-        }, 4000);
+        }, 2000);
 
         return () => clearTimeout(timer);
     }, [onHide]);
