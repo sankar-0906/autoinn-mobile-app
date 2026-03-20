@@ -10,6 +10,7 @@ import {
     Modal,
     Pressable,
     Image,
+    DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +19,7 @@ import { Search, Filter, ChevronRight, ChevronLeft, ChevronDown, User, Calendar,
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import platformApi, { assignQuotationExecutive, ENDPOINT, getBranches, getQuotations, getUsers } from '../../src/api';
+import { useBranch } from '../../src/context/branch';
 import { useToast } from '../../src/ToastContext';
 
 interface Quotation {
@@ -34,6 +36,7 @@ interface Quotation {
 const TABS = ['active', 'booked', 'rejected', 'all'];
 
 export default function QuotationsListScreen({ navigation }: { navigation: any }) {
+    const { selectedBranches } = useBranch();
     // Guard against missing navigation context
     if (!navigation) {
         return null;
@@ -158,6 +161,9 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
 
     const getBranchIds = async () => {
         try {
+            if (selectedBranches && selectedBranches.length > 0) {
+                return selectedBranches.map((b) => b.id).filter(Boolean);
+            }
             const profileRaw = await AsyncStorage.getItem('userProfile');
             if (!profileRaw) return [];
             const profile = JSON.parse(profileRaw);
@@ -581,15 +587,23 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
     useEffect(() => {
         const isSearch = Boolean(debouncedSearchQuery);
         fetchQuotations(isSearch);
-    }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery]);
+    }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery, selectedBranches]);
 
     // Refresh data when screen comes into focus (after applying filters)
     useFocusEffect(
         useCallback(() => {
             const isSearch = Boolean(debouncedSearchQuery);
             fetchQuotations(isSearch);
-        }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery])
+        }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery, selectedBranches])
     );
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('refreshBranches', () => {
+            const isSearch = Boolean(debouncedSearchQuery);
+            fetchQuotations(isSearch);
+        });
+        return () => sub.remove();
+    }, [debouncedSearchQuery]);
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">

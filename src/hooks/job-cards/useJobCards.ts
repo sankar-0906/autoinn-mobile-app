@@ -12,6 +12,7 @@ import type {
     JobCardFilter,
 } from '../../../types/job-cards';
 import { useAuth } from '../../context';
+import { useBranch } from '../../context/branch';
 
 interface UseJobCardsOptions {
     pageSize?: number;
@@ -31,6 +32,7 @@ const DEFAULT_FILTER: JobCardFilter = {
 
 export function useJobCards({ pageSize = 10 }: UseJobCardsOptions = {}) {
     const { user } = useAuth();
+    const { selectedBranches } = useBranch();
 
     const [data, setData] = useState<JobCardRecord[]>([]);
     const [count, setCount] = useState(0);
@@ -41,9 +43,12 @@ export function useJobCards({ pageSize = 10 }: UseJobCardsOptions = {}) {
 
     /** Build branch ID array from user profile */
     const getBranchIds = useCallback((): string[] => {
+        if (selectedBranches && selectedBranches.length > 0) {
+            return selectedBranches.map((b) => b.id);
+        }
         if (!user?.profile?.branch) return [];
         return user.profile.branch.map((b: any) => b.id);
-    }, [user]);
+    }, [user, selectedBranches]);
 
     /** Fetch job cards. Call this whenever tab/page/search/filter changes. */
     const fetchJobCards = useCallback(async (

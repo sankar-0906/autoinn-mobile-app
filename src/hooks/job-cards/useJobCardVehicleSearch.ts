@@ -24,15 +24,46 @@ export function useJobCardVehicleSearch() {
     const [loadingCustomers, setLoadingCustomers] = useState(false);
     const [loadingVehicles, setLoadingVehicles] = useState(false);
 
+    const unwrapList = (res: any): any[] => {
+        const data = res?.data;
+        const response = data?.response;
+        const candidate = response?.data ?? response ?? data?.data ?? data;
+        if (Array.isArray(candidate)) return candidate;
+        if (Array.isArray(candidate?.data)) return candidate.data;
+        return [];
+    };
+
+    const unwrapItem = (res: any): any | null => {
+        const data = res?.data;
+        const response = data?.response;
+        const candidate = response?.data ?? response ?? data?.data ?? data;
+        if (!candidate) return null;
+        if (Array.isArray(candidate)) return candidate[0] || null;
+        return candidate;
+    };
+
+    /** Fetch customers (initial dropdown load) */
+    const fetchCustomers = useCallback(async () => {
+        setLoadingCustomers(true);
+        try {
+            const res = await searchJobCardCustomers('');
+            const list = unwrapList(res);
+            setCustomerOptions(list as JobCardCustomer[]);
+        } catch (err) {
+            console.error('fetchCustomers error:', err);
+        } finally {
+            setLoadingCustomers(false);
+        }
+    }, []);
+
     /** Search customers by phone */
     const searchCustomers = useCallback(async (query: string) => {
         if (!query || query.length < 2) return;
         setLoadingCustomers(true);
         try {
             const res = await searchJobCardCustomers(query);
-            if (res.data?.response) {
-                setCustomerOptions(res.data.response || []);
-            }
+            const list = unwrapList(res);
+            setCustomerOptions(list as JobCardCustomer[]);
         } catch (err) {
             console.error('searchCustomers error:', err);
         } finally {
@@ -47,12 +78,9 @@ export function useJobCardVehicleSearch() {
         setLoadingVehicles(true);
         try {
             const res = await getVehiclesByCustomer(customer.id);
-            const { data } = res;
-            if (data?.code === 200 && data?.response?.code === 200) {
-                const vehicles: JobCardVehicle[] = data.response.data || [];
-                setVehicleOptions(vehicles);
-                setChassisOptions(vehicles);
-            }
+            const vehicles = unwrapList(res) as JobCardVehicle[];
+            setVehicleOptions(vehicles);
+            setChassisOptions(vehicles);
         } catch (err) {
             console.error('onSelectCustomer error:', err);
         } finally {
@@ -66,9 +94,8 @@ export function useJobCardVehicleSearch() {
         setLoadingVehicles(true);
         try {
             const res = await searchVehicleByRegNo(query);
-            if (res.data?.response) {
-                setVehicleOptions(res.data.response || []);
-            }
+            const list = unwrapList(res);
+            setVehicleOptions(list as JobCardVehicle[]);
         } catch (err) {
             console.error('searchVehicles error:', err);
         } finally {
@@ -81,9 +108,8 @@ export function useJobCardVehicleSearch() {
         if (!query || query.length < 2) return;
         try {
             const res = await searchVehicleByChassisNo(query);
-            if (res.data?.response) {
-                setChassisOptions(res.data.response || []);
-            }
+            const list = unwrapList(res);
+            setChassisOptions(list as JobCardVehicle[]);
         } catch (err) {
             console.error('searchByChassis error:', err);
         }
@@ -94,11 +120,9 @@ export function useJobCardVehicleSearch() {
         setLoadingVehicles(true);
         try {
             const res = await getVehicleByRegisterNo(vehicleId);
-            const { data } = res;
-            if (data?.code === 200 && data?.response?.code === 200) {
-                const vehicle: JobCardVehicle = data.response.data;
+            const vehicle = unwrapItem(res) as JobCardVehicle | null;
+            if (vehicle) {
                 setSelectedVehicle(vehicle);
-                // Sync customer if not yet set
                 if (!selectedCustomer && vehicle.customer && vehicle.customer.length > 0) {
                     setSelectedCustomer(vehicle.customer[0].customer);
                 }
@@ -117,9 +141,8 @@ export function useJobCardVehicleSearch() {
         setLoadingVehicles(true);
         try {
             const res = await getVehicleByChassis(vehicleId);
-            const { data } = res;
-            if (data?.code === 200 && data?.response?.code === 200) {
-                const vehicle: JobCardVehicle = data.response.data;
+            const vehicle = unwrapItem(res) as JobCardVehicle | null;
+            if (vehicle) {
                 setSelectedVehicle(vehicle);
                 if (!selectedCustomer && vehicle.customer && vehicle.customer.length > 0) {
                     setSelectedCustomer(vehicle.customer[0].customer);
@@ -150,6 +173,7 @@ export function useJobCardVehicleSearch() {
         selectedVehicle,
         loadingCustomers,
         loadingVehicles,
+        fetchCustomers,
         searchCustomers,
         onSelectCustomer,
         searchVehicles,
@@ -159,5 +183,6 @@ export function useJobCardVehicleSearch() {
         clearAll,
         setSelectedCustomer,
         setSelectedVehicle,
+        setCustomerOptions,
     };
 }

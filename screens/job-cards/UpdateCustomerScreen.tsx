@@ -19,6 +19,7 @@ import { Option } from '../../components/ui/SearchableDropdown';
 import { COLORS } from '../../constants/colors';
 import { HeaderWithBack } from '../../components/ui/BackButton';
 import { updateJobCardCustomer } from '../../src/api/job-cards/jobCardApi';
+import { addNewCustomer } from '../../src/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Contact {
@@ -40,6 +41,7 @@ const FormLabel = ({ label, required = false }: { label: string; required?: bool
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function UpdateCustomerScreen({ navigation, route }: { navigation: any; route: any }) {
     const { customerName: initialName = '', mobileNo = '', customerId = '' } = route.params || {};
+    const isCreateMode = !customerId;
     const [saving, setSaving] = useState(false);
 
     // Form state
@@ -53,10 +55,16 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
     const [newDnd, setNewDnd] = useState('No');
 
     // Existing contacts list
-    const [contacts, setContacts] = useState<Contact[]>([
-        { id: 1, phoneNumber: mobileNo, type: 'Primary', validity: 'Invalid', dnd: 'No' },
-        { id: 2, phoneNumber: '8837432111', type: 'Primary', validity: 'Valid', dnd: 'No' },
-    ]);
+    const [contacts, setContacts] = useState<Contact[]>(
+        isCreateMode
+            ? (mobileNo
+                ? [{ id: 1, phoneNumber: mobileNo, type: 'Primary', validity: 'Valid', dnd: 'No' }]
+                : [])
+            : [
+                { id: 1, phoneNumber: mobileNo, type: 'Primary', validity: 'Invalid', dnd: 'No' },
+                { id: 2, phoneNumber: '8837432111', type: 'Primary', validity: 'Valid', dnd: 'No' },
+            ]
+    );
 
     // Edit state
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -85,16 +93,26 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
             Alert.alert('Required', 'Please enter a phone number.');
             return;
         }
-        setContacts(prev => [
-            ...prev,
-            {
-                id: Date.now(),
+        if (editingId) {
+            setContacts(prev => prev.map(c => c.id === editingId ? {
+                ...c,
                 phoneNumber: newPhone.trim(),
                 type: newType,
-                validity: 'Valid',
                 dnd: newDnd as 'Yes' | 'No',
-            },
-        ]);
+            } : c));
+            setEditingId(null);
+        } else {
+            setContacts(prev => [
+                ...prev,
+                {
+                    id: Date.now(),
+                    phoneNumber: newPhone.trim(),
+                    type: newType,
+                    validity: 'Valid',
+                    dnd: newDnd as 'Yes' | 'No',
+                },
+            ]);
+        }
         setNewPhone('');
         setNewType('Primary');
         setNewDnd('No');
@@ -116,35 +134,67 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
             Alert.alert('Required', 'Customer name cannot be empty.');
             return;
         }
-        if (!customerId) {
-            Alert.alert('Error', 'Customer ID missing. Cannot save.');
-            return;
-        }
         setSaving(true);
         try {
-            const payload = {
-                id: customerId,
-                name: customerName.trim(),
-                salutation,
-                contacts: contacts.map(c => ({
-                    id: typeof c.id === 'number' && c.id < 1000000 ? '' : String(c.id),
-                    phone: c.phoneNumber,
-                    type: c.type,
-                    valid: c.validity === 'Valid',
-                    dnd: c.dnd === 'Yes',
-                })),
-            };
-            const res = await updateJobCardCustomer(customerId, payload);
-            if (res.data?.code === 200 && res.data?.response?.code === 200) {
-                Alert.alert('Success', 'Customer updated successfully!', [
-                    { text: 'OK', onPress: () => navigation.goBack() },
-                ]);
+            if (isCreateMode) {
+                const payload = {
+                    name: customerName.trim(),
+                    salutation,
+                    contacts: contacts.map(c => ({
+                        phone: c.phoneNumber,
+                        type: c.type,
+                        valid: c.validity === 'Valid',
+                        DND: c.dnd === 'Yes',
+                    })),
+                };
+                const res = await addNewCustomer(payload);
+                if (res.data?.code === 200 && res.data?.response?.code === 200) {
+                    const created = res.data?.response?.data;
+                    const createdPhone = created?.contacts?.[0]?.phone || mobileNo || '';
+                    Alert.alert('Success', 'Customer added successfully!', [
+                        {
+                            text: 'OK', onPress: () =>
+                                navigation.navigate({
+                                    name: 'AddJobCard',
+                                    params: {
+                                        newlyCreatedCustomer: {
+                                            id: created?.id,
+                                            name: created?.name,
+                                            phone: createdPhone,
+                                        },
+                                    },
+                                    merge: true,
+                                })
+                        },
+                    ]);
+                } else {
+                    Alert.alert('Error', 'Failed to add customer.');
+                }
             } else {
-                Alert.alert('Error', 'Failed to update customer.');
+                const payload = {
+                    id: customerId,
+                    name: customerName.trim(),
+                    salutation,
+                    contacts: contacts.map(c => ({
+                        id: typeof c.id === 'number' && c.id < 1000000 ? '' : String(c.id),
+                        phone: c.phoneNumber,
+                        type: c.type,
+                        valid: c.validity === 'Valid',
+                        dnd: c.dnd === 'Yes',
+                    })),
+                };
+                const res = await updateJobCardCustomer(customerId, payload);
+                if (res.data?.code === 200 && res.data?.response?.code === 200) {
+                    Alert.alert('Success', 'Customer updated successfully!', [
+                        { text: 'OK', onPress: () => navigation.goBack() },
+                    ]);
+                } else {
+                    Alert.alert('Error', 'Failed to update customer.');
+                }
             }
         } catch (err) {
             console.error('UpdateCustomer error:', err);
-            Alert.alert('Error', 'Failed to update customer. Please try again.');
+            Alert.alert('Error', isCreateMode ? 'Failed to add customer. Please try again.' : 'Failed to update customer. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -155,8 +205,8 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
         <SafeAreaView className="flex-1 bg-gray-50">
             {/* Header – exact VehicleDetails style */}
             <HeaderWithBack
-                title="Customer Details"
-                subtitle="Update customer information"
+                title={isCreateMode ? 'Add Customer' : 'Customer Details'}
+                subtitle={isCreateMode ? 'Create a new customer' : 'Update customer information'}
             />
 
             <KeyboardAvoidingView
@@ -174,7 +224,7 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
 
                         {/* Section title – exact VehicleDetails style */}
                         <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
-                            Update Customer Details
+                            {isCreateMode ? 'Add Customer Details' : 'Update Customer Details'}
                         </Text>
 
                         {/* ── Salutation + Customer Name (two-column) ──────── */}
@@ -262,7 +312,12 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
                                             {/* Action buttons */}
                                             <View className="flex-row gap-2 justify-end" style={{ width: 80 }}>
                                                 <TouchableOpacity
-                                                    onPress={() => setEditingId(contact.id)}
+                                                    onPress={() => {
+                                                        setEditingId(contact.id);
+                                                        setNewPhone(contact.phoneNumber || '');
+                                                        setNewType(contact.type || 'Primary');
+                                                        setNewDnd(contact.dnd || 'No');
+                                                    }}
                                                     className="p-1.5 bg-blue-50 rounded"
                                                     activeOpacity={0.7}
                                                 >
@@ -284,7 +339,7 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
 
                         {/* ── Add New Contact ─────────────────────────────────── */}
                         <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
-                            Add New Contact
+                            {editingId ? 'Edit Contact' : 'Add New Contact'}
                         </Text>
 
                         {/* Phone row */}
@@ -335,7 +390,9 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
                             className="h-11 bg-teal-600 rounded-lg items-center justify-center"
                             activeOpacity={0.8}
                         >
-                            <Text className="text-white font-semibold text-sm">+ Add Contact</Text>
+                            <Text className="text-white font-semibold text-sm">
+                                {editingId ? 'Update Contact' : '+ Add Contact'}
+                            </Text>
                         </TouchableOpacity>
                     </View>
 

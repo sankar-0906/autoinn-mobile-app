@@ -77,7 +77,6 @@ export const openWhatsApp = async (phoneNumber: string, message: string): Promis
     // Create WhatsApp URL
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 
-    console.log('📱 Opening WhatsApp:', whatsappUrl);
 
     // Check if WhatsApp is installed
     const canOpenWhatsApp = await Linking.canOpenURL(whatsappUrl);
@@ -150,10 +149,9 @@ export const openWhatsApp = async (phoneNumber: string, message: string): Promis
  */
 export const fetchQuotationTemplateText = async (): Promise<string> => {
   try {
-    const response = await platformApi.get('/api/sms');
+    const response = await platformApi.get('/api/whatsapp');
     const templates =
       response?.data?.response?.data ||
-      response?.data?.response?.getSms ||
       response?.data?.response ||
       [];
 
@@ -179,12 +177,20 @@ export const buildQuotationTemplateMessage = async (data: WhatsAppTemplateData):
     return '';
   }
 
+  const computedGmLink =
+    data.gmLink ||
+    (data.branchLat != null && data.branchLon != null
+      ? `https://www.google.com/maps?q=${data.branchLat},${data.branchLon}`
+      : '');
+
   const replacements: Record<string, string> = {
+    qtno: data.qtno || '',
     cname: data.cname || '',
     slex: data.slex || data.assignedExecutive?.name || '',
     vname: Array.isArray(data.vname) ? data.vname.join(', ') : (data.vname || ''),
     link: data.link || '',
     dlr: data.dlr || data.branchName || '',
+    gmLink: computedGmLink,
   };
 
   return template.replace(/\$\{(\w+)\}/g, (_, key) => (replacements[key] ?? ''));
@@ -237,33 +243,14 @@ export const checkWhatsAppStatus = async (messageId: string, whatsAppId: string)
 //     // First, try to open WhatsApp directly for immediate sharing
 //     const whatsappOpened = await shareQuotationViaWhatsApp(templateData, phoneNumber);
 
-<<<<<<< HEAD
-    if (whatsappOpened) {
-      try {
-        // Optionally track the message via API
-        await sendWhatsAppMessage(templateData);
-        return { success: true, tracked: true }; 
-      } catch (trackingError) {
-        console.warn('WhatsApp opened but tracking failed:', trackingError);
-        return { success: true, tracked: false };
-      }
-    }
-=======
-//     if (whatsappOpened) {
+
+// if (whatsappOpened) {
 //       try {
 //         // Optionally track the message via API
 //         await sendWhatsAppMessage(templateData);
-//         return { success: true, tracked: true };
+//         return { success: true, tracked: true }; 
 //       } catch (trackingError) {
 //         console.warn('WhatsApp opened but tracking failed:', trackingError);
 //         return { success: true, tracked: false };
 //       }
 //     }
->>>>>>> e34393b (WhatsApp Message and Branch Auto-Fill feature Updated)
-
-//     return { success: false };
-//   } catch (error) {
-//     console.error('Error in WhatsApp share flow:', error);
-//     return { success: false };
-//   }
-// };

@@ -172,10 +172,14 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
         console.log('🔵 [QuotationForm] quotation.branch raw:', JSON.stringify(quotation?.branch));
 
         // Look up coordinates from BranchContext (reliable source) by branch ID
-        const matchedBranch = branchId ? branches.find(b => b.id === branchId) : null;
-        // Removed location-based logic - lat/lon no longer available
-        const branchLat: number | null = null;
-        const branchLon: number | null = null;
+        const matchedBranch = branchId ? branches.find(b => String(b.id) === String(branchId)) : null;
+        const branchLat: number | null = matchedBranch?.lat ?? null;
+        const branchLon: number | null = matchedBranch?.lon ?? null;
+        const branchMapUrl =
+            quotation?.branch?.googleMapUrl ||
+            quotation?.assignedBranch?.googleMapUrl ||
+            matchedBranch?.googleMapUrl ||
+            null;
 
         console.log(`📍 [QuotationForm] Branch: ${branchName} | lat: ${branchLat} | lon: ${branchLon}`);
         const executiveName = quotation?.assignedExecutive?.profile?.employeeName || quotation?.executive?.profile?.employeeName || '-';
@@ -329,6 +333,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
             branchName,
             branchLat,
             branchLon,
+            branchMapUrl,
             executiveName,
             customerPhone,
             customerName,
@@ -413,6 +418,7 @@ export default function QuotationFormScreen({ navigation, route }: { navigation:
                 // Branch coordinates → map URL appended in generateWhatsAppTemplate
                 branchLat: derived.branchLat,
                 branchLon: derived.branchLon,
+                gmLink: derived.branchMapUrl || undefined,
                 branchName: derived.branchName !== '-' ? derived.branchName : undefined,
                 assignedExecutive: quotation.executive ? {
                     id: quotation.executive.id,

@@ -30,6 +30,12 @@ interface SearchableDropdownProps {
     onSelect: (value: string, label: string) => void;
     loading?: boolean;
     disabled?: boolean;
+    onOpen?: () => void;
+    renderEmpty?: (close: () => void) => React.ReactNode;
+    emptyText?: string;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    highlightValue?: string;
 }
 
 export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
@@ -40,9 +46,20 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
     onSelect,
     loading = false,
     disabled = false,
+    onOpen,
+    renderEmpty,
+    emptyText = 'No results found',
+    open: controlledOpen,
+    onOpenChange,
+    highlightValue,
 }) => {
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
     const [query, setQuery] = useState('');
+    const open = controlledOpen ?? internalOpen;
+    const setOpen = (val: boolean) => {
+        if (controlledOpen === undefined) setInternalOpen(val);
+        onOpenChange?.(val);
+    };
 
     const handleSearch = (text: string) => {
         setQuery(text);
@@ -64,7 +81,11 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
         <View>
             {/* Dropdown Trigger */}
             <TouchableOpacity
-                onPress={() => !disabled && setOpen(true)}
+                onPress={() => {
+                    if (disabled) return;
+                    onOpen?.();
+                    setOpen(true);
+                }}
                 activeOpacity={0.7}
                 className={`h-12 border rounded-lg px-3 flex-row items-center justify-between ${
                     disabled ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'
@@ -120,22 +141,30 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
 
                         {/* Options List */}
                         <ScrollView showsVerticalScrollIndicator={false}>
-                            {options.map((option) => (
-                                <TouchableOpacity
-                                    key={option.value}
-                                    onPress={() => handleSelect(option.value, option.label)}
-                                    className="flex-row items-center py-3 border-b border-gray-50"
-                                    activeOpacity={0.7}
-                                >
-                                    <Text className="text-sm text-gray-800">{option.label}</Text>
-                                </TouchableOpacity>
-                            ))}
+                {options.map((option) => (
+                    <TouchableOpacity
+                        key={option.value}
+                        onPress={() => handleSelect(option.value, option.label)}
+                        className={`flex-row items-center py-3 border-b border-gray-50 ${
+                            highlightValue && option.value === highlightValue ? 'bg-teal-50' : ''
+                        }`}
+                        activeOpacity={0.7}
+                    >
+                        <Text className={`text-sm ${highlightValue && option.value === highlightValue ? 'text-teal-700 font-semibold' : 'text-gray-800'}`}>
+                            {option.label}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
                             
                             {/* No Results */}
                             {!loading && options.length === 0 && (
-                                <Text className="text-gray-400 text-sm text-center py-4">
-                                    No results found
-                                </Text>
+                                renderEmpty
+                                    ? <View className="py-2">{renderEmpty(handleClose)}</View>
+                                    : (
+                                        <Text className="text-gray-400 text-sm text-center py-4">
+                                            {emptyText}
+                                        </Text>
+                                    )
                             )}
                         </ScrollView>
                     </Pressable>
