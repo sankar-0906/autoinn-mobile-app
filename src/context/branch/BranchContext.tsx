@@ -141,14 +141,31 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
     }
   }, [branches]);
 
-  // Set default selected branch (Devanahalli) when nothing is selected yet
+  // Set default selected branch when nothing is selected yet
   useEffect(() => {
     if (!branches.length || selectedBranches.length) return;
-    const byName = branches.find((b) => {
-      const name = b.name?.toLowerCase() || '';
-      return name === 'devanahalli' || name === 'devanhalli' || name.includes('devan');
-    });
-    const fallback = byName || employeeBranch || nearestBranch || branches[0];
+    
+    // Priority: nearestBranch > employeeBranch > Devanahalli fallback > first branch
+    const fallback = nearestBranch || employeeBranch;
+    
+    if (!fallback) {
+      // Only look for Devanahalli if no nearest or employee branch
+      const byName = branches.find((b) => {
+        const name = b.name?.toLowerCase() || '';
+        return name === 'devanahalli' || name === 'devanhalli' || name.includes('devan');
+      });
+      if (byName) {
+        const next = [byName];
+        setSelectedBranchesState(next);
+        setSelectedBranch(byName);
+        AsyncStorage.setItem('selectedBranches', JSON.stringify(next)).catch((err) => {
+          console.error('💥 BranchContext - Failed to persist default branch:', err);
+        });
+        return;
+      }
+    }
+    
+    // Use the priority fallback (nearest or employee)
     if (fallback) {
       const next = [fallback];
       setSelectedBranchesState(next);

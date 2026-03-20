@@ -162,9 +162,9 @@ export default function AddQuotationScreen({ navigation, route }: any) {
 
     // 🎯 Global Branch Service: GPS nearest → Employee assigned → First available
     const { branches, selectedBranch, nearestBranch, isLoading: branchLoading, error: branchError } = useBranch();
-    // Helper functions to match the old interface
-    const getBranchId = () => selectedBranch?.id || nearestBranch?.id || null;
-    const getBranchName = () => selectedBranch?.name || nearestBranch?.name || '-';
+    // Helper functions to match the old interface - prioritize nearestBranch for better UX
+    const getBranchId = () => nearestBranch?.id || selectedBranch?.id || null;
+    const getBranchName = () => nearestBranch?.name || selectedBranch?.name || '-';
 
     const initialSelectedVehicle = route.params?.selectedVehicle;
 
