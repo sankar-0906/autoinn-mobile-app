@@ -31,7 +31,18 @@ interface FollowUp {
 const TABS: Array<'Quoted' | 'Booked' | 'Discarded' | 'All'> = ['Quoted', 'Booked', 'Discarded', 'All'];
 type FollowUpsNavigationProp = StackNavigationProp<RootStackParamList, 'FollowUps'>;
 
+import { ScreenGuard } from '../../src/components/auth';
+import { MOBILE_MODULES } from '../../src/constants/modules';
+
 export default function FollowUpsScreen({ navigation }: { navigation: FollowUpsNavigationProp }) {
+    return (
+        <ScreenGuard module={MOBILE_MODULES.FOLLOW_UPS} action="read">
+            <FollowUpsContent navigation={navigation} />
+        </ScreenGuard>
+    );
+}
+
+function FollowUpsContent({ navigation }: { navigation: FollowUpsNavigationProp }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<'Quoted' | 'Booked' | 'Discarded' | 'All'>('Quoted');
     const [itemsPerPage, setItemsPerPage] = useState(10);

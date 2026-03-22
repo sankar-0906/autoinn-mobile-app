@@ -7,15 +7,18 @@ interface TimePickerModalProps {
   onClose: () => void;
   onSelect: (time: string) => void;
   anchorRef?: React.RefObject<View>;
+  disabledHours?: number[];
 }
 
 const minuteOptions = Array.from({ length: 60 }, (_, idx) => idx);
-const buildHourOptions = () => Array.from({ length: 24 }, (_, idx) => idx);
+const buildHourOptions = (disabledHours: number[] = []) =>
+  Array.from({ length: 24 }, (_, idx) => idx).filter(h => !disabledHours.includes(h));
 
 export const TimePickerModal: React.FC<TimePickerModalProps> = ({
   visible,
   onClose,
   onSelect,
+  disabledHours = [],
 }) => {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [selectedMinute, setSelectedMinute] = useState<number | null>(null);
@@ -27,6 +30,8 @@ export const TimePickerModal: React.FC<TimePickerModalProps> = ({
       onClose();
     }
   };
+
+  const hourOptions = buildHourOptions(disabledHours);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -66,7 +71,7 @@ export const TimePickerModal: React.FC<TimePickerModalProps> = ({
                 <Text style={{ fontSize: 10, textTransform: 'uppercase', color: '#64748b', fontWeight: 'bold', letterSpacing: 1 }}>Hour</Text>
               </View>
               <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
-                {buildHourOptions().map((hour) => (
+                {hourOptions.map((hour) => (
                   <TouchableOpacity
                     key={`h-${hour}`}
                     onPress={() => setSelectedHour(hour)}

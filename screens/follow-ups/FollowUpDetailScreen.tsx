@@ -43,6 +43,9 @@ import { Button } from '../../components/ui/Button';
 import AttachQuotationModal from '../../components/AttachQuotationModal';
 import { getActivitiesByCustomer, getCustomerByPhoneNo, getCustomerQuotations, getMergedCustomerData, getCustomerDetails, updateCustomer, attachQuotation, createQuotation, scheduleFollowUp, getQuotationById } from '../../src/api';
 import { useToast } from '../../src/ToastContext';
+import { ScreenGuard, ConditionalComponent } from '../../src/components/auth';
+import { MOBILE_MODULES } from '../../src/constants/modules';
+import { useRoleBasedAccess } from '../../src/hooks/useRoleBasedAccess';
 
 type DetailRouteProp = RouteProp<RootStackParamList, 'FollowUpDetail'>;
 type DetailNavProp = StackNavigationProp<RootStackParamList, 'FollowUpDetail'>;
@@ -195,6 +198,15 @@ const getVehicleNames = (obj: any): string[] => {
 };
 
 export default function FollowUpDetailScreen() {
+    return (
+        <ScreenGuard module={MOBILE_MODULES.FOLLOW_UPS} action="read">
+            <FollowUpDetailContent />
+        </ScreenGuard>
+    );
+}
+
+function FollowUpDetailContent() {
+    const { canUpdate, canDelete } = useRoleBasedAccess();
     const navigation = useNavigation<DetailNavProp>();
     const route = useRoute<DetailRouteProp>();
     const { id: phoneNo } = route.params || {};
@@ -297,17 +309,17 @@ export default function FollowUpDetailScreen() {
         try {
             console.log('🚀 Starting customer data fetch for phone:', phoneNo);
             const startTime = Date.now();
-            
+
             // Add timeout to prevent hanging - increased for network issues
-            const timeoutPromise = new Promise<any>((_, reject) => 
+            const timeoutPromise = new Promise<any>((_, reject) =>
                 setTimeout(() => reject(new Error('Request timeout')), 25000) // Increased to 25 seconds
             );
-            
+
             const customerRes = await Promise.race([
                 getCustomerByPhoneNo(phoneNo),
                 timeoutPromise
             ]);
-            
+
             const customersData = (customerRes.data?.response?.data?.customers as any[]) || [];
 
             setCustomers(customersData);
@@ -344,7 +356,7 @@ export default function FollowUpDetailScreen() {
             console.error('Error fetching customers by phone:', error);
             setCustomers([]);
             setLoading(false);
-            
+
             // Better error handling for specific error codes
             if (error.message?.includes('504') || error.response?.status === 504) {
                 toast.error("Server timeout - please try again");
@@ -638,7 +650,7 @@ export default function FollowUpDetailScreen() {
 
     useEffect(() => {
         fetchData();
-        
+
         // Cleanup function
         return () => {
             if (fetchTimeoutRef.current) {
@@ -661,15 +673,15 @@ export default function FollowUpDetailScreen() {
             }
 
             setAudioLoading(activityId);
-            
+
             console.log('🎵 Playing audio:', audioUrl);
-            
+
             // Create and load the sound
             const { sound: newSound } = await Audio.Sound.createAsync(
                 { uri: audioUrl },
                 { shouldPlay: true }
             );
-            
+
             newSound.setOnPlaybackStatusUpdate((status: any) => {
                 if (status.isLoaded && status.didJustFinish) {
                     setIsPlaying(null);
@@ -681,7 +693,7 @@ export default function FollowUpDetailScreen() {
             setSound(newSound);
             setIsPlaying(activityId);
             setAudioLoading(null);
-            
+
         } catch (error) {
             console.error('Error playing audio:', error);
             toast.error("Unable to play voice recording");
@@ -745,39 +757,39 @@ export default function FollowUpDetailScreen() {
                 <View>
                     <Text className="text-xl font-semibold text-gray-900 text-center mb-3">Vehicle Info</Text>
                     <View className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                    <View className="bg-gray-100 px-3 py-3 flex-row">
-                        <Text className="text-xs font-semibold text-gray-700 w-24">Date of Sale</Text>
-                        <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle Model</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-20">Reg. No</Text>
-                        <Text className="text-xs font-semibold text-gray-700 w-16 text-center">Action</Text>
-                    </View>
-                    {mergedPurchasedVehicle.length > 0 ? (
-                        mergedPurchasedVehicle.map((vehicle, index) => (
-                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                                <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
-                                <Text className="text-xs text-gray-800 flex-1">
-                                    {getVehicleNames(vehicle)?.[0] || '-'}
-                                </Text>
-                                <Text className="text-xs text-gray-700 w-20">
-                                    {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
-                                </Text>
-                                <TouchableOpacity 
-                                    className="w-16 items-center"
-                                    onPress={() => navigation.navigate('VehicleDetails', { 
-                                        vehicle: vehicle, 
-                                        mode: 'edit' 
-                                    })}
-                                >
-                                    <Edit size={14} color={COLORS.primary} />
-                                </TouchableOpacity>
-                            </View>
-                        ))
-                    ) : (
-                        <View className="px-3 py-8 items-center">
-                            <Text className="text-sm text-gray-500">No purchased vehicles found</Text>
+                        <View className="bg-gray-100 px-3 py-3 flex-row">
+                            <Text className="text-xs font-semibold text-gray-700 w-24">Date of Sale</Text>
+                            <Text className="text-xs font-semibold text-gray-700 flex-1">Vehicle Model</Text>
+                            <Text className="text-xs font-semibold text-gray-700 w-20">Reg. No</Text>
+                            <Text className="text-xs font-semibold text-gray-700 w-16 text-center">Action</Text>
                         </View>
-                    )}
-                </View>
+                        {mergedPurchasedVehicle.length > 0 ? (
+                            mergedPurchasedVehicle.map((vehicle, index) => (
+                                <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                    <Text className="text-xs text-gray-700 w-24">{formatDate(vehicle.dateOfSale)}</Text>
+                                    <Text className="text-xs text-gray-800 flex-1">
+                                        {getVehicleNames(vehicle)?.[0] || '-'}
+                                    </Text>
+                                    <Text className="text-xs text-gray-700 w-20">
+                                        {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
+                                    </Text>
+                                    <TouchableOpacity
+                                        className="w-16 items-center"
+                                        onPress={() => navigation.navigate('VehicleDetails', {
+                                            vehicle: vehicle,
+                                            mode: 'edit'
+                                        })}
+                                    >
+                                        <Edit size={14} color={COLORS.primary} />
+                                    </TouchableOpacity>
+                                </View>
+                            ))
+                        ) : (
+                            <View className="px-3 py-8 items-center">
+                                <Text className="text-sm text-gray-500">No purchased vehicles found</Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
             );
         }
@@ -1147,42 +1159,42 @@ export default function FollowUpDetailScreen() {
                         <View className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
                             <View className="bg-gray-100 px-3 py-3 flex-row items-center justify-between">
 
-                            <View className="flex-row items-center gap-2">
-                                <Car size={20} color={COLORS.primary} />
-                                <Text className="text-sm font-semibold text-gray-900">Vehicle Info</Text>
+                                <View className="flex-row items-center gap-2">
+                                    <Car size={20} color={COLORS.primary} />
+                                    <Text className="text-sm font-semibold text-gray-900">Vehicle Info</Text>
+                                </View>
+                                <View className="flex-row gap-3">
+                                    <TouchableOpacity
+                                        className="p-2 rounded-lg bg-white/80 border border-gray-300"
+                                        onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0] })}
+                                    >
+                                        <Eye size={16} color={COLORS.primary} />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        className="p-2 rounded-lg bg-white/80 border border-gray-300"
+                                        onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0], mode: 'edit' })}
+                                    >
+                                        <Edit size={16} color={COLORS.primary} />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
-                            <View className="flex-row gap-3">
-                                <TouchableOpacity 
-                                    className="p-2 rounded-lg bg-white/80 border border-gray-300"
-                                    onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0] })}
-                                >
-                                    <Eye size={16} color={COLORS.primary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity 
-                                    className="p-2 rounded-lg bg-white/80 border border-gray-300"
-                                    onPress={() => navigation.navigate('VehicleDetails', { vehicle: mergedPurchasedVehicle[0], mode: 'edit' })}
-                                >
-                                    <Edit size={16} color={COLORS.primary} />
-                                </TouchableOpacity>
+                            <View className="flex-row bg-gray-50 px-3 py-2 border-b border-gray-100">
+                                <Text className="text-xs font-semibold text-gray-600 flex-1">Date of Sale</Text>
+                                <Text className="text-xs font-semibold text-gray-600 flex-1">Vehicle Model</Text>
+                                <Text className="text-xs font-semibold text-gray-600 flex-1">Reg. No</Text>
                             </View>
+                            {mergedPurchasedVehicle.map((vehicle: any, index: number) => (
+                                <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                                    <Text className="text-xs text-gray-700 flex-1">{formatDate(vehicle.dateOfSale)}</Text>
+                                    <Text className="text-xs text-gray-800 flex-1">
+                                        {getVehicleNames(vehicle)?.[0] || '-'}
+                                    </Text>
+                                    <Text className="text-xs text-gray-700 flex-1">
+                                        {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
+                                    </Text>
+                                </View>
+                            ))}
                         </View>
-                        <View className="flex-row bg-gray-50 px-3 py-2 border-b border-gray-100">
-                            <Text className="text-xs font-semibold text-gray-600 flex-1">Date of Sale</Text>
-                            <Text className="text-xs font-semibold text-gray-600 flex-1">Vehicle Model</Text>
-                            <Text className="text-xs font-semibold text-gray-600 flex-1">Reg. No</Text>
-                        </View>
-                        {mergedPurchasedVehicle.map((vehicle: any, index: number) => (
-                            <View key={vehicle.id || index} className={`px-3 py-3 flex-row items-center ${index % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-                                <Text className="text-xs text-gray-700 flex-1">{formatDate(vehicle.dateOfSale)}</Text>
-                                <Text className="text-xs text-gray-800 flex-1">
-                                    {getVehicleNames(vehicle)?.[0] || '-'}
-                                </Text>
-                                <Text className="text-xs text-gray-700 flex-1">
-                                    {vehicle.registerNo || vehicle.regNo || vehicle.registrationNo || vehicle.registrationNumber || '-'}
-                                </Text>
-                            </View>
-                        ))}
-                    </View>
                     </>
                 )}
 
@@ -1460,13 +1472,15 @@ export default function FollowUpDetailScreen() {
                                             <Eye size={14} color="#6b7280" />
                                             <Text className="text-teal-600 text-sm font-semibold ">View</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity
-                                            onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id || '' })}
-                                            className="flex-1 flex-row items-center justify-center gap-2 bg-teal-600 py-3 rounded-lg"
-                                        >
-                                            <Edit size={14} color="white" />
-                                            <Text className="text-white text-sm font-semibold">Edit</Text>
-                                        </TouchableOpacity>
+                                        {canUpdate(MOBILE_MODULES.FOLLOW_UPS) && (
+                                            <TouchableOpacity
+                                                onPress={() => navigation.navigate('ActivityViewEdit', { mode: 'edit', activityId: activity.id || '' })}
+                                                className="flex-1 flex-row items-center justify-center gap-2 bg-teal-600 py-3 rounded-lg"
+                                            >
+                                                <Edit size={14} color="white" />
+                                                <Text className="text-white text-sm font-semibold">Edit</Text>
+                                            </TouchableOpacity>
+                                        )}
                                     </View>
                                 </View>
                             );

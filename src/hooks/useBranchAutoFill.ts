@@ -14,6 +14,7 @@ export const useBranchAutoFill = (): UseBranchAutoFillResult => {
     branches,
     selectedBranch,
     nearestBranch,
+    employeeBranch,
     isLoading: branchLoading,
     fetchBranches,
   } = useBranch();
@@ -31,6 +32,9 @@ export const useBranchAutoFill = (): UseBranchAutoFillResult => {
     } else if (nearestBranch) {
       setAutoFilledBranch(nearestBranch.id);
       setBranchPriority('nearest');
+    } else if (employeeBranch) {
+      setAutoFilledBranch(employeeBranch.id);
+      setBranchPriority('employee');
     } else if (branches.length > 0) {
       setAutoFilledBranch(branches[0].id);
       setBranchPriority('first');
