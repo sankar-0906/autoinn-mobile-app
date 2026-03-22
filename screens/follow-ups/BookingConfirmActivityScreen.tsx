@@ -106,18 +106,39 @@ export default function BookingConfirmActivityScreen({
     const getBackNavigationTarget = (): { screen: 'FollowUpDetail' | 'FollowUps' | 'CustomerDetails'; params: any; useGoBack: boolean } => {
         const routes = (navigation.getState?.()?.routes || []);
         const previousRoute = routes[routes.length - 2];
+        const previousPreviousRoute = routes[routes.length - 3];
         const { customerId } = route.params;
         const cameFrom = (route.params as any)?.cameFrom;
 
+        console.log('🔍 BookingConfirmActivity navigation state:', {
+            totalRoutes: routes.length,
+            currentRoute: routes[routes.length - 1]?.name,
+            previousRoute: previousRoute?.name,
+            previousPreviousRoute: previousPreviousRoute?.name,
+            cameFromParam: cameFrom,
+            customerId
+        });
+
+        // If we came from FollowUpDetail, use goBack()
         if (cameFrom === 'FollowUpDetail' || previousRoute?.name === 'FollowUpDetail') {
+            console.log('🔍 Came from FollowUpDetail, using goBack()');
             return { useGoBack: true, screen: 'FollowUpDetail' as const, params: undefined };
         }
 
+        // If we came from CustomerDetails, use goBack() to prevent loop
+        if (cameFrom === 'CustomerDetails' || previousRoute?.name === 'CustomerDetails') {
+            console.log('🔍 Came from CustomerDetails, using goBack() to prevent loop');
+            return { useGoBack: true, screen: 'CustomerDetails' as const, params: undefined };
+        }
+
+        // If we have customerId but didn't come from CustomerDetails, navigate to CustomerDetails
         if (customerId) {
-            // For Confirm Booking, always go back to Customer Details
+            console.log('🔍 Navigating to CustomerDetails with customerId:', customerId);
             return { useGoBack: false, screen: 'CustomerDetails' as const, params: { customerId } };
         }
+
         // Fallback to FollowUps if no customerId
+        console.log('🔍 No customerId available, navigating to FollowUps');
         return { useGoBack: false, screen: 'FollowUps' as const, params: undefined };
     };
 

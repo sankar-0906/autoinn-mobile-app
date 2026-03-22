@@ -160,6 +160,12 @@ export default function BookingActivityScreen({
             return { screen: 'FollowUpDetail' as const, params: undefined, useGoBack: true };
         }
 
+        // If we came from CustomerDetails and this is a confirm booking, use goBack() to prevent loop
+        if ((cameFrom === 'CustomerDetails' || previousRoute?.name === 'CustomerDetails') && persistedIsConfirmBooking) {
+            console.log('🔍 Came from CustomerDetails with confirm booking, using goBack() to prevent loop');
+            return { screen: 'CustomerDetails' as const, params: undefined, useGoBack: true };
+        }
+
         // Otherwise, navigate to FollowUpDetail (from FollowUpDetail flow)
         const phoneForFollowUp = customerPhone || phone || '';
 

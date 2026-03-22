@@ -2020,7 +2020,8 @@ const CustomerDetailsScreen: React.FC = () => {
                             isConfirmBooking: true,
                             customerId: customerId,
                             customerName: customerName,
-                            customerPhone: phoneNumber
+                            customerPhone: phoneNumber,
+                            cameFrom: 'CustomerDetails'
                         });
                     }}
                 >

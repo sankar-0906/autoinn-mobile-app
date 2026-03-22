@@ -13,9 +13,6 @@ import { Button } from '../../components/ui/Button';
 import { HeaderWithBack } from '../../components/ui/BackButton';
 import { useToast } from '../../src/ToastContext';
 import { formatValue } from '../../src/utils/formatUtils';
-import * as DocumentPicker from 'expo-document-picker';
-import { generateBookingOTP, verifyBookingOTP, generateBookingPDF, uploadBookingDocument } from '../../src/api';
-import { DownloadCloud, UploadCloud, FileText } from 'lucide-react-native';
 
 type Props = {
     navigation: StackNavigationProp<RootStackParamList, 'ConfirmBooking'>;
@@ -147,18 +144,6 @@ export default function ConfirmBookingScreen({
     const [showEmiDayModal, setShowEmiDayModal] = useState(false);
     const [showFinancerModal, setShowFinancerModal] = useState(false);
     const [showEmiStartDateModal, setShowEmiStartDateModal] = useState(false);
-
-    // ── Auth section state ──────────────────────────────────────────────────
-    const [authStatus, setAuthStatus] = useState<'Pending' | 'Verified'>('Pending');
-    const [digitalAuthCompleted, setDigitalAuthCompleted] = useState(false);
-    const [verifiedTime, setVerifiedTime] = useState<string | null>(null);
-    const [otp, setOtp] = useState('');
-    const [refId, setRefId] = useState<number>(0);
-    const [isGeneratingOtp, setIsGeneratingOtp] = useState(false);
-    const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-    const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-    const [isUploadingPdf, setIsUploadingPdf] = useState(false);
-    const [generatedPDF, setGeneratedPDF] = useState('');
 
     // ── Calendar state ───────────────────────────────────────────────────────
     const [dobCalendarStep, setDobCalendarStep] = useState<'year' | 'month' | 'day'>('year');
@@ -829,217 +814,17 @@ export default function ConfirmBookingScreen({
         </View>
     );
 
-    const handleGenerateOTP = async () => {
-        setIsGeneratingOtp(true);
-        try {
-            const dataToGenerate = {
-                link: generatedPDF || "https://example.com/mock-link",
-                cname: customerFullName || "Customer",
-                bkid: generatedCustomerId || "BKID",
-                vname: model || "Vehicle",
-                slex: salesOfficer || "Sales Officer",
-                dlr: branch || "Branch",
-            };
-            const response = await generateBookingOTP(phone, dataToGenerate);
-            if (response.data.code === 200) {
-                setRefId(response.data.response.data.referenceId);
-                toast.success("OTP sent to your mobile number");
-            } else {
-                toast.error(response.data.message || "Failed to generate OTP");
-            }
-        } catch (error: any) {
-            toast.error(error?.response?.data?.message || "Error generating OTP");
-        } finally {
-            setIsGeneratingOtp(false);
-        }
-    };
-
-    const handleVerifyOTP = async () => {
-        if (!otp) {
-            toast.error("Please enter OTP");
-            return;
-        }
-        setIsVerifyingOtp(true);
-        try {
-            const response = await verifyBookingOTP(refId.toString(), otp);
-            if (response.data.code === 200) {
-                if (response.data.response.data.isValid) {
-                    toast.success("OTP Verified successfully");
-                    setAuthStatus("Verified");
-                    setDigitalAuthCompleted(true);
-                    setVerifiedTime(new Date().toLocaleString());
-                } else {
-                    toast.error(response.data.message || "Invalid OTP");
-                    setDigitalAuthCompleted(false);
-                    setAuthStatus("Pending");
-                }
-            } else {
-                toast.error(response.data.message || "Verification Failed");
-            }
-        } catch (error: any) {
-            toast.error(error?.response?.data?.message || "Error verifying OTP");
-        } finally {
-            setIsVerifyingOtp(false);
-        }
-    };
-
-    const handleDownloadPdf = async () => {
-        setIsDownloadingPdf(true);
-        try {
-            const response = await generateBookingPDF({}); // Mock empty payload
-            if (response.data.code === 200) {
-                const pdfLocation = response.data.response.data.Location;
-                toast.success("PDF Downloaded successfully");
-                setGeneratedPDF(pdfLocation);
-            } else {
-                toast.error("Download Failed");
-            }
-        } catch (error: any) {
-            toast.error("Error downloading PDF");
-        } finally {
-            setIsDownloadingPdf(false);
-        }
-    };
-
-    const handleUploadPdf = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-            });
-            if (result.canceled) {
-                return;
-            }
-
-            setIsUploadingPdf(true);
-            const file = result.assets[0];
-            const formData = new FormData();
-            formData.append("profile", {
-                uri: file.uri,
-                name: file.name,
-                type: file.mimeType || 'application/pdf',
-            } as any);
-            formData.append("master", "Transaction Master");
-            formData.append("module", "Booking");
-            formData.append("id", route.params?.customerId || "0");
-
-            const response = await uploadBookingDocument(formData);
-            if (response.data.code === 200) {
-                toast.success("File Uploaded Successfully");
-                setAuthStatus("Verified");
-                setVerifiedTime(new Date().toLocaleString());
-            } else {
-                toast.error("Upload failed");
-            }
-        } catch (error: any) {
-            toast.error("Error uploading file");
-        } finally {
-            setIsUploadingPdf(false);
-        }
-    };
-
     const renderAuthSection = () => (
         <View>
             <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
                 Customer Authentication
             </Text>
-
-            {/* Digital Authentication */}
-            <View className="mb-6">
-                <Text className="text-gray-800 font-semibold mb-3 border-b border-gray-100 pb-2">Digital Authentication</Text>
-
-                <View className="mb-4">
-                    <FormLabel label="Registered Phone Number" />
-                    <View className="flex-row items-center gap-2">
-                        <TextInput
-                            value={phone}
-                            editable={false}
-                            className="flex-1 h-12 bg-gray-50 border border-gray-300 rounded-lg px-3 text-gray-500"
-                        />
-                        <View className="w-32">
-                            <Button
-                                title={isGeneratingOtp ? "Sending..." : "Generate OTP"}
-                                onPress={handleGenerateOTP}
-                                disabled={isGeneratingOtp || authStatus === 'Verified'}
-                            />
-                        </View>
-                    </View>
-                </View>
-
-                <View className="flex-row justify-between items-center mb-4">
-                    <Text className="text-gray-600 font-medium">Authentication Status:</Text>
-                    <View className={\`px-3 py-1 rounded-full \${authStatus === 'Verified' ? 'bg-green-100' : 'bg-orange-100'}\`}>
-                    <Text className={\`text-sm font-semibold \${authStatus === 'Verified' ? 'text-green-700' : 'text-orange-700'}\`}>
-                    {authStatus}
-                </Text>
+            <View className="p-8 items-center">
+                <ShieldCheck size={64} color="#0d9488" />
+                <Text className="mt-4 text-gray-700 text-center text-lg font-medium">Customer Authentication</Text>
+                <Text className="mt-2 text-gray-500 text-center">This section will handle customer verification</Text>
             </View>
         </View>
-
-                {
-        refId !== 0 && authStatus === 'Pending' && (
-            <View className="mb-4">
-                <FormLabel label="Enter OTP" />
-                <View className="flex-row items-center gap-2">
-                    <TextInput
-                        value={otp}
-                        onChangeText={(text) => setOtp(formatValue(text, 'onlyNo'))}
-                        placeholder="Enter OTP"
-                        keyboardType="number-pad"
-                        className="flex-1 h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
-                    />
-                    <View className="w-32">
-                        <Button
-                            title={isVerifyingOtp ? "Verifying..." : "Verify"}
-                            onPress={handleVerifyOTP}
-                            disabled={isVerifyingOtp}
-                        />
-                    </View>
-                </View>
-            </View>
-        )
-    }
-            </View >
-
-        <View className="h-0.5 bg-gray-100 my-4" />
-
-    {/* Manual Authentication */ }
-    <View className="mb-4">
-        <Text className="text-gray-800 font-semibold mb-3 border-b border-gray-100 pb-2">Manual Authentication</Text>
-
-        <View className="flex-row gap-4">
-            <View className="flex-1">
-                <FormLabel label="Download Booking Form" />
-                <Button
-                    title={isDownloadingPdf ? "Downloading..." : "Download"}
-                    variant="outline"
-                    onPress={handleDownloadPdf}
-                    disabled={isDownloadingPdf}
-                    icon={<DownloadCloud size={18} color={COLORS.teal[600]} />}
-                />
-            </View>
-
-            <View className="flex-1">
-                <FormLabel label="Upload Booking Form" />
-                <Button
-                    title={isUploadingPdf ? "Uploading..." : "Upload "}
-                    variant="outline"
-                    onPress={handleUploadPdf}
-                    disabled={isUploadingPdf || authStatus === 'Verified'}
-                    icon={<UploadCloud size={18} color={authStatus === 'Verified' ? COLORS.gray[400] : COLORS.teal[600]} />}
-                />
-            </View>
-        </View>
-    </View>
-
-    {
-        verifiedTime && (
-            <View className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-                <Text className="text-green-800 font-medium text-center">
-                    Verified at: {verifiedTime}
-                </Text>
-            </View>
-        )
-    }
-        </View >
     );
 
     // ── Calendar Modal (DOB) ─────────────────────────────────────────────────--
