@@ -27,6 +27,7 @@ import { useAuth } from '../../src/context/auth/AuthContext';
 import { usePermissions } from '../../src/hooks/usePermissions';
 import { useBranch } from '../../src/context/branch';
 import { AccessDeniedScreen } from '../../src/components/ui/AccessDeniedScreen';
+import { formatValue } from '../../src/utils/formatUtils';
 
 type AddQuotationNavigationProp = StackNavigationProp<RootStackParamList, 'AddQuotation'>;
 type AddQuotationRouteProp = RouteProp<RootStackParamList, 'AddQuotation'>;
@@ -815,7 +816,8 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                     placeholder="Mobile Number"
                                     value={customerPhone}
                                     onChangeText={(value) => {
-                                        const digits = value.replace(/\D/g, '').slice(0, 10);
+                                        const formatted = formatValue(value, 'onlyNo');
+                                        const digits = formatted.slice(0, 10);
                                         setCustomerPhone(digits);
                                         clearFieldError('customerPhone');
                                     }}
@@ -851,7 +853,11 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             <TextInput
                                 placeholder="Customer Name"
                                 value={customerName}
-                                onChangeText={(v) => { setCustomerName(v); clearFieldError('customerName'); }}
+                                onChangeText={(v) => {
+                                    const formatted = formatValue(v, 'allCaps');
+                                    setCustomerName(formatted);
+                                    clearFieldError('customerName');
+                                }}
                                 className={`bg-white border rounded-xl px-4 h-12 text-gray-900 ${fieldErrors.customerName ? 'border-red-500' : 'border-gray-200'}`}
                             />
                             <ErrorText message={fieldErrors.customerName} />
@@ -893,7 +899,11 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             <TextInput
                                 placeholder="Locality"
                                 value={locality}
-                                onChangeText={(v) => { setLocality(v); clearFieldError('locality'); }}
+                                onChangeText={(v) => {
+                                    const formatted = formatValue(v, 'allCaps');
+                                    setLocality(formatted);
+                                    clearFieldError('locality');
+                                }}
                                 editable={localityEditable}
                                 className={`border rounded-xl px-4 h-12 text-gray-900 ${localityEditable ? (fieldErrors.locality ? 'bg-white border-red-500' : 'bg-white border-gray-200') : 'bg-gray-100 border-gray-200'}`}
                             />
@@ -1307,16 +1317,16 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                             // autoinn-fe spreads ...provisional (proCustomer data) into the quotation
                             const quotationObj: any = {
                                 // ProCustomer fields (spread like ...provisional in autoinn-fe)
-                                name: customerName.trim().toUpperCase(),
+                                name: customerName.trim(),
                                 gender: gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase(),
-                                locality: locality.trim().toUpperCase(),
+                                locality: locality.trim(),
                                 phone: customerPhone,
                                 // Quotation fields
                                 quotationId: QuotationId,
                                 id: seqId,
                                 branch: branch,
                                 quotationPhone: customerPhone,
-                                customerName: customerName.trim().toUpperCase(),
+                                customerName: customerName.trim(),
                                 leadSource: leadSource,
                                 testDriveTaken: testDriveTaken === 'yes',
                                 enquiryType: enquiryType.charAt(0).toUpperCase() + enquiryType.slice(1).toLowerCase(),
@@ -1455,6 +1465,20 @@ export default function AddQuotationScreen({ navigation, route }: any) {
             <TimePickerModal
                 visible={showTimePicker}
                 onClose={() => setShowTimePicker(false)}
+                disabledHours={(() => {
+                    const disabled = [0, 1, 2, 3, 4, 5, 6, 7, 20, 21, 22, 23];
+                    const now = new Date();
+                    const [dd, mm, yyyy] = followUpDate.split('/');
+                    const selectedDate = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+
+                    // If selected date is today, disable past hours
+                    if (selectedDate.toDateString() === now.toDateString()) {
+                        for (let i = 0; i < now.getHours(); i++) {
+                            if (!disabled.includes(i)) disabled.push(i);
+                        }
+                    }
+                    return disabled;
+                })()}
                 onSelect={(time: string) => {
                     setFollowUpTime(time);
                     setShowTimePicker(false);

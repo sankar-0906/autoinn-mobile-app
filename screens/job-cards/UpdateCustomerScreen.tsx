@@ -20,6 +20,7 @@ import { COLORS } from '../../constants/colors';
 import { HeaderWithBack } from '../../components/ui/BackButton';
 import { updateJobCardCustomer } from '../../src/api/job-cards/jobCardApi';
 import { addNewCustomer } from '../../src/api';
+import { formatValue } from '../../src/utils/formatUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Contact {
@@ -232,17 +233,20 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
                             <View className="w-[25%]">
                                 <FormLabel label="Salutation" />
                                 <SearchableDropdown
-    placeholder="Salutation"
-    displayValue={salutationOptions.find(o => o.value === salutation)?.label || ''}
-    options={salutationOptions}
-    onSelect={(value) => setSalutation(value)}
-/>
+                                    placeholder="Salutation"
+                                    displayValue={salutationOptions.find(o => o.value === salutation)?.label || ''}
+                                    options={salutationOptions}
+                                    onSelect={(value) => setSalutation(value)}
+                                />
                             </View>
                             <View className="flex-1">
                                 <FormLabel label="Customer Name" required />
                                 <TextInput
                                     value={customerName}
-                                    onChangeText={setCustomerName}
+                                    onChangeText={(v) => {
+                                        const formatted = formatValue(v, 'allCaps');
+                                        setCustomerName(formatted);
+                                    }}
                                     className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                                     placeholder="Enter customer name"
                                 />
@@ -353,7 +357,10 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
                                 {/* Phone number input */}
                                 <TextInput
                                     value={newPhone}
-                                    onChangeText={setNewPhone}
+                                    onChangeText={(v) => {
+                                        const formatted = formatValue(v, 'onlyNo');
+                                        setNewPhone(formatted);
+                                    }}
                                     className="flex-1 h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                                     placeholder="Enter phone number"
                                     keyboardType="phone-pad"
@@ -367,20 +374,20 @@ export default function UpdateCustomerScreen({ navigation, route }: { navigation
                             <View className="flex-1">
                                 <FormLabel label="Type" />
                                 <SearchableDropdown
-    placeholder="Select Type"
-    displayValue={typeOptions.find(o => o.value === newType)?.label || ''}
-    options={typeOptions}
-    onSelect={(value) => setNewType(value)}
-/>
+                                    placeholder="Select Type"
+                                    displayValue={typeOptions.find(o => o.value === newType)?.label || ''}
+                                    options={typeOptions}
+                                    onSelect={(value) => setNewType(value)}
+                                />
                             </View>
                             <View className="flex-1">
                                 <FormLabel label="DND" />
                                 <SearchableDropdown
-    placeholder="Select DND"
-    displayValue={dndOptions.find(o => o.value === newDnd)?.label || ''}
-    options={dndOptions}
-    onSelect={(value) => setNewDnd(value)}
-/>
+                                    placeholder="Select DND"
+                                    displayValue={dndOptions.find(o => o.value === newDnd)?.label || ''}
+                                    options={dndOptions}
+                                    onSelect={(value) => setNewDnd(value)}
+                                />
                             </View>
                         </View>
 

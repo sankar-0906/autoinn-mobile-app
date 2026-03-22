@@ -11,6 +11,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../src/ToastContext';
+import { formatValue } from '../../src/utils/formatUtils';
 
 type CustomerEditRouteProp = RouteProp<RootStackParamList, 'CustomerEdit'>;
 type CustomerEditNavigationProp = StackNavigationProp<RootStackParamList, 'CustomerEdit'>;
@@ -285,11 +286,18 @@ export default function CustomerEditScreen() {
                 <View className="mb-4">
                     <SelectField label="Salutation" value={salutation} options={['Mr.', 'Mrs.', 'Ms.', 'Dr.']}
                         onSelect={setSalutation} />
-                    <Field label="Customer Name" value={name} onChange={(v) => { setName(v); clearError('name'); }}
+                    <Field label="Customer Name" value={name} onChange={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setName(formatted);
+                        clearError('name');
+                    }}
                         required error={errors.name} />
                 </View>
 
-                <Field label="Father's Name" value={fatherName} onChange={setFatherName} placeholder="Father's Name" />
+                <Field label="Father's Name" value={fatherName} onChange={(v) => {
+                    const formatted = formatValue(v, 'allCaps');
+                    setFatherName(formatted);
+                }} placeholder="Father's Name" />
 
                 <RadioGroup label="Gender" value={gender} options={['Male', 'Female']} onChange={setGender} required />
                 <Field label="DOB" value={dob} onChange={setDob} placeholder="DD/MM/YYYY" />
@@ -356,7 +364,10 @@ export default function CustomerEditScreen() {
 
                     <View className="mb-4">
                         <Text className="text-xs font-medium text-gray-700 mb-1.5">Phone Number</Text>
-                        <TextInput value={newPhone} onChangeText={setNewPhone}
+                        <TextInput value={newPhone} onChangeText={(v) => {
+                            const formatted = formatValue(v, 'onlyNo');
+                            setNewPhone(formatted);
+                        }}
                             keyboardType="phone-pad" placeholder="+91 XXXXX XXXXX"
                             className="h-11 border border-gray-300 rounded-lg px-3 bg-white text-sm text-gray-900" />
                     </View>
@@ -393,12 +404,18 @@ export default function CustomerEditScreen() {
             {/* ── Additional Info ── */}
             <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4 shadow-sm">
                 <SectionHeader title="Additional Information" />
-                <Field label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" placeholder="email@example.com" />
+                <Field label="E-mail" value={email} onChange={(v) => {
+                    const formatted = formatValue(v, 'toLowerCase');
+                    setEmail(formatted);
+                }} keyboardType="email-address" placeholder="email@example.com" />
                 <SelectField label="GST Type" value={gstType}
                     options={['Unregistered', 'Registered']}
                     onSelect={setGstType} />
                 {gstType === 'Registered' && (
-                    <Field label="GSTIN" value={gstin} onChange={setGstin} placeholder="GSTIN" />
+                    <Field label="GSTIN" value={gstin} onChange={(v) => {
+                        const formatted = formatValue(v, 'toUpperCase');
+                        setGstin(formatted);
+                    }} placeholder="GSTIN" />
                 )}
                 <SelectField label="Customer Grouping" value={customerGrouping}
                     options={['VIP', 'Regular', 'Standard']} onSelect={setCustomerGrouping} />
@@ -413,13 +430,20 @@ export default function CustomerEditScreen() {
                 <Field label="Address Line 2" value={billingAddr2} onChange={setBillingAddr2} />
                 <Field label="Address Line 3" value={billingAddr3} onChange={setBillingAddr3} />
                 <Field label="Locality" value={billingLocality}
-                    onChange={(v) => { setBillingLocality(v); clearError('billingLocality'); }}
+                    onChange={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setBillingLocality(formatted);
+                        clearError('billingLocality');
+                    }}
                     required error={errors.billingLocality} />
                 <SelectField label="Country" value={billingCountry}
                     options={['India', 'Other']} onSelect={setBillingCountry} required />
                 <Field label="State" value={billingState} onChange={setBillingState} required />
                 <Field label="City" value={billingCity} onChange={setBillingCity} required />
-                <Field label="Pincode" value={billingPincode} onChange={setBillingPincode} keyboardType="number-pad" />
+                <Field label="Pincode" value={billingPincode} onChange={(v) => {
+                    const formatted = formatValue(v, 'onlyNo');
+                    setBillingPincode(formatted);
+                }} keyboardType="number-pad" />
             </View>
 
             {/* ── Shipping Address ── */}
@@ -438,7 +462,10 @@ export default function CustomerEditScreen() {
                 <Field label="Address Line 3" value={sameAsBilling ? billingAddr3 : shippingAddr3}
                     onChange={setShippingAddr3} editable={!sameAsBilling} />
                 <Field label="Locality" value={sameAsBilling ? billingLocality : shippingLocality}
-                    onChange={setShippingLocality} editable={!sameAsBilling} required />
+                    onChange={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setShippingLocality(formatted);
+                    }} editable={!sameAsBilling} required />
                 <SelectField label="Country" value={sameAsBilling ? billingCountry : shippingCountry}
                     options={['India', 'Other']} onSelect={setShippingCountry} />
                 <Field label="State" value={sameAsBilling ? billingState : shippingState}
@@ -446,7 +473,10 @@ export default function CustomerEditScreen() {
                 <Field label="City" value={sameAsBilling ? billingCity : shippingCity}
                     onChange={setShippingCity} editable={!sameAsBilling} />
                 <Field label="Pincode" value={sameAsBilling ? billingPincode : shippingPincode}
-                    onChange={setShippingPincode} editable={!sameAsBilling} keyboardType="number-pad" />
+                    onChange={(v) => {
+                        const formatted = formatValue(v, 'onlyNo');
+                        setShippingPincode(formatted);
+                    }} editable={!sameAsBilling} keyboardType="number-pad" />
             </View>
 
             {/* ── Referred Customers ── */}

@@ -36,7 +36,7 @@ interface BranchProviderProps {
 
 export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   console.log('🌐 BranchProvider - Provider mounted');
-  
+
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranches, setSelectedBranchesState] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
@@ -71,7 +71,8 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
         }));
 
         setBranches(branchList);
-        console.log('✅ BranchContext - Branches set successfully');
+        console.log('✅ BranchContext - Branches set successfully. Full list with coords:');
+        branchList.forEach(b => console.log(`🏢 ID: ${b.id}, Name: ${b.name}, Lat: ${b.lat}, Lon: ${b.lon}`));
 
         // Don't automatically calculate nearest branch here - let useBranchAutoFill handle it
         console.log('🏢 BranchContext - Branches loaded, waiting for auto-fill hook to process...');
@@ -144,10 +145,10 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   // Set default selected branch when nothing is selected yet
   useEffect(() => {
     if (!branches.length || selectedBranches.length) return;
-    
+
     // Priority: nearestBranch > employeeBranch > Devanahalli fallback > first branch
     const fallback = nearestBranch || employeeBranch;
-    
+
     if (!fallback) {
       // Only look for Devanahalli if no nearest or employee branch
       const byName = branches.find((b) => {
@@ -164,7 +165,7 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
         return;
       }
     }
-    
+
     // Use the priority fallback (nearest or employee)
     if (fallback) {
       const next = [fallback];
@@ -191,46 +192,68 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
 
   // Nearest Branch Logic
   const computeNearestBranch = async () => {
-    console.log('📍 BranchContext - Computing nearest branch, branches count:', branches.length);
+    console.log('📍 BranchContext - Starting computeNearestBranch. Branches:', branches.length);
     if (branches.length === 0) return;
 
     try {
+      // 1. Check if location services are enabled
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
-        console.log('📍 BranchContext - Location services disabled, skipping permission prompt');
-        setNearestBranch(branches[0]);
+        console.log('📍 BranchContext - Location services disabled');
+        setNearestBranch(null); // Clear nearest to allow other fallbacks
         return;
       }
 
-      const perm = await Location.getForegroundPermissionsAsync();
-      if (perm.status !== 'granted') {
-        console.log('📍 BranchContext - Location permission not granted, skipping prompt');
-        setNearestBranch(branches[0]);
+      // 2. Request permission if not already granted
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'undetermined') {
+        console.log('📍 BranchContext - Requesting location permissions...');
+        const request = await Location.requestForegroundPermissionsAsync();
+        status = request.status;
+      }
+
+      if (status !== 'granted') {
+        console.log('📍 BranchContext - Location permission denied:', status);
+        setNearestBranch(null);
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({});
+      // 3. Get current position with balanced accuracy
+      console.log('📍 BranchContext - Fetching current position...');
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       const userLat = location.coords.latitude;
       const userLon = location.coords.longitude;
+      console.log('📍 BranchContext - User location: ' + userLat + ', ' + userLon);
 
-      let nearest = branches[0];
+      let nearest: Branch | null = null;
       let minDistance = -1;
 
       branches.forEach((branch) => {
         if (branch.lat != null && branch.lon != null) {
           const distance = getDistance(userLat, userLon, branch.lat, branch.lon);
+          console.log(`📍 BranchContext - Distance to ${branch.name}: ${distance.toFixed(2)} km`);
+
           if (minDistance === -1 || distance < minDistance) {
             minDistance = distance;
             nearest = branch;
           }
+        } else {
+          console.log(`📍 BranchContext - Missing coordinates for branch: ${branch.name}`);
         }
       });
 
-      console.log('📍 BranchContext - Nearest branch set:', nearest?.name);
-      setNearestBranch(nearest || branches[0]);
+      if (nearest) {
+        console.log('📍 BranchContext - Nearest branch calculated:', (nearest as Branch).name);
+        setNearestBranch(nearest);
+      } else {
+        console.log('📍 BranchContext - No branches with coordinates found');
+        setNearestBranch(null);
+      }
     } catch (err) {
-      console.error('💥 BranchContext - Error getting nearest branch:', err);
-      setNearestBranch(branches[0]);
+      console.error('💥 BranchContext - Error in computeNearestBranch:', err);
+      setNearestBranch(null);
     }
   };
 

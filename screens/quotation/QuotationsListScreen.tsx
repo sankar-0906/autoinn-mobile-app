@@ -35,7 +35,20 @@ interface Quotation {
 
 const TABS = ['active', 'booked', 'rejected', 'all'];
 
+import { ScreenGuard, ConditionalButton, ConditionalComponent } from '../../src/components/auth';
+import { MOBILE_MODULES } from '../../src/constants/modules';
+import { useRoleBasedAccess } from '../../src/hooks/useRoleBasedAccess';
+
 export default function QuotationsListScreen({ navigation }: { navigation: any }) {
+    return (
+        <ScreenGuard module={MOBILE_MODULES.QUOTATIONS} action="read">
+            <QuotationsContent navigation={navigation} />
+        </ScreenGuard>
+    );
+}
+
+function QuotationsContent({ navigation }: { navigation: any }) {
+    const { canUpdate, canDelete } = useRoleBasedAccess();
     const { selectedBranches } = useBranch();
     // Guard against missing navigation context
     if (!navigation) {
@@ -98,9 +111,9 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
         if (!debouncedSearchQuery) {
             return quotations;
         }
-        
+
         const searchTerm = debouncedSearchQuery.toLowerCase();
-        return quotations.filter(quotation => 
+        return quotations.filter(quotation =>
             quotation.customerName.toLowerCase().includes(searchTerm) ||
             quotation.displayId.toLowerCase().includes(searchTerm) ||
             quotation.vehicle.toLowerCase().includes(searchTerm) ||
@@ -396,29 +409,35 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                     </View>
                 </View>
 
-                <View className="flex-row gap-2 mt-3 pt-3 border-t border-gray-100">
-                    <TouchableOpacity
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleReassign(item.id, item.displayId);
-                        }}
-                        className="flex-1 h-10 rounded-lg border border-teal-600 items-center justify-center"
-                        activeOpacity={0.7}
-                    >
-                        <Text className="text-teal-600 font-semibold text-sm">Reassign</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleDelete(item.id);
-                        }}
-                        className="flex-1 h-10 rounded-lg border border-red-600 flex-row items-center justify-center"
-                        activeOpacity={0.7}
-                    >
-                        <Trash2 size={14} color={COLORS.red[600]} />
-                        <Text className="text-red-600 font-semibold text-sm ml-1.5">Delete</Text>
-                    </TouchableOpacity>
-                </View>
+                {(canUpdate(MOBILE_MODULES.QUOTATIONS) || canDelete(MOBILE_MODULES.QUOTATIONS)) && (
+                    <View className="flex-row gap-2 mt-3 pt-3 border-t border-gray-100">
+                        {canUpdate(MOBILE_MODULES.QUOTATIONS) && (
+                            <TouchableOpacity
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    handleReassign(item.id, item.displayId);
+                                }}
+                                className="flex-1 h-10 rounded-lg border border-teal-600 items-center justify-center"
+                                activeOpacity={0.7}
+                            >
+                                <Text className="text-teal-600 font-semibold text-sm">Reassign</Text>
+                            </TouchableOpacity>
+                        )}
+                        {canDelete(MOBILE_MODULES.QUOTATIONS) && (
+                            <TouchableOpacity
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete(item.id);
+                                }}
+                                className="flex-1 h-10 rounded-lg border border-red-600 flex-row items-center justify-center"
+                                activeOpacity={0.7}
+                            >
+                                <Trash2 size={14} color={COLORS.red[600]} />
+                                <Text className="text-red-600 font-semibold text-sm ml-1.5">Delete</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
 
                 <TouchableOpacity
                     onPress={(e) => {
@@ -652,12 +671,17 @@ export default function QuotationsListScreen({ navigation }: { navigation: any }
                             )}
                         </View>
                     </View>
-                    <TouchableOpacity
-                        onPress={() => navigation.navigate('AddQuotation')}
-                        className="px-3 h-10 bg-teal-600 rounded-lg items-center justify-center"
+                    <ConditionalComponent
+                        module={MOBILE_MODULES.QUOTATIONS}
+                        action="create"
                     >
-                        <Text className="text-white font-semibold text-sm">+ Add Quotation</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('AddQuotation')}
+                            className="px-3 h-10 bg-teal-600 rounded-lg items-center justify-center"
+                        >
+                            <Text className="text-white font-semibold text-sm">+ Add Quotation</Text>
+                        </TouchableOpacity>
+                    </ConditionalComponent>
                 </View>
 
                 {/* Search */}

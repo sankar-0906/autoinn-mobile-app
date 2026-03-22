@@ -17,9 +17,12 @@ import { PendingSection } from './sections/PendingSection';
 import { InProgressSection } from './sections/InProgressSection';
 import { CompletedSection } from './sections/CompletedSection';
 import { useJobCards } from '../../src/hooks/job-cards/useJobCards';
+import { ScreenGuard } from '../../src/components/auth';
+import { MOBILE_MODULES } from '../../src/constants/modules';
 import type { TabStatus, JobCardRecord, JobCardFilter } from '../../types/job-cards';
 import { useBranch } from '../../src/context/branch';
 import { DeviceEventEmitter } from 'react-native';
+import { ConditionalComponent } from '../../src/components/auth';
 
 const TABS: { label: string; apiStatus: TabStatus }[] = [
     { label: 'Pending', apiStatus: 'PENDING' },
@@ -29,6 +32,14 @@ const TABS: { label: string; apiStatus: TabStatus }[] = [
 ];
 
 export default function JobCardsListScreen({ navigation }: { navigation: any }) {
+    return (
+        <ScreenGuard module={MOBILE_MODULES.JOB_CARDS} action="read">
+            <JobCardsContent navigation={navigation} />
+        </ScreenGuard>
+    );
+}
+
+function JobCardsContent({ navigation }: { navigation: any }) {
     const route = useRoute<any>();
     const { selectedBranches } = useBranch();
     const [searchQuery, setSearchQuery] = useState('');
@@ -306,12 +317,18 @@ export default function JobCardsListScreen({ navigation }: { navigation: any }) 
                             )}
                         </View>
                     </View>
-                    <TouchableOpacity
-                        onPress={() => navigation.navigate('AddJobCard')}
-                        className="px-4 h-10 bg-teal-600 rounded-lg items-center justify-center"
+
+                    <ConditionalComponent
+                        module={MOBILE_MODULES.JOB_CARDS}
+                        action="create"
                     >
-                        <Text className="text-white font-semibold text-sm">Add Job Card</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('AddJobCard')}
+                            className="px-4 h-10 bg-teal-600 rounded-lg items-center justify-center"
+                        >
+                            <Text className="text-white font-semibold text-sm">Add Job Card</Text>
+                        </TouchableOpacity>
+                    </ConditionalComponent>
                 </View>
 
                 {/* Search + Filter */}

@@ -12,6 +12,7 @@ import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
 import { HeaderWithBack } from '../../components/ui/BackButton';
 import { useToast } from '../../src/ToastContext';
+import { formatValue } from '../../src/utils/formatUtils';
 
 type Props = {
     navigation: StackNavigationProp<RootStackParamList, 'ConfirmBooking'>;
@@ -185,13 +186,9 @@ export default function ConfirmBookingScreen({
 
     // ── Handlers ─────────────────────────────────────────────────────────--
     const handlePhoneChange = (text: string) => {
-        // Only allow numbers
-        const numericText = text.replace(/[^0-9]/g, '');
-        setPhoneSync(numericText);
-        if (numericText.length === 10) {
-            // Fetch customer data when 10 digits are entered
-            // fetchCustomerData(numericText);
-        }
+        const formatted = formatValue(text, 'onlyNo');
+        const digits = formatted.slice(0, 10);
+        setPhoneSync(digits);
     };
 
     const handleNext = () => {
@@ -277,7 +274,10 @@ export default function ConfirmBookingScreen({
                 <FormLabel label="Customer Name" required />
                 <TextInput
                     value={customerFullName}
-                    onChangeText={setCustomerFullNameSync}
+                    onChangeText={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setCustomerFullNameSync(formatted);
+                    }}
                     placeholder="Customer Full Name"
                     className={`h-12 bg-white border rounded-lg px-3 text-gray-800 ${nameError ? 'border-red-500' : 'border-gray-300'}`}
                 />
@@ -289,7 +289,10 @@ export default function ConfirmBookingScreen({
                 <FormLabel label="Father's Name" required />
                 <TextInput
                     value={fatherName}
-                    onChangeText={setFatherNameSync}
+                    onChangeText={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setFatherNameSync(formatted);
+                    }}
                     placeholder="Enter father's name"
                     className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                 />
@@ -334,7 +337,10 @@ export default function ConfirmBookingScreen({
                 <FormLabel label="Locality" required />
                 <TextInput
                     value={locality}
-                    onChangeText={setLocalitySync}
+                    onChangeText={(v) => {
+                        const formatted = formatValue(v, 'allCaps');
+                        setLocalitySync(formatted);
+                    }}
                     placeholder="Locality"
                     className={`h-12 bg-white border rounded-lg px-3 text-gray-800 ${localityError ? 'border-red-500' : 'border-gray-300'}`}
                 />
@@ -382,7 +388,10 @@ export default function ConfirmBookingScreen({
                 <FormLabel label="Pincode" required />
                 <TextInput
                     value={pincode}
-                    onChangeText={setPincodeSync}
+                    onChangeText={(v) => {
+                        const formatted = formatValue(v, 'onlyNo');
+                        setPincodeSync(formatted);
+                    }}
                     placeholder="Pincode"
                     keyboardType="number-pad"
                     maxLength={6}
@@ -396,7 +405,10 @@ export default function ConfirmBookingScreen({
                 <FormLabel label="Email" />
                 <TextInput
                     value={email}
-                    onChangeText={setEmailSync}
+                    onChangeText={(v) => {
+                        const formatted = formatValue(v, 'toLowerCase');
+                        setEmailSync(formatted);
+                    }}
                     placeholder="Email"
                     keyboardType="email-address"
                     className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
@@ -526,7 +538,7 @@ export default function ConfirmBookingScreen({
                 <View className="flex-row items-center justify-between mb-2">
                     <FormLabel label="Quotations Associated" />
                     <TouchableOpacity
-                        onPress={() => {/* Link Quotation */}}
+                        onPress={() => {/* Link Quotation */ }}
                         className="px-3 py-1 bg-teal-600 rounded-lg"
                     >
                         <Text className="text-white text-xs font-medium">Link Quotation</Text>
@@ -602,7 +614,7 @@ export default function ConfirmBookingScreen({
                     </Text>
                 </View>
                 <TouchableOpacity
-                    onPress={model ? () => {/* Navigate to vehicle selection */} : undefined}
+                    onPress={model ? () => {/* Navigate to vehicle selection */ } : undefined}
                     disabled={!model}
                     className={`px-4 py-3 rounded-lg flex-row items-center justify-center ${model ? 'bg-teal-600 opacity-100' : 'bg-gray-300 opacity-50'}`}
                 >
