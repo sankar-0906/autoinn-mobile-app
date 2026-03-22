@@ -77,8 +77,8 @@ interface Accessory {
     new?: boolean;
 }
 
-type BookingConfirmActivityRouteProp = RouteProp<RootStackParamList, 'BookingActivity'>;
-type BookingConfirmActivityNavigationProp = StackNavigationProp<RootStackParamList, 'BookingActivity'>;
+type BookingConfirmActivityRouteProp = RouteProp<RootStackParamList, 'BookingConfirmActivity'>;
+type BookingConfirmActivityNavigationProp = StackNavigationProp<RootStackParamList, 'BookingConfirmActivity'>;
 
 const FormLabel = ({ label, required = false }: { label: string; required?: boolean }) => (
     <Text className="text-sm text-gray-600 mb-1 font-medium">
@@ -103,25 +103,38 @@ export default function BookingConfirmActivityScreen({
     const vehicleSectionRef = useRef<View>(null);
 
     // Determine the back navigation target based on how we got here
-    const getBackNavigationTarget = () => {
+    const getBackNavigationTarget = (): { screen: 'FollowUpDetail' | 'FollowUps' | 'CustomerDetails'; params: any; useGoBack: boolean } => {
+        const routes = (navigation.getState?.()?.routes || []);
+        const previousRoute = routes[routes.length - 2];
+        const { customerId } = route.params;
+        const cameFrom = (route.params as any)?.cameFrom;
+
+        if (cameFrom === 'FollowUpDetail' || previousRoute?.name === 'FollowUpDetail') {
+            return { useGoBack: true, screen: 'FollowUpDetail' as const, params: undefined };
+        }
+
         if (customerId) {
             // For Confirm Booking, always go back to Customer Details
-            return { screen: 'CustomerDetails' as const, params: { customerId } };
+            return { useGoBack: false, screen: 'CustomerDetails' as const, params: { customerId } };
         }
         // Fallback to FollowUps if no customerId
-        return { screen: 'FollowUps' as const, params: undefined };
+        return { useGoBack: false, screen: 'FollowUps' as const, params: undefined };
     };
 
     // Use the custom back button hook
     useBackButton({
         onBackPress: () => {
             const target = getBackNavigationTarget();
-            console.log(`🔍 Closing BookingActivity, navigating to ${target.screen}`);
-            if (target.params) {
-                navigation.navigate(target.screen, target.params);
+            console.log(`🔍 Closing BookingConfirmActivity, navigating to ${target.screen}`);
+
+            if (target.useGoBack) {
+                navigation.goBack();
+            } else if (target.screen === 'CustomerDetails') {
+                navigation.navigate('CustomerDetails', target.params as { customerId: string });
             } else {
-                navigation.navigate(target.screen);
+                navigation.navigate('FollowUps');
             }
+            return false; // Return false to prevent useBackButton from calling navigation.goBack() again
         },
         showConfirmation: false // Change to true if you want confirmation dialog
     });
@@ -133,171 +146,171 @@ export default function BookingConfirmActivityScreen({
     const processedVehicleRef = useRef<string | null>(null); // Track processed vehicle ID
 
     // ── Payload-critical field refs (always in sync, no stale-closure risk) ─
-    const customerFullNameRef   = useRef(customerName ? String(customerName) : '');
-    const phoneRef              = useRef(customerPhone ? String(customerPhone) : '');
-    const fatherNameRef         = useRef('');
-    const addressRef            = useRef('');
-    const address2Ref           = useRef('');
-    const address3Ref           = useRef('');
-    const localityRef           = useRef('');
-    const pincodeRef            = useRef('');
-    const countryRef            = useRef('');
-    const stateValRef           = useRef('');
-    const cityRef               = useRef('');
-    const customerGenderRef     = useRef('Male');
-    const emailRef              = useRef('');
-    const dobRef                = useRef('');
-    const ageRef                = useRef('');
-    const salesOfficerRef       = useRef('');
-    const quotationsRef         = useRef('');
-    const remarksRef            = useRef('');
-    const expectedDeliveryRef   = useRef('');
-    const nomineeRef            = useRef('');
-    const nomineeAgeRef         = useRef('');
-    const relationshipRef       = useRef('');
-    const referredByRef         = useRef('');
-    const paymentModeRef        = useRef('cash');
-    const customerDataRef       = useRef<any>(null);
-    const customerFetchedRef    = useRef(false); // prevent re-fetching on focus regain
+    const customerFullNameRef = useRef(customerName ? String(customerName) : '');
+    const phoneRef = useRef(customerPhone ? String(customerPhone) : '');
+    const fatherNameRef = useRef('');
+    const addressRef = useRef('');
+    const address2Ref = useRef('');
+    const address3Ref = useRef('');
+    const localityRef = useRef('');
+    const pincodeRef = useRef('');
+    const countryRef = useRef('');
+    const stateValRef = useRef('');
+    const cityRef = useRef('');
+    const customerGenderRef = useRef('Male');
+    const emailRef = useRef('');
+    const dobRef = useRef('');
+    const ageRef = useRef('');
+    const salesOfficerRef = useRef('');
+    const quotationsRef = useRef('');
+    const remarksRef = useRef('');
+    const expectedDeliveryRef = useRef('');
+    const nomineeRef = useRef('');
+    const nomineeAgeRef = useRef('');
+    const relationshipRef = useRef('');
+    const referredByRef = useRef('');
+    const paymentModeRef = useRef('cash');
+    const customerDataRef = useRef<any>(null);
+    const customerFetchedRef = useRef(false); // prevent re-fetching on focus regain
 
     // ── UI State ───────────────────────────────────────────────────────────
-    const [dataLoaded, setDataLoaded]                               = useState(false);
+    const [dataLoaded, setDataLoaded] = useState(false);
     const [isVehicleSelectionInProgress, setIsVehicleSelectionInProgress] = useState(false);
-    const [hasEverSelectedVehicle, setHasEverSelectedVehicle]       = useState(false);
-    const [activeTab, setActiveTab]                                 = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
+    const [hasEverSelectedVehicle, setHasEverSelectedVehicle] = useState(false);
+    const [activeTab, setActiveTab] = useState<'customer' | 'vehicle' | 'payment' | 'auth'>('customer');
 
     // ── Customer fields ────────────────────────────────────────────────────
-    const [branch, setBranch]                     = useState('');
-    const [phone, setPhone]                       = useState(customerPhone ? String(customerPhone) : '');
+    const [branch, setBranch] = useState('');
+    const [phone, setPhone] = useState(customerPhone ? String(customerPhone) : '');
     const [customerFullName, setCustomerFullName] = useState(customerName ? String(customerName) : '');
-    const [fatherName, setFatherName]             = useState('');
-    const [address, setAddress]                   = useState('');
-    const [address2, setAddress2]                 = useState('');
-    const [address3, setAddress3]                 = useState('');
-    const [locality, setLocality]                 = useState('');
-    const [country, setCountry]                   = useState('');
-    const [stateVal, setStateVal]                 = useState('');
-    const [city, setCity]                         = useState('');
-    const [pincode, setPincode]                   = useState('');
-    const [email, setEmail]                       = useState('');
-    const [dob, setDob]                           = useState('');
-    const [age, setAge]                           = useState('');
-    const [referredBy, setReferredBy]             = useState('');
-    const [relationship, setRelationship]         = useState('');
-    const [nominee, setNominee]                   = useState('');
-    const [nomineeAge, setNomineeAge]             = useState('');
-    const [salesOfficer, setSalesOfficer]         = useState('');
+    const [fatherName, setFatherName] = useState('');
+    const [address, setAddress] = useState('');
+    const [address2, setAddress2] = useState('');
+    const [address3, setAddress3] = useState('');
+    const [locality, setLocality] = useState('');
+    const [country, setCountry] = useState('');
+    const [stateVal, setStateVal] = useState('');
+    const [city, setCity] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [email, setEmail] = useState('');
+    const [dob, setDob] = useState('');
+    const [age, setAge] = useState('');
+    const [referredBy, setReferredBy] = useState('');
+    const [relationship, setRelationship] = useState('');
+    const [nominee, setNominee] = useState('');
+    const [nomineeAge, setNomineeAge] = useState('');
+    const [salesOfficer, setSalesOfficer] = useState('');
     const [quotationsAssociated, setQuotationsAssociated] = useState('');
-    const [customerGender, setCustomerGender]     = useState('Male');
-    const [customerDob, setCustomerDob]           = useState('');
+    const [customerGender, setCustomerGender] = useState('Male');
+    const [customerDob, setCustomerDob] = useState('');
     const [generatedCustomerId, setGeneratedCustomerId] = useState('');
-    const [customerData, setCustomerData]         = useState<any>(null);
+    const [customerData, setCustomerData] = useState<any>(null);
 
-    const [selectedFinancerId, setSelectedFinancerId]             = useState('');
+    const [selectedFinancerId, setSelectedFinancerId] = useState('');
 
     // ── Dropdown data ──────────────────────────────────────────────────────
-    const [countries, setCountries]               = useState<any[]>([]);
-    const [states, setStates]                     = useState<any[]>([]);
-    const [cities, setCities]                     = useState<any[]>([]);
-    const [rtos, setRtos]                         = useState<any[]>([]);
-    const [manufacturers, setManufacturers]       = useState<any[]>([]);
-    const [models, setModels]                     = useState<any[]>([]);
-    const [colors, setColors]                     = useState<any[]>([]);
-    const [salesOfficers, setSalesOfficers]       = useState<any[]>([]);
+    const [countries, setCountries] = useState<any[]>([]);
+    const [states, setStates] = useState<any[]>([]);
+    const [cities, setCities] = useState<any[]>([]);
+    const [rtos, setRtos] = useState<any[]>([]);
+    const [manufacturers, setManufacturers] = useState<any[]>([]);
+    const [models, setModels] = useState<any[]>([]);
+    const [colors, setColors] = useState<any[]>([]);
+    const [salesOfficers, setSalesOfficers] = useState<any[]>([]);
     const [referredByOptions, setReferredByOptions] = useState<any[]>([]);
     const [relationshipOptions, setRelationshipOptions] = useState<any[]>([]);
-    const [branches, setBranches]                 = useState<any[]>([]);
+    const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchObj, setSelectedBranchObj] = useState<any>(null);
     const [selectedVehicleObj, setSelectedVehicleObj] = useState<any>(null);
 
     // ── Vehicle fields ─────────────────────────────────────────────────────
     const [manufacturer, setManufacturer] = useState('India Yamaha Motors Private Limited');
-    const [model, setModel]               = useState('');
+    const [model, setModel] = useState('');
     const currentModelRef = useRef(model);
-    const [rto, setRto]                   = useState('');
+    const [rto, setRto] = useState('');
     const [vehicleColor, setVehicleColor] = useState('');
-    const [accessories, setAccessories]   = useState<Accessory[]>([]);
-    const [totalDiscount, setTotalDiscount]           = useState('');
-    const [accessoriesTotal, setAccessoriesTotal]     = useState('');
+    const [accessories, setAccessories] = useState<Accessory[]>([]);
+    const [totalDiscount, setTotalDiscount] = useState('');
+    const [accessoriesTotal, setAccessoriesTotal] = useState('');
     const [accessoriesAfterDiscount, setAccessoriesAfterDiscount] = useState('');
-    const [exchangeModel, setExchangeModel]           = useState('');
-    const [exchangePrice, setExchangePrice]           = useState('');
-    const [onRoadPrice, setOnRoadPrice]               = useState('');
-    const [tempRegCharges, setTempRegCharges]         = useState('');
+    const [exchangeModel, setExchangeModel] = useState('');
+    const [exchangePrice, setExchangePrice] = useState('');
+    const [onRoadPrice, setOnRoadPrice] = useState('');
+    const [tempRegCharges, setTempRegCharges] = useState('');
     const [hypothecationCharges, setHypothecationCharges] = useState('');
     const [numberPlateCharges, setNumberPlateCharges] = useState('');
-    const [affidavitAmount, setAffidavitAmount]       = useState('');
-    const [specialNoCharges, setSpecialNoCharges]     = useState('');
-    const [onRoadDiscount, setOnRoadDiscount]         = useState('');
-    const [finalAmount, setFinalAmount]               = useState('');
-    const [showroomPrice, setShowroomPrice]           = useState('');
-    const [insuranceAmount, setInsuranceAmount]       = useState('');
-    const [roadTax, setRoadTax]                       = useState('');
-    const [warrantyPrice, setWarrantyPrice]           = useState('');
-    const [registrationFee, setRegistrationFee]       = useState('');
-    const [handlingCharges, setHandlingCharges]       = useState('');
-    const [insuranceType, setInsuranceType]           = useState('');
-    const [expectedDelivery, setExpectedDelivery]     = useState('');
+    const [affidavitAmount, setAffidavitAmount] = useState('');
+    const [specialNoCharges, setSpecialNoCharges] = useState('');
+    const [onRoadDiscount, setOnRoadDiscount] = useState('');
+    const [finalAmount, setFinalAmount] = useState('');
+    const [showroomPrice, setShowroomPrice] = useState('');
+    const [insuranceAmount, setInsuranceAmount] = useState('');
+    const [roadTax, setRoadTax] = useState('');
+    const [warrantyPrice, setWarrantyPrice] = useState('');
+    const [registrationFee, setRegistrationFee] = useState('');
+    const [handlingCharges, setHandlingCharges] = useState('');
+    const [insuranceType, setInsuranceType] = useState('');
+    const [expectedDelivery, setExpectedDelivery] = useState('');
 
     // ── Payment fields ─────────────────────────────────────────────────────
-    const [paymentMode, setPaymentMode]               = useState('cash');
-    const [financer, setFinancer]                     = useState('');
-    const [loanType, setLoanType]                     = useState('');
-    const [financierBranch, setFinancierBranch]       = useState('');
+    const [paymentMode, setPaymentMode] = useState('cash');
+    const [financer, setFinancer] = useState('');
+    const [loanType, setLoanType] = useState('');
+    const [financierBranch, setFinancierBranch] = useState('');
     const [paymentHypothecation, setPaymentHypothecation] = useState<boolean>(false);
-    const [remarks, setRemarks]                       = useState('');
-    const [downPayment, setDownPayment]           = useState('');
-    const [tenure, setTenure]                     = useState('');
-    const [loanAmount, setLoanAmount]             = useState('');
-    const [emiAmount, setEmiAmount]               = useState('');
-    const [netReceivables, setNetReceivables]       = useState('');
+    const [remarks, setRemarks] = useState('');
+    const [downPayment, setDownPayment] = useState('');
+    const [tenure, setTenure] = useState('');
+    const [loanAmount, setLoanAmount] = useState('');
+    const [emiAmount, setEmiAmount] = useState('');
+    const [netReceivables, setNetReceivables] = useState('');
 
     // ── Authentication fields (4th tab) ───────────────────────────────
-    const [registeredPhone, setRegisteredPhone]   = useState('');
-    const [otp, setOtp]                           = useState('');
-    const [authStatus, setAuthStatus]             = useState<'Pending' | 'Sent' | 'Verified'>('Pending');
+    const [registeredPhone, setRegisteredPhone] = useState('');
+    const [otp, setOtp] = useState('');
+    const [authStatus, setAuthStatus] = useState<'Pending' | 'Sent' | 'Verified'>('Pending');
 
-    const [emiDay, setEmiDay]                         = useState('');
-    const [emiStartDate, setEmiStartDate]             = useState('');
+    const [emiDay, setEmiDay] = useState('');
+    const [emiStartDate, setEmiStartDate] = useState('');
     const [loanDisbursementAmount, setLoanDisbursementAmount] = useState('');
     const [showroomFinanceCharges, setShowroomFinanceCharges] = useState('');
 
     // ── Modal visibility ───────────────────────────────────────────────────
-    const [showBranchModal, setShowBranchModal]                   = useState(false);
-    const [showAccessoryModal, setShowAccessoryModal]             = useState(false);
-    const [showInsuranceTypeModal, setShowInsuranceTypeModal]     = useState(false);
-    const [showCountryModal, setShowCountryModal]                 = useState(false);
-    const [showStateModal, setShowStateModal]                     = useState(false);
-    const [showCityModal, setShowCityModal]                       = useState(false);
-    const [showRtoModal, setShowRtoModal]                         = useState(false);
-    const [showManufacturerModal, setShowManufacturerModal]       = useState(false);
-    const [showModelModal, setShowModelModal]                     = useState(false);
-    const [showColorModal, setShowColorModal]                     = useState(false);
-    const [showSalesOfficerModal, setShowSalesOfficerModal]       = useState(false);
-    const [showReferredByModal, setShowReferredByModal]           = useState(false);
-    const [showRelationshipModal, setShowRelationshipModal]       = useState(false);
+    const [showBranchModal, setShowBranchModal] = useState(false);
+    const [showAccessoryModal, setShowAccessoryModal] = useState(false);
+    const [showInsuranceTypeModal, setShowInsuranceTypeModal] = useState(false);
+    const [showCountryModal, setShowCountryModal] = useState(false);
+    const [showStateModal, setShowStateModal] = useState(false);
+    const [showCityModal, setShowCityModal] = useState(false);
+    const [showRtoModal, setShowRtoModal] = useState(false);
+    const [showManufacturerModal, setShowManufacturerModal] = useState(false);
+    const [showModelModal, setShowModelModal] = useState(false);
+    const [showColorModal, setShowColorModal] = useState(false);
+    const [showSalesOfficerModal, setShowSalesOfficerModal] = useState(false);
+    const [showReferredByModal, setShowReferredByModal] = useState(false);
+    const [showRelationshipModal, setShowRelationshipModal] = useState(false);
     const [showAttachQuotationModal, setShowAttachQuotationModal] = useState(false);
-    const [showCalendarModal, setShowCalendarModal]               = useState(false);
+    const [showCalendarModal, setShowCalendarModal] = useState(false);
     const [showExpectedDeliveryModal, setShowExpectedDeliveryModal] = useState(false);
-    const [showLoanTypeModal, setShowLoanTypeModal]               = useState(false);
-    const [showTenureModal, setShowTenureModal]                   = useState(false);
-    const [showEmiDayModal, setShowEmiDayModal]                   = useState(false);
-    const [showFinancerModal, setShowFinancerModal]               = useState(false);
-    const [showEmiStartDateModal, setShowEmiStartDateModal]       = useState(false);
-    const [financerOptions, setFinancerOptions]                   = useState<any[]>([]);
-    const [selectedDate, setSelectedDate]                         = useState(new Date());
-    const [dobCalendarStep, setDobCalendarStep]                   = useState<'year' | 'month' | 'day'>('year');
-    const [dobPickYear, setDobPickYear]                           = useState(new Date().getFullYear());
-    const [dobPickMonth, setDobPickMonth]                         = useState(new Date().getMonth());
+    const [showLoanTypeModal, setShowLoanTypeModal] = useState(false);
+    const [showTenureModal, setShowTenureModal] = useState(false);
+    const [showEmiDayModal, setShowEmiDayModal] = useState(false);
+    const [showFinancerModal, setShowFinancerModal] = useState(false);
+    const [showEmiStartDateModal, setShowEmiStartDateModal] = useState(false);
+    const [financerOptions, setFinancerOptions] = useState<any[]>([]);
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [dobCalendarStep, setDobCalendarStep] = useState<'year' | 'month' | 'day'>('year');
+    const [dobPickYear, setDobPickYear] = useState(new Date().getFullYear());
+    const [dobPickMonth, setDobPickMonth] = useState(new Date().getMonth());
 
     // ── Validation errors ──────────────────────────────────────────────────
-    const [nameError, setNameError]               = useState('');
-    const [phoneError, setPhoneError]             = useState('');
+    const [nameError, setNameError] = useState('');
+    const [phoneError, setPhoneError] = useState('');
     const [salesOfficerError, setSalesOfficerError] = useState('');
-    const [addressError, setAddressError]         = useState('');
-    const [localityError, setLocalityError]       = useState('');
-    const [pincodeError, setPincodeError]         = useState('');
-    const [modelError, setModelError]             = useState('');
+    const [addressError, setAddressError] = useState('');
+    const [localityError, setLocalityError] = useState('');
+    const [pincodeError, setPincodeError] = useState('');
+    const [modelError, setModelError] = useState('');
 
     // ─────────────────────────────────────────────────────────────────────
     // Derived booleans
@@ -311,29 +324,29 @@ export default function BookingConfirmActivityScreen({
     // Ref sync helpers — set both state (UI) and ref (payload) atomically
     // ─────────────────────────────────────────────────────────────────────
     const setCustomerFullNameSync = (v: string) => { customerFullNameRef.current = v; setCustomerFullName(v); };
-    const setPhoneSync            = (v: string) => { phoneRef.current = v; setPhone(v); };
-    const setFatherNameSync       = (v: string) => { fatherNameRef.current = v; setFatherName(v); };
-    const setAddressSync          = (v: string) => { addressRef.current = v; setAddress(v); };
-    const setAddress2Sync         = (v: string) => { address2Ref.current = v; setAddress2(v); };
-    const setAddress3Sync         = (v: string) => { address3Ref.current = v; setAddress3(v); };
-    const setLocalitySync         = (v: string) => { localityRef.current = v; setLocality(v); };
-    const setPincodeSync          = (v: string) => { pincodeRef.current = v; setPincode(v); };
-    const setCountrySync          = (v: string) => { countryRef.current = v; setCountry(v); };
-    const setStateValSync         = (v: string) => { stateValRef.current = v; setStateVal(v); };
-    const setCitySync             = (v: string) => { cityRef.current = v; setCity(v); };
-    const setCustomerGenderSync   = (v: string) => { customerGenderRef.current = v; setCustomerGender(v); };
-    const setEmailSync            = (v: string) => { emailRef.current = v; setEmail(v); };
-    const setDobSync              = (v: string) => { dobRef.current = v; setDob(v); };
-    const setAgeSync              = (v: string) => { ageRef.current = v; setAge(v); };
-    const setSalesOfficerSync     = (v: string) => { salesOfficerRef.current = v; setSalesOfficer(v); };
-    const setQuotationsSync       = (v: string) => { quotationsRef.current = v; setQuotationsAssociated(v); };
-    const setRemarksSync          = (v: string) => { remarksRef.current = v; setRemarks(v); };
+    const setPhoneSync = (v: string) => { phoneRef.current = v; setPhone(v); };
+    const setFatherNameSync = (v: string) => { fatherNameRef.current = v; setFatherName(v); };
+    const setAddressSync = (v: string) => { addressRef.current = v; setAddress(v); };
+    const setAddress2Sync = (v: string) => { address2Ref.current = v; setAddress2(v); };
+    const setAddress3Sync = (v: string) => { address3Ref.current = v; setAddress3(v); };
+    const setLocalitySync = (v: string) => { localityRef.current = v; setLocality(v); };
+    const setPincodeSync = (v: string) => { pincodeRef.current = v; setPincode(v); };
+    const setCountrySync = (v: string) => { countryRef.current = v; setCountry(v); };
+    const setStateValSync = (v: string) => { stateValRef.current = v; setStateVal(v); };
+    const setCitySync = (v: string) => { cityRef.current = v; setCity(v); };
+    const setCustomerGenderSync = (v: string) => { customerGenderRef.current = v; setCustomerGender(v); };
+    const setEmailSync = (v: string) => { emailRef.current = v; setEmail(v); };
+    const setDobSync = (v: string) => { dobRef.current = v; setDob(v); };
+    const setAgeSync = (v: string) => { ageRef.current = v; setAge(v); };
+    const setSalesOfficerSync = (v: string) => { salesOfficerRef.current = v; setSalesOfficer(v); };
+    const setQuotationsSync = (v: string) => { quotationsRef.current = v; setQuotationsAssociated(v); };
+    const setRemarksSync = (v: string) => { remarksRef.current = v; setRemarks(v); };
     const setExpectedDeliverySync = (v: string) => { expectedDeliveryRef.current = v; setExpectedDelivery(v); };
-    const setNomineeSync          = (v: string) => { nomineeRef.current = v; setNominee(v); };
-    const setNomineeAgeSync       = (v: string) => { nomineeAgeRef.current = v; setNomineeAge(v); };
-    const setRelationshipSync     = (v: string) => { relationshipRef.current = v; setRelationship(v); };
-    const setReferredBySync       = (v: string) => { referredByRef.current = v; setReferredBy(v); };
-    const setPaymentModeSync      = (v: string) => { paymentModeRef.current = v; setPaymentMode(v); };
+    const setNomineeSync = (v: string) => { nomineeRef.current = v; setNominee(v); };
+    const setNomineeAgeSync = (v: string) => { nomineeAgeRef.current = v; setNomineeAge(v); };
+    const setRelationshipSync = (v: string) => { relationshipRef.current = v; setRelationship(v); };
+    const setReferredBySync = (v: string) => { referredByRef.current = v; setReferredBy(v); };
+    const setPaymentModeSync = (v: string) => { paymentModeRef.current = v; setPaymentMode(v); };
 
     // ─────────────────────────────────────────────────────────────────────
     // Net receivables recalculation
@@ -616,7 +629,7 @@ export default function BookingConfirmActivityScreen({
         }
 
         // 4. Associated Quotations — only set if current quotations is empty
-        console.log('📄 Quotations check:', { 
+        console.log('📄 Quotations check:', {
             quotationIds: customer.quotation?.map((q: any) => q.quotationId || q.id),
             currentQuotations: quotationsRef.current
         });
@@ -657,7 +670,7 @@ export default function BookingConfirmActivityScreen({
             }
 
             console.log('🔍 fetchCustomerData — proceeding with fetch for:', phoneToUse);
-            
+
             // Mark as fetched immediately to prevent race conditions
             customerFetchedRef.current = true;
 
@@ -689,15 +702,15 @@ export default function BookingConfirmActivityScreen({
             customerFetchedRef: customerFetchedRef.current,
             isSameAsCurrent: value === phoneRef.current
         });
-        
+
         setPhoneSync(value);
-        
+
         // Only proceed if value is actually different from current ref
         if (value === phoneRef.current) {
             console.log('🔍 handlePhoneChange — same value, skipping');
             return;
         }
-        
+
         // If user is changing to a completely different phone number, reset fetch guard
         if (value.length === 10 && phoneRef.current && value !== phoneRef.current) {
             console.log('🔍 handlePhoneChange — resetting fetch guard for new phone');
@@ -742,26 +755,26 @@ export default function BookingConfirmActivityScreen({
         const saved = route.params?.savedFormData;
         if (saved) {
             console.log('🔄 Restoring saved form data from route params');
-            if (saved.fatherName)       setFatherNameSync(saved.fatherName);
-            if (saved.address)          setAddressSync(saved.address);
-            if (saved.address2)         setAddress2Sync(saved.address2);
-            if (saved.address3)         setAddress3Sync(saved.address3);
-            if (saved.locality)         setLocalitySync(saved.locality);
-            if (saved.pincode)          setPincodeSync(saved.pincode);
-            if (saved.country)          setCountrySync(saved.country);
-            if (saved.stateVal)         setStateValSync(saved.stateVal);
-            if (saved.city)             setCitySync(saved.city);
-            if (saved.email)            setEmailSync(saved.email);
-            if (saved.dob)              setDobSync(saved.dob);
-            if (saved.age)              setAgeSync(saved.age);
-            if (saved.salesOfficer)     setSalesOfficerSync(saved.salesOfficer);
-            if (saved.quotations)       setQuotationsSync(saved.quotations);
-            if (saved.remarks)          setRemarksSync(saved.remarks);
-            if (saved.customerGender)   setCustomerGenderSync(saved.customerGender);
-            if (saved.nominee)          setNomineeSync(saved.nominee);
-            if (saved.nomineeAge)       setNomineeAgeSync(saved.nomineeAge);
-            if (saved.relationship)     setRelationshipSync(saved.relationship);
-            if (saved.referredBy)       setReferredBySync(saved.referredBy);
+            if (saved.fatherName) setFatherNameSync(saved.fatherName);
+            if (saved.address) setAddressSync(saved.address);
+            if (saved.address2) setAddress2Sync(saved.address2);
+            if (saved.address3) setAddress3Sync(saved.address3);
+            if (saved.locality) setLocalitySync(saved.locality);
+            if (saved.pincode) setPincodeSync(saved.pincode);
+            if (saved.country) setCountrySync(saved.country);
+            if (saved.stateVal) setStateValSync(saved.stateVal);
+            if (saved.city) setCitySync(saved.city);
+            if (saved.email) setEmailSync(saved.email);
+            if (saved.dob) setDobSync(saved.dob);
+            if (saved.age) setAgeSync(saved.age);
+            if (saved.salesOfficer) setSalesOfficerSync(saved.salesOfficer);
+            if (saved.quotations) setQuotationsSync(saved.quotations);
+            if (saved.remarks) setRemarksSync(saved.remarks);
+            if (saved.customerGender) setCustomerGenderSync(saved.customerGender);
+            if (saved.nominee) setNomineeSync(saved.nominee);
+            if (saved.nomineeAge) setNomineeAgeSync(saved.nomineeAge);
+            if (saved.relationship) setRelationshipSync(saved.relationship);
+            if (saved.referredBy) setReferredBySync(saved.referredBy);
             if (saved.expectedDelivery) setExpectedDeliverySync(saved.expectedDelivery);
             if (saved.customerFullName) setCustomerFullNameSync(saved.customerFullName);
             // Clear savedFormData from params to prevent re-restoring
@@ -802,18 +815,18 @@ export default function BookingConfirmActivityScreen({
                 vehicleId: route.params?.selectedVehicle?.vehicleId || route.params?.selectedVehicle?.id,
                 processedVehicleRef: processedVehicleRef.current
             });
-            
+
             // Only proceed if we have vehicle data AND haven't processed it yet
             if (route.params?.selectedVehicle && !isVehicleSelectionInProgressRef.current) {
                 const vehicleData = route.params.selectedVehicle;
                 const vehicleId = vehicleData.vehicleId || vehicleData.id;
-                
+
                 // Check if we've already processed this specific vehicle
                 if (processedVehicleRef.current === vehicleId) {
                     console.log('🔍 useFocusEffect — vehicle already processed:', vehicleId);
                     return;
                 }
-                
+
                 console.log('🔍 useFocusEffect — processing new vehicle:', vehicleId);
                 processedVehicleRef.current = vehicleId;
 
@@ -877,37 +890,37 @@ export default function BookingConfirmActivityScreen({
         let hasCustomerError = false;
 
         // Read from state (always up-to-date by the time user reaches Save & Complete)
-        const n   = customerFullName.trim();
-        const p   = phone.trim();
-        const so  = salesOfficer.trim();
+        const n = customerFullName.trim();
+        const p = phone.trim();
+        const so = salesOfficer.trim();
         const addr = address.trim();
-        const loc  = locality.trim();
-        const pin  = pincode.trim();
-        const a    = age.trim();
-        const g    = customerGender.trim();
+        const loc = locality.trim();
+        const pin = pincode.trim();
+        const a = age.trim();
+        const g = customerGender.trim();
 
-        if (!n)   { setNameError('Customer name is required'); hasCustomerError = true; }
-        if (!p)   { setPhoneError('Phone number is required'); hasCustomerError = true; }
+        if (!n) { setNameError('Customer name is required'); hasCustomerError = true; }
+        if (!p) { setPhoneError('Phone number is required'); hasCustomerError = true; }
         else if (p.length !== 10 || !/^\d+$/.test(p)) { setPhoneError('Enter a valid 10-digit phone'); hasCustomerError = true; }
-        if (!so)  { setSalesOfficerError('Sales officer is required'); hasCustomerError = true; }
-        if (!a)   { toast.error('Age is required'); hasCustomerError = true; }
-        if (!g)   { toast.error('Gender is required'); hasCustomerError = true; }
-        if (!addr){ setAddressError('Address is required'); hasCustomerError = true; }
+        if (!so) { setSalesOfficerError('Sales officer is required'); hasCustomerError = true; }
+        if (!a) { toast.error('Age is required'); hasCustomerError = true; }
+        if (!g) { toast.error('Gender is required'); hasCustomerError = true; }
+        if (!addr) { setAddressError('Address is required'); hasCustomerError = true; }
         if (!loc) { setLocalityError('Locality is required'); hasCustomerError = true; }
         if (!pin) { setPincodeError('Pincode is required'); hasCustomerError = true; }
         else if (!/^\d{6}$/.test(pin)) { setPincodeError('Enter a valid 6-digit pincode'); hasCustomerError = true; }
 
         if (hasCustomerError) {
-            if (!n)             toast.error('Customer name is required');
-            else if (!p)        toast.error('Phone number is required');
+            if (!n) toast.error('Customer name is required');
+            else if (!p) toast.error('Phone number is required');
             else if (p.length !== 10) toast.error('Enter a valid 10-digit phone');
-            else if (!so)       toast.error('Sales officer is required');
-            else if (!a)        toast.error('Age is required');
-            else if (!g)        toast.error('Gender is required');
-            else if (!addr)     toast.error('Address is required');
-            else if (!loc)      toast.error('Locality is required');
-            else if (!pin)      toast.error('Pincode is required');
-            else                toast.error('Enter a valid 6-digit pincode');
+            else if (!so) toast.error('Sales officer is required');
+            else if (!a) toast.error('Age is required');
+            else if (!g) toast.error('Gender is required');
+            else if (!addr) toast.error('Address is required');
+            else if (!loc) toast.error('Locality is required');
+            else if (!pin) toast.error('Pincode is required');
+            else toast.error('Enter a valid 6-digit pincode');
             return 'customer';
         }
 
@@ -928,9 +941,9 @@ export default function BookingConfirmActivityScreen({
             if (!financer.trim()) { toast.error('Financer name is required'); return 'payment'; }
             if (loanType === 'Company Assisted') {
                 if (!downPayment) { toast.error('Down payment is required'); return 'payment'; }
-                if (!tenure)      { toast.error('Tenure is required'); return 'payment'; }
-                if (!loanAmount)  { toast.error('Loan amount is required'); return 'payment'; }
-                if (!emiAmount)   { toast.error('EMI amount is required'); return 'payment'; }
+                if (!tenure) { toast.error('Tenure is required'); return 'payment'; }
+                if (!loanAmount) { toast.error('Loan amount is required'); return 'payment'; }
+                if (!emiAmount) { toast.error('EMI amount is required'); return 'payment'; }
             }
         }
 
@@ -961,37 +974,37 @@ export default function BookingConfirmActivityScreen({
             generateBookingId(branchId),
             generateEReceiptId(branchId),
         ]);
-        const baseBookingId  = bookingIdRes.data?.response?.data  || bookingIdRes.data?.data  || 'BK';
-        const baseReceiptId  = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
+        const baseBookingId = bookingIdRes.data?.response?.data || bookingIdRes.data?.data || 'BK';
+        const baseReceiptId = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
         const stamp = `${Date.now()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-        const bookingId  = `${baseBookingId}-${stamp}`;
+        const bookingId = `${baseBookingId}-${stamp}`;
         const eReceiptId = `${baseReceiptId}-${stamp}`;
 
         // ── Read all values from refs ──
-        const snap           = customerDataRef.current;
-        const currentName    = customerFullNameRef.current;
-        const currentPhone   = phoneRef.current;
-        const currentFather  = fatherNameRef.current;
-        const currentAddr    = addressRef.current;
-        const currentAddr2   = address2Ref.current;
-        const currentAddr3   = address3Ref.current;
-        const currentLoc     = localityRef.current;
+        const snap = customerDataRef.current;
+        const currentName = customerFullNameRef.current;
+        const currentPhone = phoneRef.current;
+        const currentFather = fatherNameRef.current;
+        const currentAddr = addressRef.current;
+        const currentAddr2 = address2Ref.current;
+        const currentAddr3 = address3Ref.current;
+        const currentLoc = localityRef.current;
         const currentCountry = countryRef.current;
-        const currentState   = stateValRef.current;
-        const currentCity    = cityRef.current;
-        const currentPin     = pincodeRef.current;
-        const currentEmail   = emailRef.current;
-        const currentDob     = dobRef.current;
-        const currentGender  = customerGenderRef.current;
-        const currentSales   = salesOfficerRef.current;
-        const currentQuotes  = quotationsRef.current;
+        const currentState = stateValRef.current;
+        const currentCity = cityRef.current;
+        const currentPin = pincodeRef.current;
+        const currentEmail = emailRef.current;
+        const currentDob = dobRef.current;
+        const currentGender = customerGenderRef.current;
+        const currentSales = salesOfficerRef.current;
+        const currentQuotes = quotationsRef.current;
         const currentRemarks = remarksRef.current;
         const currentPayMode = paymentModeRef.current;
         const currentNominee = nomineeRef.current;
-        const currentNomAge  = nomineeAgeRef.current;
+        const currentNomAge = nomineeAgeRef.current;
         const currentRelation = relationshipRef.current;
         const currentReferred = referredByRef.current;
-        const currentExpDel  = expectedDeliveryRef.current;
+        const currentExpDel = expectedDeliveryRef.current;
 
         console.log('📦 Payload ref values:', {
             name: currentName, phone: currentPhone, address: currentAddr,
@@ -999,16 +1012,16 @@ export default function BookingConfirmActivityScreen({
         });
 
         const vehicleData = selectedVehicleObj ? {
-            id:        selectedVehicleObj.modelId || selectedVehicleObj.vehicleId || selectedVehicleObj.id,
+            id: selectedVehicleObj.modelId || selectedVehicleObj.vehicleId || selectedVehicleObj.id,
             modelName: selectedVehicleObj.name || selectedVehicleObj.displayName,
             modelCode: selectedVehicleObj.model || selectedVehicleObj.modelCode,
             color: {
-                id:       selectedVehicleObj.selectedColor?.price?.colors?.[0]?.colorId ||
-                          selectedVehicleObj.selectedColor?.id || null,
-                name:     selectedVehicleObj.selectedColor?.name || selectedVehicleObj.selectedColor?.colorName,
-                code:     selectedVehicleObj.selectedColor?.code || '#000000',
+                id: selectedVehicleObj.selectedColor?.price?.colors?.[0]?.colorId ||
+                    selectedVehicleObj.selectedColor?.id || null,
+                name: selectedVehicleObj.selectedColor?.name || selectedVehicleObj.selectedColor?.colorName,
+                code: selectedVehicleObj.selectedColor?.code || '#000000',
                 imageUrl: selectedVehicleObj.selectedColor?.price?.colors?.[0]?.imageDetails?.[0]?.url ||
-                          selectedVehicleObj.selectedColor?.imageUrl || null,
+                    selectedVehicleObj.selectedColor?.imageUrl || null,
             },
         } : null;
 
@@ -1026,23 +1039,23 @@ export default function BookingConfirmActivityScreen({
             : null;
 
         const loanPayload = {
-            hypothecation:          isFinance ? paymentHypothecation : false,
-            financerBranch:         isFinance ? financierBranch : '',
-            financer:               isFinance && selectedFinancerId ? { id: selectedFinancerId, name: financer } : null,
-            downPayment:            isFinance ? (parseFloat(downPayment) || 0) : 0,
-            loanAmount:             isFinance ? (parseFloat(loanAmount) || 0) : 0,
-            tenure:                 isFinance ? (parseInt(tenure) || 0) : 0,
-            emiDate:                isFinance ? (parseInt(emiDay) || 0) : 0,
-            emiStartDate:           isFinance && emiStartDate ? (() => {
+            hypothecation: isFinance ? paymentHypothecation : false,
+            financerBranch: isFinance ? financierBranch : '',
+            financer: isFinance && selectedFinancerId ? { id: selectedFinancerId, name: financer } : null,
+            downPayment: isFinance ? (parseFloat(downPayment) || 0) : 0,
+            loanAmount: isFinance ? (parseFloat(loanAmount) || 0) : 0,
+            tenure: isFinance ? (parseInt(tenure) || 0) : 0,
+            emiDate: isFinance ? (parseInt(emiDay) || 0) : 0,
+            emiStartDate: isFinance && emiStartDate ? (() => {
                 if (emiStartDate.includes('/')) {
                     const [dd, mm, yyyy] = emiStartDate.split('/');
                     return `${yyyy}-${mm}-${dd}`;
                 }
                 return emiStartDate;
             })() : null,
-            loanType:               normalizedLoanType,
-            emiAmount:              isFinance ? (parseFloat(emiAmount) || 0) : 0,
-            disbursementAmount:     isFinance ? (parseFloat(loanDisbursementAmount) || 0) : 0,
+            loanType: normalizedLoanType,
+            emiAmount: isFinance ? (parseFloat(emiAmount) || 0) : 0,
+            disbursementAmount: isFinance ? (parseFloat(loanDisbursementAmount) || 0) : 0,
             showroomFinanceCharges: isFinance ? (parseFloat(showroomFinanceCharges) || 0) : 0,
         };
 
@@ -1070,95 +1083,95 @@ export default function BookingConfirmActivityScreen({
 
             // Customer object — always use ref values for addresses (user may have edited)
             customer: snap ? {
-                id:          snap.id,
-                customerId:  snap.customerId,
-                name:        currentName,
-                fatherName:  currentFather || null,
-                gender:      currentGender,
-                email:       currentEmail || null,
-                contacts:    snap.contacts || [],
+                id: snap.id,
+                customerId: snap.customerId,
+                name: currentName,
+                fatherName: currentFather || null,
+                gender: currentGender,
+                email: currentEmail || null,
+                contacts: snap.contacts || [],
                 dateOfBirth: normalizedDob,
                 address: {
-                    line1:    currentAddr,
-                    line2:    currentAddr2,
-                    line3:    currentAddr3,
+                    line1: currentAddr,
+                    line2: currentAddr2,
+                    line3: currentAddr3,
                     locality: currentLoc,
-                    pincode:  currentPin,
-                    country:  currentCountry ? { name: currentCountry } : null,
-                    state:    currentState   ? { name: currentState }   : null,
-                    city:     currentCity    ? { name: currentCity }    : null,
+                    pincode: currentPin,
+                    country: currentCountry ? { name: currentCountry } : null,
+                    state: currentState ? { name: currentState } : null,
+                    city: currentCity ? { name: currentCity } : null,
                 },
             } : null,
 
-            customerId:         displayCustomerId,
-            customerName:       currentName,
-            fatherName:         currentFather || '',
+            customerId: displayCustomerId,
+            customerName: currentName,
+            fatherName: currentFather || '',
             customerFatherName: currentFather || '',
-            line1:               currentAddr || '',
-            line2:               currentAddr2 || '',
-            line3:               currentAddr3 || '',
-            customerLine1:      currentAddr || '',
-            customerLine2:      currentAddr2 || '',
-            customerLine3:      currentAddr3 || '',
-            customerPhone:      currentPhone,
-            customerGender:     currentGender,
-            customerLocality:   currentLoc,
-            customerCountry:    currentCountry,
-            customerState:      currentState,
-            customerCity:       currentCity,
-            customerPincode:    currentPin,
-            customerEmail:      currentEmail,
-            customerDob:        normalizedDob,
+            line1: currentAddr || '',
+            line2: currentAddr2 || '',
+            line3: currentAddr3 || '',
+            customerLine1: currentAddr || '',
+            customerLine2: currentAddr2 || '',
+            customerLine3: currentAddr3 || '',
+            customerPhone: currentPhone,
+            customerGender: currentGender,
+            customerLocality: currentLoc,
+            customerCountry: currentCountry,
+            customerState: currentState,
+            customerCity: currentCity,
+            customerPincode: currentPin,
+            customerEmail: currentEmail,
+            customerDob: normalizedDob,
 
             IDbranch: branchId,
-            branch:   { id: branchId, name: selectedBranch.name || branch },
+            branch: { id: branchId, name: selectedBranch.name || branch },
 
-            nomineeName:  currentNominee,
-            nomineeAge:   currentNomAge,
+            nomineeName: currentNominee,
+            nomineeAge: currentNomAge,
             relationship: currentRelation,
 
-            vehicle:         vehicleData,
+            vehicle: vehicleData,
             selectedVehicle: vehicleData ? [{
                 color: {
-                    id:    vehicleData.color?.id,
+                    id: vehicleData.color?.id,
                     color: vehicleData.color?.name,
-                    code:  vehicleData.color?.code,
-                    url:   vehicleData.color?.imageUrl,
+                    code: vehicleData.color?.code,
+                    url: vehicleData.color?.imageUrl,
                 },
                 vehicleDetail: {
-                    id:        vehicleData.id,
+                    id: vehicleData.id,
                     modelName: vehicleData.modelName,
                     modelCode: vehicleData.modelCode,
                 },
             }] : [],
 
-            rto:     resolveRto(),
+            rto: resolveRto(),
             rtoCode: rto?.split(' - ')[0] || 'KA-01',
             rtoArea: rto?.split(' - ')[1] || '',
 
             price: {
-                showroomPrice:                parseFloat(showroomPrice)         || 0,
-                onRoadPrice:                  parseFloat(onRoadPrice)           || 0,
-                onRoadDiscount:               parseFloat(onRoadDiscount)        || 0,
-                insuranceAmount:              parseFloat(insuranceAmount)       || 0,
-                insuranceType:                insuranceType || 'Comprehensive',
-                roadTax:                      parseFloat(roadTax)               || 0,
-                handlingCharges:              parseFloat(handlingCharges)       || 0,
-                registrationFee:              parseFloat(registrationFee)       || 0,
-                numberPlate:                  parseFloat(numberPlateCharges)    || 0,
-                tempRegister:                 parseFloat(tempRegCharges)        || 0,
-                hp:                           parseFloat(hypothecationCharges)  || 0,
-                paymentMode:                  currentPayMode,
-                affidavit:                    parseFloat(affidavitAmount)       || 0,
-                netRecievables:               parseFloat(netReceivables)        || 0,
-                specialNoCharges:             parseFloat(specialNoCharges)      || 0,
-                accessoriesTotal:             parseFloat(accessoriesTotal)      || 0,
+                showroomPrice: parseFloat(showroomPrice) || 0,
+                onRoadPrice: parseFloat(onRoadPrice) || 0,
+                onRoadDiscount: parseFloat(onRoadDiscount) || 0,
+                insuranceAmount: parseFloat(insuranceAmount) || 0,
+                insuranceType: insuranceType || 'Comprehensive',
+                roadTax: parseFloat(roadTax) || 0,
+                handlingCharges: parseFloat(handlingCharges) || 0,
+                registrationFee: parseFloat(registrationFee) || 0,
+                numberPlate: parseFloat(numberPlateCharges) || 0,
+                tempRegister: parseFloat(tempRegCharges) || 0,
+                hp: parseFloat(hypothecationCharges) || 0,
+                paymentMode: currentPayMode,
+                affidavit: parseFloat(affidavitAmount) || 0,
+                netRecievables: parseFloat(netReceivables) || 0,
+                specialNoCharges: parseFloat(specialNoCharges) || 0,
+                accessoriesTotal: parseFloat(accessoriesTotal) || 0,
                 accessoriesTotalAfterDiscount: parseFloat(accessoriesAfterDiscount) || 0,
-                totalDiscount:                parseFloat(totalDiscount)         || 0,
-                finalAmount:                  parseFloat(finalAmount)           || 0,
+                totalDiscount: parseFloat(totalDiscount) || 0,
+                finalAmount: parseFloat(finalAmount) || 0,
             },
 
-            exchangeVehicleName:  exchangeModel,
+            exchangeVehicleName: exchangeModel,
             exchangeVehiclePrice: parseFloat(exchangePrice) || 0,
             exchange: { vehicleModel: exchangeModel, vehiclePrice: parseFloat(exchangePrice) || null },
 
@@ -1184,18 +1197,18 @@ export default function BookingConfirmActivityScreen({
 
             color: { id: vehicleData?.color?.id || null },
 
-            loan:     loanPayload,
+            loan: loanPayload,
             loanData: {
-                finName:               isFinance ? financer : null,
-                financerBranch:        loanPayload.financerBranch,
-                downPayment:           loanPayload.downPayment,
-                loanAmount:            loanPayload.loanAmount,
-                tenure:                loanPayload.tenure,
-                emiDate:               loanPayload.emiDate,
-                emiStartDate:          loanPayload.emiStartDate,
-                loanType:              loanPayload.loanType,
-                emiAmount:             loanPayload.emiAmount,
-                disbursementAmount:    loanPayload.disbursementAmount,
+                finName: isFinance ? financer : null,
+                financerBranch: loanPayload.financerBranch,
+                downPayment: loanPayload.downPayment,
+                loanAmount: loanPayload.loanAmount,
+                tenure: loanPayload.tenure,
+                emiDate: loanPayload.emiDate,
+                emiStartDate: loanPayload.emiStartDate,
+                loanType: loanPayload.loanType,
+                emiAmount: loanPayload.emiAmount,
+                disbursementAmount: loanPayload.disbursementAmount,
                 showroomFinanceCharges: loanPayload.showroomFinanceCharges,
             },
 
@@ -1220,7 +1233,7 @@ export default function BookingConfirmActivityScreen({
                 }
                 return currentExpDel;
             })() : null,
-            refferedBy:      currentReferred,
+            refferedBy: currentReferred,
             confirmBookingId: null,
         };
 
@@ -1252,32 +1265,32 @@ export default function BookingConfirmActivityScreen({
             console.log('📦 Booking response:', response);
             console.log('📦 Response data:', response.data);
             console.log('📦 Response status:', response.status);
-            
+
             if (response.data.code === 200) {
                 toast.success('Booking saved successfully!');
                 console.log('📦 Booking created successfully, updating quotation status...');
-                
+
                 // Update quotation status to "BOOKED" after successful booking
                 const quotationData = response.data?.response?.data?.quotation?.[0];
                 const quotationId = quotationData?.id || quotationData?.quotationId;
-                
+
                 if (quotationId) {
                     console.log('📝 Found quotationId:', quotationId);
                     // TODO: Implement status update when backend API is available
                     console.log('⚠️ Status update API not available yet, skipping status update');
-                    
+
                     // Emit event to refresh FollowUps list
                     DeviceEventEmitter.emit('refreshFollowUps');
                     console.log('📡 Emitted refreshFollowUps event');
                 } else {
                     console.log('⚠️ No quotation ID found in booking response');
                 }
-                
+
                 // Reset navigation stack and navigate to FollowUpDetail to prevent going back to booking payment page
                 const customerPhone = phoneRef.current || route.params?.customerPhone || response.data?.response?.data?.customerPhone;
                 if (customerPhone) {
                     console.log('🔍 Resetting navigation and going to FollowUpDetail with customerPhone:', customerPhone);
-                    
+
                     setTimeout(() => {
                         if (quotationId) {
                             console.log('🔍 Including QuotationView in navigation stack with quotationId:', quotationId);
@@ -1321,7 +1334,7 @@ export default function BookingConfirmActivityScreen({
             console.error('❌ Booking creation error:', error);
             console.error('❌ Error response:', error.response);
             console.error('❌ Error request:', error.request);
-            
+
             if (error.response) {
                 console.error('❌ Server response data:', error.response.data);
                 toast.error(error.response.data?.message || error.response.data?.err?.message || 'Server error');
@@ -1361,14 +1374,14 @@ export default function BookingConfirmActivityScreen({
     const handleAttachQuotation = async (selected: string[]) => {
         console.log('🔗 handleAttachQuotation called with:', selected);
         console.log('📊 Current quotationsAssociated before:', quotationsAssociated);
-        
+
         if (selected.length > 0) {
             // Convert internal IDs to quotation IDs using existing customer data or API fallback
             const newQuotationIds = await Promise.all(selected.map(async (id) => {
                 // First try to find matching quotation in customer data
                 const matchingQuotation = customerData?.quotation?.find(q => q.id === id);
                 const quotationId = matchingQuotation?.quotationId;
-                
+
                 if (quotationId) {
                     console.log('🔄 Found in customer data - Converting ID:', id, 'to QuotationId:', quotationId);
                     return quotationId;
@@ -1387,21 +1400,21 @@ export default function BookingConfirmActivityScreen({
                     }
                 }
             }));
-            
+
             console.log('🔄 Converted quotation IDs:', newQuotationIds);
-            
+
             // Combine existing and new quotations
             const existingQuotations = quotationsAssociated ? quotationsAssociated.split(', ').filter(q => q.trim()) : [];
             const allQuotations = [...existingQuotations, ...newQuotationIds];
-            
+
             // Remove duplicates
             const uniqueQuotations = [...new Set(allQuotations)];
             const finalQuotations = uniqueQuotations.join(', ');
-            
+
             console.log('📝 Setting quotations to:', finalQuotations);
             setQuotationsSync(finalQuotations);
             toast.success(`Attached ${selected.length} quotation(s)`);
-            
+
             // Verify the change
             setTimeout(() => {
                 console.log('📊 QuotationsAssociated after setting:', quotationsAssociated);
@@ -1415,7 +1428,7 @@ export default function BookingConfirmActivityScreen({
     const handleAccessorySave = (saved: Accessory[]) => {
         setAccessories(saved);
         const before = saved.reduce((s, a) => s + a.priceBeforeDiscount, 0);
-        const after  = saved.reduce((s, a) => s + a.priceAfterDiscount, 0);
+        const after = saved.reduce((s, a) => s + a.priceAfterDiscount, 0);
         setAccessoriesTotal(before.toString());
         setAccessoriesAfterDiscount(after.toString());
     };
@@ -1431,15 +1444,15 @@ export default function BookingConfirmActivityScreen({
             setNameError(''); setPhoneError(''); setAddressError('');
             setLocalityError(''); setPincodeError(''); setSalesOfficerError('');
             let err = false;
-            if (!customerFullName.trim())   { setNameError('Customer name is required'); err = true; }
-            if (!phone.trim())             { setPhoneError('Phone number is required'); err = true; }
+            if (!customerFullName.trim()) { setNameError('Customer name is required'); err = true; }
+            if (!phone.trim()) { setPhoneError('Phone number is required'); err = true; }
             else if (phone.length !== 10 || !/^\d+$/.test(phone)) { setPhoneError('Enter a valid 10-digit phone'); err = true; }
-            if (!salesOfficer.trim())      { setSalesOfficerError('Sales officer is required'); err = true; }
-            if (!address.trim())          { setAddressError('Address is required'); err = true; }
-            if (!locality.trim())         { setLocalityError('Locality is required'); err = true; }
-            if (!pincode.trim())          { setPincodeError('Pincode is required'); err = true; }
+            if (!salesOfficer.trim()) { setSalesOfficerError('Sales officer is required'); err = true; }
+            if (!address.trim()) { setAddressError('Address is required'); err = true; }
+            if (!locality.trim()) { setLocalityError('Locality is required'); err = true; }
+            if (!pincode.trim()) { setPincodeError('Pincode is required'); err = true; }
             else if (!/^\d{6}$/.test(pincode)) { setPincodeError('Enter a valid 6-digit pincode'); err = true; }
-            if (!customerGender.trim())   { toast.error('Gender is required'); err = true; }
+            if (!customerGender.trim()) { toast.error('Gender is required'); err = true; }
             if (!err) setActiveTab('vehicle');
         } else if (activeTab === 'vehicle') {
             if (!model) { toast.error('Please select a vehicle model'); return; }
@@ -2197,7 +2210,7 @@ export default function BookingConfirmActivityScreen({
                                 {/* Digital Authentication Section */}
                                 <View className="mb-6">
                                     <Text className="text-gray-700 font-medium mb-4">Digital Authentication</Text>
-                                    
+
                                     <View className="bg-gray-50 rounded-lg p-4 mb-4">
                                         <View className="mb-4">
                                             <FormLabel label="Registered Phone Number" />
@@ -2248,7 +2261,7 @@ export default function BookingConfirmActivityScreen({
                                 {/* Manual Authentication Section */}
                                 <View className="border-t pt-6">
                                     <Text className="text-gray-700 font-medium mb-4">Manual Authentication</Text>
-                                    
+
                                     <View className="grid grid-cols-2 gap-4">
                                         <View>
                                             <FormLabel label="Download Booking Form" />
@@ -2423,7 +2436,7 @@ export default function BookingConfirmActivityScreen({
             {/* Tenure */}
             <CustomModal visible={showTenureModal} onClose={() => setShowTenureModal(false)}>
                 <View className="p-4 border-b border-gray-200"><Text className="text-lg font-semibold">Select Tenure</Text></View>
-                <ScrollView>{['1','2','3','6','12','24','36','48','60'].map(t => (<TouchableOpacity key={t} onPress={() => { setTenure(t); setShowTenureModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{t} months</Text></TouchableOpacity>))}</ScrollView>
+                <ScrollView>{['1', '2', '3', '6', '12', '24', '36', '48', '60'].map(t => (<TouchableOpacity key={t} onPress={() => { setTenure(t); setShowTenureModal(false); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{t} months</Text></TouchableOpacity>))}</ScrollView>
                 <TouchableOpacity onPress={() => setShowTenureModal(false)} className="p-4 border-t border-gray-200"><Text className="text-center text-gray-600">Cancel</Text></TouchableOpacity>
             </CustomModal>
 
@@ -2521,7 +2534,7 @@ export default function BookingConfirmActivityScreen({
                                         <Text className="text-teal-200 mx-1">›</Text>
                                         <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
                                             <Text className={`text-sm font-semibold ${dobCalendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
-                                                {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dobPickMonth]}
+                                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dobPickMonth]}
                                             </Text>
                                         </TouchableOpacity>
                                     </>
@@ -2565,7 +2578,7 @@ export default function BookingConfirmActivityScreen({
                             {/* STEP 2: Month Selection */}
                             {dobCalendarStep === 'month' && (
                                 <View className="flex-row flex-wrap">
-                                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
+                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((monthName, idx) => {
                                         const isSelected = idx === dobPickMonth;
                                         const now = new Date();
                                         const isFuture = dobPickYear === now.getFullYear() && idx > now.getMonth();
@@ -2606,7 +2619,7 @@ export default function BookingConfirmActivityScreen({
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
                                                 <Text className="text-base font-bold text-teal-700">
-                                                    {['January','February','March','April','May','June','July','August','September','October','November','December'][dobPickMonth]} {dobPickYear}
+                                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][dobPickMonth]} {dobPickYear}
                                                 </Text>
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => {
@@ -2622,7 +2635,7 @@ export default function BookingConfirmActivityScreen({
 
                                         {/* Weekday headers */}
                                         <View className="flex-row mb-1">
-                                            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
                                                 <View key={d} className="flex-1 items-center py-1">
                                                     <Text className="text-xs font-semibold text-teal-600">{d}</Text>
                                                 </View>

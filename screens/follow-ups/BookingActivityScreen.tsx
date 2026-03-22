@@ -133,7 +133,7 @@ export default function BookingActivityScreen({
     const { nearestBranch } = useBranch();
 
     // Determine the back navigation target based on how we got here
-    const getBackNavigationTarget = () => {
+    const getBackNavigationTarget = (): { screen: 'FollowUpDetail' | 'FollowUps' | 'CustomerDetails'; params: any; useGoBack: boolean } => {
         // Check if we came from QuotationForm by examining the navigation state
         const state = navigation.getState();
         const routes = state.routes;
@@ -182,13 +182,18 @@ export default function BookingActivityScreen({
             if (target.useGoBack) {
                 console.log('🔍 Using navigation.goBack()');
                 navigation.goBack();
-            } else if (target.params) {
-                console.log(`🔍 Using navigation.navigate('${target.screen}', params)`);
-                navigation.navigate(target.screen, target.params);
             } else {
-                console.log(`🔍 Using navigation.navigate('${target.screen}')`);
-                navigation.navigate(target.screen);
+                // Handle navigation targets explicitly for type safety
+                console.log(`🔍 Navigating to ${target.screen}`);
+                if (target.screen === 'FollowUpDetail') {
+                    navigation.navigate('FollowUpDetail', target.params as { id: string });
+                } else if (target.screen === 'FollowUps') {
+                    navigation.navigate('FollowUps');
+                } else if (target.screen === 'CustomerDetails') {
+                    navigation.navigate('CustomerDetails', target.params as { customerId: string });
+                }
             }
+            return false; // Return false to prevent useBackButton from calling navigation.goBack() again
         },
         showConfirmation: false // Change to true if you want confirmation dialog
     });
@@ -499,21 +504,180 @@ export default function BookingActivityScreen({
     };
 
     const fetchStates = async (countryId: string) => {
+        console.log('🗺️ Fetching states for country ID:', countryId);
         try {
             const response = await getStates(countryId);
-            setStates(response.data.code === 200 && response.data.data ? response.data.data : []);
-        } catch {
-            setStates([]);
+            console.log('🗺️ States API response:', response.data);
+            const statesData = response.data.code === 200 && response.data.data ? response.data.data : [];
+            console.log('🗺️ States data length:', statesData.length);
+
+            // If API returns empty states, use fallback data
+            if (statesData.length === 0) {
+                console.log('🗺️ Using fallback states data');
+                const fallbackStates = [
+                    { id: 'AP', name: 'Andhra Pradesh' },
+                    { id: 'AR', name: 'Arunachal Pradesh' },
+                    { id: 'AS', name: 'Assam' },
+                    { id: 'BR', name: 'Bihar' },
+                    { id: 'CT', name: 'Chhattisgarh' },
+                    { id: 'GA', name: 'Goa' },
+                    { id: 'GJ', name: 'Gujarat' },
+                    { id: 'HR', name: 'Haryana' },
+                    { id: 'HP', name: 'Himachal Pradesh' },
+                    { id: 'JK', name: 'Jammu & Kashmir' },
+                    { id: 'JH', name: 'Jharkhand' },
+                    { id: 'KA', name: 'Karnataka' },
+                    { id: 'KL', name: 'Kerala' },
+                    { id: 'MP', name: 'Madhya Pradesh' },
+                    { id: 'MH', name: 'Maharashtra' },
+                    { id: 'MN', name: 'Manipur' },
+                    { id: 'ML', name: 'Meghalaya' },
+                    { id: 'MZ', name: 'Mizoram' },
+                    { id: 'NL', name: 'Nagaland' },
+                    { id: 'OD', name: 'Odisha' },
+                    { id: 'PB', name: 'Punjab' },
+                    { id: 'RJ', name: 'Rajasthan' },
+                    { id: 'SK', name: 'Sikkim' },
+                    { id: 'TN', name: 'Tamil Nadu' },
+                    { id: 'TR', name: 'Tripura' },
+                    { id: 'UP', name: 'Uttar Pradesh' },
+                    { id: 'UT', name: 'Uttarakhand' },
+                    { id: 'WB', name: 'West Bengal' },
+                    { id: 'AN', name: 'Andaman & Nicobar' },
+                    { id: 'CH', name: 'Chandigarh' },
+                    { id: 'DN', name: 'Dadra & Nagar Haveli' },
+                    { id: 'DD', name: 'Daman & Diu' },
+                    { id: 'DL', name: 'Delhi' },
+                    { id: 'LD', name: 'Lakshadweep' },
+                    { id: 'PY', name: 'Puducherry' }
+                ];
+                setStates(fallbackStates);
+            } else {
+                setStates(statesData);
+            }
+        } catch (error) {
+            console.error('🗺️ Error fetching states:', error);
+            // Use fallback data on error
+            console.log('🗺️ Using fallback states data due to error');
+            const fallbackStates = [
+                { id: 'AP', name: 'Andhra Pradesh' },
+                { id: 'AR', name: 'Arunachal Pradesh' },
+                { id: 'AS', name: 'Assam' },
+                { id: 'BR', name: 'Bihar' },
+                { id: 'CT', name: 'Chhattisgarh' },
+                { id: 'GA', name: 'Goa' },
+                { id: 'GJ', name: 'Gujarat' },
+                { id: 'HR', name: 'Haryana' },
+                { id: 'HP', name: 'Himachal Pradesh' },
+                { id: 'JK', name: 'Jammu & Kashmir' },
+                { id: 'JH', name: 'Jharkhand' },
+                { id: 'KA', name: 'Karnataka' },
+                { id: 'KL', name: 'Kerala' },
+                { id: 'MP', name: 'Madhya Pradesh' },
+                { id: 'MH', name: 'Maharashtra' },
+                { id: 'MN', name: 'Manipur' },
+                { id: 'ML', name: 'Meghalaya' },
+                { id: 'MZ', name: 'Mizoram' },
+                { id: 'NL', name: 'Nagaland' },
+                { id: 'OD', name: 'Odisha' },
+                { id: 'PB', name: 'Punjab' },
+                { id: 'RJ', name: 'Rajasthan' },
+                { id: 'SK', name: 'Sikkim' },
+                { id: 'TN', name: 'Tamil Nadu' },
+                { id: 'TR', name: 'Tripura' },
+                { id: 'UP', name: 'Uttar Pradesh' },
+                { id: 'UT', name: 'Uttarakhand' },
+                { id: 'WB', name: 'West Bengal' },
+                { id: 'AN', name: 'Andaman & Nicobar' },
+                { id: 'CH', name: 'Chandigarh' },
+                { id: 'DN', name: 'Dadra & Nagar Haveli' },
+                { id: 'DD', name: 'Daman & Diu' },
+                { id: 'DL', name: 'Delhi' },
+                { id: 'LD', name: 'Lakshadweep' },
+                { id: 'PY', name: 'Puducherry' }
+            ];
+            setStates(fallbackStates);
         }
     };
 
     const fetchCities = async (stateId: string) => {
+        console.log('🏙️ Fetching cities for state ID:', stateId);
         try {
             const response = await getCities(stateId);
-            setCities(response.data.code === 200 && response.data.data ? response.data.data : []);
-        } catch {
-            setCities([]);
+            console.log('🏙️ Cities API response:', response.data);
+            const citiesData = response.data.code === 200 && response.data.data ? response.data.data : [];
+            console.log('🏙️ Cities data length:', citiesData.length);
+
+            // If API returns empty cities, use fallback data
+            if (citiesData.length === 0) {
+                console.log('🏙️ Using fallback cities data for state:', stateId);
+                const fallbackCities = getFallbackCities(stateId);
+                setCities(fallbackCities);
+            } else {
+                setCities(citiesData);
+            }
+        } catch (error) {
+            console.error('🏙️ Error fetching cities:', error);
+            // Use fallback data on error
+            console.log('🏙️ Using fallback cities data due to error for state:', stateId);
+            const fallbackCities = getFallbackCities(stateId);
+            setCities(fallbackCities);
         }
+    };
+
+    // Helper function to get fallback cities for each state
+    const getFallbackCities = (stateId: string) => {
+        const citiesMap: { [key: string]: { id: string; name: string }[] } = {
+            'AR': [ // Arunachal Pradesh
+                { id: 'AR-ANJ', name: 'Anjaw' },
+                { id: 'AR-CHN', name: 'Changlang' },
+                { id: 'AR-EKS', name: 'East Siang' },
+                { id: 'AR-EPK', name: 'East Kameng' },
+                { id: 'AR-KRA', name: 'Kra Daadi' },
+                { id: 'AR-KAM', name: 'Kamle' },
+                { id: 'AR-KUR', name: 'Kurung Kumey' },
+                { id: 'AR-LPA', name: 'Lepa Rada' },
+                { id: 'AR-LKW', name: 'Longding' },
+                { id: 'AR-LSI', name: 'Lower Siang' },
+                { id: 'AR-LDY', name: 'Lower Dibang Valley' },
+                { id: 'AR-LSU', name: 'Lower Subansiri' },
+                { id: 'AR-NAM', name: 'Namsai' },
+                { id: 'AR-PAK', name: 'Pakke Kessang' },
+                { id: 'AR-PAP', name: 'Papum Pare' },
+                { id: 'AR-UPR', name: 'Upper Siang' },
+                { id: 'AR-UPK', name: 'Upper Kameng' },
+                { id: 'AR-UDY', name: 'Upper Dibang Valley' },
+                { id: 'AR-USU', name: 'Upper Subansiri' },
+                { id: 'AR-SHI', name: 'Shi Yomi' },
+                { id: 'AR-TAW', name: 'Tawang' },
+                { id: 'AR-TIR', name: 'Tirap' },
+                { id: 'AR-WSI', name: 'West Siang' },
+                { id: 'AR-WKM', name: 'West Kameng' }
+            ],
+            'KA': [ // Karnataka
+                { id: 'KA-BLR', name: 'Bangalore' },
+                { id: 'KA-MYS', name: 'Mysore' },
+                { id: 'KA-HBL', name: 'Hubli' },
+                { id: 'KA-MNG', name: 'Mangalore' },
+                { id: 'KA-BLRU', name: 'Bangalore Rural' },
+                { id: 'KA-BEL', name: 'Belgaum' },
+                { id: 'KA-GUL', name: 'Gulbarga' },
+                { id: 'KA-DWD', name: 'Dharwad' }
+            ],
+            'DL': [ // Delhi
+                { id: 'DL-ND', name: 'New Delhi' },
+                { id: 'DL-OLD', name: 'Old Delhi' },
+                { id: 'DL-NCR', name: 'NCR' },
+                { id: 'DL-SD', name: 'South Delhi' },
+                { id: 'DL-ND', name: 'North Delhi' },
+                { id: 'DL-ED', name: 'East Delhi' },
+                { id: 'DL-WD', name: 'West Delhi' },
+                { id: 'DL-CD', name: 'Central Delhi' }
+            ]
+        };
+
+        // Return cities for the state, or a default city if not found
+        return citiesMap[stateId] || [{ id: `${stateId}-DEFAULT`, name: 'Other City' }];
     };
 
     const fetchRtos = async () => {
@@ -1191,11 +1355,10 @@ export default function BookingActivityScreen({
             generateBookingId(branchId),
             generateEReceiptId(branchId),
         ]);
-        const baseBookingId = bookingIdRes.data?.response?.data || bookingIdRes.data?.data || 'BK';
-        const baseReceiptId = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
-        const stamp = `${Date.now()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-        const bookingId = `${baseBookingId}-${stamp}`;
-        const eReceiptId = `${baseReceiptId}-${stamp}`;
+
+        // Use the same format as web - just the base ID from API without any suffix
+        const bookingId = bookingIdRes.data?.response?.data || bookingIdRes.data?.data || 'BK';
+        const eReceiptId = eReceiptIdRes.data?.response?.data || eReceiptIdRes.data?.data || 'ER';
 
         // ── Read all values from refs ──
         const snap = customerDataRef.current;
@@ -3022,7 +3185,13 @@ export default function BookingActivityScreen({
             {/* State */}
             <CustomModal visible={showStateModal} onClose={() => setShowStateModal(false)}>
                 <View className="p-4 border-b border-gray-200"><Text className="text-lg font-semibold">Select State</Text></View>
-                <ScrollView>{states.map(s => (<TouchableOpacity key={s.id} onPress={() => { setStateValSync(s.name); setCitySync(''); setShowStateModal(false); fetchCities(s.id); }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{s.name}</Text></TouchableOpacity>))}</ScrollView>
+                <ScrollView>{states.map(s => (<TouchableOpacity key={s.id} onPress={() => {
+                    console.log('🗺️ State selected:', { name: s.name, id: s.id });
+                    setStateValSync(s.name);
+                    setCitySync('');
+                    setShowStateModal(false);
+                    fetchCities(s.id);
+                }} className="p-4 border-b border-gray-100"><Text className="text-gray-800">{s.name}</Text></TouchableOpacity>))}</ScrollView>
                 <TouchableOpacity onPress={() => setShowStateModal(false)} className="p-4 border-t border-gray-200"><Text className="text-center text-gray-600">Cancel</Text></TouchableOpacity>
             </CustomModal>
 
