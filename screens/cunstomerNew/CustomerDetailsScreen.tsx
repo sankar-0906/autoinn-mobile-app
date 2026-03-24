@@ -695,7 +695,14 @@ const CustomerDetailsScreen: React.FC = () => {
                 customerType: customerType || 'Non Customer',
                 customerGrouping: customerGrouping || null,
                 salutation: salutation || 'Mr',
-                contacts: phoneNumbers,
+                contacts: phoneNumbers.map(p => ({
+                    id: p.id,
+                    phone: p.number,
+                    type: p.type,
+                    valid: p.validity === 'Valid',
+                    WhatsApp: p.whatsapp === 'Yes',
+                    DND: p.dnd === 'Yes'
+                })),
                 address: billingAddressObj,
                 shippingAddress: shippingAddressObj
             };

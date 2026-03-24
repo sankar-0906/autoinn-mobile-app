@@ -20,7 +20,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { ChevronLeft, ChevronRight, Calendar, Clock, X, ChevronDown } from 'lucide-react-native';
 import { COLORS } from '../../constants/colors';
 import { Button } from '../../components/ui/Button';
-import { getCustomerByPhoneNo, placeCloudCall, createCallActivity, getCurrentUser } from '../../src/api';
+import { getCustomerByPhoneNo, placeCloudCall, createCallActivity, getCurrentUser, discardFollowUp } from '../../src/api';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import { useToast } from '../../src/ToastContext';
 import { TimePickerModal } from '../../components/TimePickerModal';
@@ -101,7 +101,7 @@ export default function CallActivityScreen({
     };
 
     const handleCreateQuotation = () => {
-         navigation.navigate('AddQuotation', { returnToPrevious: true });
+        navigation.navigate('AddQuotation', { returnToPrevious: true });
     };
 
     const handleSave = async () => {
@@ -117,22 +117,22 @@ export default function CallActivityScreen({
 
         try {
             setLoadingCall(true);
-            
+
             // Get current user info for employee field (like web project)
             const userPhone = await AsyncStorage.getItem('userPhone');
             let employeeName = await AsyncStorage.getItem('employeeName');
-            
+
             // Try to get real employee data from API (web project approach)
             if (!employeeName) {
                 try {
                     const userResponse = await getCurrentUser();
                     if (userResponse.data?.code === 200 && userResponse.data?.response?.data) {
                         const userData = userResponse.data.response.data;
-                        employeeName = userData.profile?.employeeName || 
-                                     userData.employeeName || 
-                                     userData.name ||
-                                     'Sales Executive';
-                        
+                        employeeName = userData.profile?.employeeName ||
+                            userData.employeeName ||
+                            userData.name ||
+                            'Sales Executive';
+
                         // Cache the employee name for future use
                         if (employeeName) {
                             await AsyncStorage.setItem('employeeName', employeeName);
@@ -143,31 +143,31 @@ export default function CallActivityScreen({
                     console.warn('⚠️ Failed to fetch current user:', error);
                 }
             }
-            
+
             // Extract quotation and vehicle data from customerData
             let quotationIdToUse = quotationId;
             let vehicleToUse = selectedVehicle;
             let executiveQuotation = null;
-            
+
             // If no quotationId in params, try to get from customer data
             if (!quotationIdToUse && customerData?.quotation?.length > 0) {
                 const latestQuotation = customerData.quotation[customerData.quotation.length - 1];
                 quotationIdToUse = latestQuotation.quotationId;
                 executiveQuotation = latestQuotation;
-                
+
                 // Extract vehicle from quotation
                 if (latestQuotation.vehicle?.length > 0) {
                     vehicleToUse = latestQuotation.vehicle[0];
                 }
             }
-            
+
             // Try to get employee name from quotation executive data
             if (!employeeName && executiveQuotation?.executive) {
-                employeeName = executiveQuotation.executive.profile?.employeeName || 
-                             executiveQuotation.executive.employeeName ||
-                             executiveQuotation.executive.name;
+                employeeName = executiveQuotation.executive.profile?.employeeName ||
+                    executiveQuotation.executive.employeeName ||
+                    executiveQuotation.executive.name;
             }
-            
+
             // Try to get employee name from any quotation
             if (!employeeName && customerData?.quotation?.length > 0) {
                 for (const quotation of customerData.quotation) {
@@ -177,19 +177,19 @@ export default function CallActivityScreen({
                     }
                 }
             }
-            
+
             // Fallback to default if still not found
             if (!employeeName) {
                 employeeName = 'Sales Executive';
             }
-            
+
             // Format date and time for API
             const formattedDate = scheduleDateValue.toLocaleDateString('en-GB', {
                 day: '2-digit',
-                month: '2-digit', 
+                month: '2-digit',
                 year: 'numeric'
             });
-            
+
             // Create activity payload
             const activityData = {
                 customerId: customerId,
@@ -213,12 +213,12 @@ export default function CallActivityScreen({
             };
 
             console.log('🔍 Saving call activity:', activityData);
-            
+
             const activityResponse = await createCallActivity(activityData);
-            
+
             if (activityResponse.data?.code === 200) {
                 console.log('🔍 Call activity saved successfully');
-                
+
                 // Emit event for instant activity update
                 const newActivity = {
                     ...activityData,
@@ -227,12 +227,12 @@ export default function CallActivityScreen({
                     activityType: 'Call Activity',
                     customerName: customerData?.name || customerName,
                 };
-                
+
                 DeviceEventEmitter.emit('activityCreated', {
                     type: 'call',
                     activity: newActivity
                 });
-                
+
                 toast.success('Call activity saved successfully');
                 navigation.goBack();
             } else {
@@ -260,7 +260,7 @@ export default function CallActivityScreen({
 
         try {
             setLoadingCall(true);
-            
+
             // First place the cloud call
             const callResponse = await placeCloudCall({
                 phone1: ePhone,
@@ -271,31 +271,31 @@ export default function CallActivityScreen({
 
             if (callResponse.data.code === 200) {
                 toast.success('Call Initiated: TeleCMI is dialing your phone first.');
-                
+
                 // Also create follow-up activity if date and time are set
                 if (scheduleDateValue && scheduleTimeValue) {
                     try {
                         const formattedDate = scheduleDateValue.toLocaleDateString('en-GB', {
                             day: '2-digit',
-                            month: '2-digit', 
+                            month: '2-digit',
                             year: 'numeric'
                         });
 
                         // Get current user info for employee field (like web project)
                         const userPhone = await AsyncStorage.getItem('userPhone');
                         let employeeName = await AsyncStorage.getItem('employeeName');
-                        
+
                         // Try to get real employee data from API (web project approach)
                         if (!employeeName) {
                             try {
                                 const userResponse = await getCurrentUser();
                                 if (userResponse.data?.code === 200 && userResponse.data?.response?.data) {
                                     const userData = userResponse.data.response.data;
-                                    employeeName = userData.profile?.employeeName || 
-                                                 userData.employeeName || 
-                                                 userData.name ||
-                                                 'Sales Executive';
-                                    
+                                    employeeName = userData.profile?.employeeName ||
+                                        userData.employeeName ||
+                                        userData.name ||
+                                        'Sales Executive';
+
                                     // Cache the employee name for future use
                                     if (employeeName) {
                                         await AsyncStorage.setItem('employeeName', employeeName);
@@ -306,31 +306,31 @@ export default function CallActivityScreen({
                                 console.warn('⚠️ Failed to fetch current user:', error);
                             }
                         }
-                        
+
                         // Extract quotation and vehicle data from customerData
                         let quotationIdToUse = quotationId;
                         let vehicleToUse = selectedVehicle;
                         let executiveQuotation = null;
-                        
+
                         // If no quotationId in params, try to get from customer data
                         if (!quotationIdToUse && customerData?.quotation?.length > 0) {
                             const latestQuotation = customerData.quotation[customerData.quotation.length - 1];
                             quotationIdToUse = latestQuotation.quotationId;
                             executiveQuotation = latestQuotation;
-                            
+
                             // Extract vehicle from quotation
                             if (latestQuotation.vehicle?.length > 0) {
                                 vehicleToUse = latestQuotation.vehicle[0];
                             }
                         }
-                        
+
                         // Try to get employee name from quotation executive data
                         if (!employeeName && executiveQuotation?.executive) {
-                            employeeName = executiveQuotation.executive.profile?.employeeName || 
-                                         executiveQuotation.executive.employeeName ||
-                                         executiveQuotation.executive.name;
+                            employeeName = executiveQuotation.executive.profile?.employeeName ||
+                                executiveQuotation.executive.employeeName ||
+                                executiveQuotation.executive.name;
                         }
-                        
+
                         // Try to get employee name from any quotation
                         if (!employeeName && customerData?.quotation?.length > 0) {
                             for (const quotation of customerData.quotation) {
@@ -340,12 +340,12 @@ export default function CallActivityScreen({
                                 }
                             }
                         }
-                        
+
                         // Fallback to default if still not found
                         if (!employeeName) {
                             employeeName = 'Sales Executive';
                         }
-                        
+
                         const activityData = {
                             customerId: customerId,
                             interactionType: 'Call Follow',
@@ -369,12 +369,12 @@ export default function CallActivityScreen({
                         };
 
                         console.log('🔍 Creating call follow-up activity:', activityData);
-                        
+
                         const activityResponse = await createCallActivity(activityData);
-                        
+
                         if (activityResponse.data?.code === 200) {
                             console.log('🔍 Call follow-up activity created successfully');
-                            
+
                             // Emit event for instant activity update
                             const newActivity = {
                                 ...activityData,
@@ -383,7 +383,7 @@ export default function CallActivityScreen({
                                 activityType: 'Call Activity',
                                 customerName: customerData?.name || customerName,
                             };
-                            
+
                             DeviceEventEmitter.emit('activityCreated', {
                                 type: 'call',
                                 activity: newActivity
@@ -396,12 +396,12 @@ export default function CallActivityScreen({
                         // Don't show error to user as call was already initiated
                     }
                 }
-                
+
                 // Navigate back after a short delay to allow user to see the success message
                 setTimeout(() => {
                     navigation.goBack();
                 }, 2000);
-                
+
             } else {
                 toast.error(callResponse.data.message || 'Could not initiate bridge call.');
             }
@@ -413,15 +413,35 @@ export default function CallActivityScreen({
         }
     };
 
-    const handleDiscard = () => {
+    const handleDiscard = async () => {
         setDiscardReasonError('');
         if (!discardReason.trim()) {
             setDiscardReasonError('Required');
             return;
         }
-        toast.success('Call activity discarded successfully');
-        setShowDiscardModal(false);
-        navigation.goBack();
+
+        if (!customerId) {
+            toast.error('Customer ID not found');
+            return;
+        }
+
+        try {
+            const response = await discardFollowUp(customerId, discardReason);
+            if (response.data?.code === 200 && response.data?.response?.code === 200) {
+                toast.success('Follow-Up discarded successfully');
+                setShowDiscardModal(false);
+                // Navigate to Quotations tab in Main navigator
+                navigation.navigate('Main', {
+                    screen: 'Quotations',
+                    params: { activeTab: 'rejected' }
+                } as any);
+            } else {
+                toast.error(response.data?.message || 'Failed to discard follow-up');
+            }
+        } catch (error) {
+            console.error('Error discarding follow-up:', error);
+            toast.error('Something went wrong while discarding the follow-up');
+        }
     };
 
     React.useEffect(() => {
