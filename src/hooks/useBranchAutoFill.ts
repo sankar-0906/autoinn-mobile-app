@@ -26,12 +26,12 @@ export const useBranchAutoFill = (): UseBranchAutoFillResult => {
 
   // Sync nearest branch when it's available
   useEffect(() => {
-    if (selectedBranch) {
-      setAutoFilledBranch(selectedBranch.id);
-      setBranchPriority(null); // manually selected
-    } else if (nearestBranch) {
+    if (nearestBranch) {
       setAutoFilledBranch(nearestBranch.id);
       setBranchPriority('nearest');
+    } else if (selectedBranch) {
+      setAutoFilledBranch(selectedBranch.id);
+      setBranchPriority(null); // manually selected (or global fallback)
     } else if (employeeBranch) {
       setAutoFilledBranch(employeeBranch.id);
       setBranchPriority('employee');
@@ -39,7 +39,7 @@ export const useBranchAutoFill = (): UseBranchAutoFillResult => {
       setAutoFilledBranch(branches[0].id);
       setBranchPriority('first');
     }
-  }, [selectedBranch, nearestBranch, branches]);
+  }, [selectedBranch, nearestBranch, branches, employeeBranch]);
 
   // Retry auto-fill
   const retryAutoFill = async () => {

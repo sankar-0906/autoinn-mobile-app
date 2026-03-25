@@ -20,7 +20,6 @@ export type RootStackParamList = {
     FollowUps: undefined;
     FollowUpDetail: { id: string };
     CustomerDetails: { customerId?: string };
-    CustomerEdit: { customerId?: string; customerName?: string };
     ConfirmBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     AdvancedBooking: { customerId?: string; customerName?: string; phoneNumbers?: any[] };
     BookingRegister: { customerId?: string; customerName?: string; phoneNumbers?: any[]; isAdvancedBooking?: boolean };
@@ -30,7 +29,6 @@ export type RootStackParamList = {
     CallActivity: { customerName?: string; customerId?: string; customerPhone?: string; quotationId?: string; selectedVehicle?: any };
     ActivityViewEdit: { mode: 'view' | 'edit'; activityId: string };
     VehicleDetails: { vehicle: any; mode?: 'view' | 'edit'; selectedVehicleData?: any };
-    FollowUpQuotationForm: { customerName?: string; customerPhone?: string; locality?: string; customerType?: string; gender?: string };
     // Job Cards
     AddJobCard: undefined;
     JobCardFilters: undefined;

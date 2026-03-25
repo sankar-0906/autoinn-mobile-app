@@ -111,8 +111,16 @@ function FollowUpsContent({ navigation }: { navigation: FollowUpsNavigationProp 
 
     useFocusEffect(
         useCallback(() => {
+            const params = (navigation as any).getState().routes.find((r: any) => r.name === 'FollowUps')?.params;
+            if (params?.activeTab) {
+                const tab = params.activeTab.charAt(0).toUpperCase() + params.activeTab.slice(1);
+                if (TABS.includes(tab as any)) {
+                    setActiveTab(tab as any);
+                }
+                navigation.setParams({ activeTab: undefined } as any);
+            }
             fetchFollowUps();
-        }, [fetchFollowUps])
+        }, [fetchFollowUps, navigation])
     );
 
     // Listen for quotation status updates to refresh FollowUps

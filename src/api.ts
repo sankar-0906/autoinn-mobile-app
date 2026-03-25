@@ -4,9 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // endpoint comes from environment variable (Expo builds will inject any
 // EXPO_PUBLIC_* values from .env files).  We fall back to a hard-coded
 // development default when nothing is provided.
-// const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
+const DEFAULT_ENDPOINT = 'https://nandiyamaha.autocloud.in';
 // const DEFAULT_ENDPOINT = 'https://test.autocloud.in/';
-const DEFAULT_ENDPOINT = 'http://10.176.131.218:4000'
+// const DEFAULT_ENDPOINT = 'http://10.111.66.131:4000'
 export const ENDPOINT = process.env.EXPO_PUBLIC_ENDPOINT || DEFAULT_ENDPOINT;
 
 
@@ -419,6 +419,10 @@ export const scheduleFollowUp = (data: {
   filter?: any;
 }) => {
   return platformApi.post('/api/quotation/scheduled', data);
+};
+
+export const discardFollowUp = (customerId: string, remarks: string) => {
+  return platformApi.post('/api/customer/followup/discard', { customerId, remarks });
 };
 
 // Dropdown data APIs from autoinn-fe

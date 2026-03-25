@@ -86,7 +86,7 @@ const CustomerDetailsScreen: React.FC = () => {
     const route = useRoute<CustomerDetailsRouteProp>();
     const { customerId } = route.params || { customerId: 'CNS33355' };
     const insets = useSafeAreaInsets();
-    
+
     const [activeTab, setActiveTab] = useState('customer-details');
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -339,21 +339,21 @@ const CustomerDetailsScreen: React.FC = () => {
     useEffect(() => {
         const fetchCustomerData = async () => {
             if (!customerId) return;
-            
+
             setLoading(true);
             try {
                 console.log('🔍 CustomerDetailsScreen - Fetching customer data for ID:', customerId);
                 const response = await getCustomerDetails(customerId);
-                
+
                 if (response.data?.code === 200 && response.data?.response?.data) {
                     const responseData = response.data.response.data;
                     const customer = responseData.customer;
                     console.log('✅ CustomerDetailsScreen - Customer data fetched successfully');
                     setCustomerData(customer);
-                    
+
                     // Set display customer ID
                     setDisplayCustomerId(customer.customerId || customer.id || customerId);
-                    
+
                     // Set form fields
                     if (customer.customerType) setCustomerType(customer.customerType);
                     if (customer.salutation) setSalutation(customer.salutation);
@@ -371,7 +371,7 @@ const CustomerDetailsScreen: React.FC = () => {
                     if (customer.GSTType) setGstType(customer.GSTType);
                     if (customer.GSTNo) setGstin(customer.GSTNo);
                     if (customer.customerGrouping) setCustomerGrouping(customer.customerGrouping);
-                    
+
                     // Set phone numbers
                     if (customer.contacts && customer.contacts.length > 0) {
                         const mappedPhones = customer.contacts.map((contact: any, index: number) => ({
@@ -384,7 +384,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         }));
                         setPhoneNumbers(mappedPhones);
                     }
-                    
+
                     // Set billing address
                     if (customer.address) {
                         setBillingAddress({
@@ -397,7 +397,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             city: customer.address.district?.id || '',  // ✅ Fix: Read from district field
                             pincode: customer.address.pincode || ''
                         });
-                        
+
                         // Fetch states and cities if country/state exist
                         if (customer.address.country?.id) {
                             fetchStates(customer.address.country.id);
@@ -406,7 +406,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             fetchCities(customer.address.state.id);
                         }
                     }
-                    
+
                     // Set quotations
                     if (customer.quotation && customer.quotation.length > 0) {
                         const quotationData = customer.quotation.map((quot: any) => ({
@@ -419,12 +419,12 @@ const CustomerDetailsScreen: React.FC = () => {
                         }));
                         setQuotations(quotationData);
                     }
-                    
+
                     // Set purchased vehicles
                     if (customer.purchasedVehicle && customer.purchasedVehicle.length > 0) {
                         setPurchasedVehicles(customer.purchasedVehicle);
                     }
-                    
+
                     // Set bookings
                     if (customer.booking && customer.booking.length > 0) {
                         const bookingData = customer.booking.map((booking: any) => ({
@@ -438,7 +438,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         }));
                         setBookings(bookingData);
                     }
-                    
+
                     setForceUpdate(prev => prev + 1);
                 }
             } catch (error) {
@@ -539,8 +539,8 @@ const CustomerDetailsScreen: React.FC = () => {
             'Are you sure you want to delete this phone number?',
             [
                 { text: 'Cancel', style: 'cancel' },
-                { 
-                    text: 'Delete', 
+                {
+                    text: 'Delete',
                     style: 'destructive',
                     onPress: () => {
                         const updatedPhones = phoneNumbers.filter((_, i) => i !== index);
@@ -614,7 +614,7 @@ const CustomerDetailsScreen: React.FC = () => {
 
     const handleSaveCustomer = async () => {
         if (!customerData) return;
-        
+
         console.log('💾 === SAVING CUSTOMER DATA ===');
         console.log('💾 Customer Type:', customerType);
         console.log('💾 Salutation:', salutation);
@@ -630,7 +630,7 @@ const CustomerDetailsScreen: React.FC = () => {
         console.log('💾 Shipping Address:', shippingAddress);
         console.log('💾 Same As Billing:', sameAsBilling);
         console.log('💾 Phone Numbers:', phoneNumbers);
-        
+
         // Debug: Check if state variables have data
         console.log('💾 === STATE VARIABLE DEBUG ===');
         console.log('💾 billingAddress.address1:', billingAddress.address1);
@@ -638,7 +638,7 @@ const CustomerDetailsScreen: React.FC = () => {
         console.log('💾 shippingAddress.address1:', shippingAddress.address1);
         console.log('💾 shippingAddress.city:', shippingAddress.city);
         console.log('💾 sameAsBilling value:', sameAsBilling);
-        
+
         setLoading(true);
         try {
             // Convert DOB to DD/MM/YYYY format (not ISO format)
@@ -647,44 +647,44 @@ const CustomerDetailsScreen: React.FC = () => {
                 // Keep DD/MM/YYYY format as expected by backend
                 formattedDobForApi = dob;
             }
-            
-            // Prepare address with proper format (backend expects direct IDs to avoid 500 errors)
-        const billingAddressObj = {
-            line1: billingAddress.address1 || null,
-            line2: billingAddress.address2 || null,
-            line3: billingAddress.address3 || null,
-            locality: billingAddress.locality || null,
-            pincode: billingAddress.pincode || null,
-            country: billingAddress.country || null,
-            state: billingAddress.state || null,
-            city: billingAddress.city || null,
-            district: billingAddress.city || null  // ✅ Fix: Include district data like shipping address
-        };
 
-        // Prepare shipping address with EXACT same format as web app
-        const shippingAddressObj = sameAsBilling 
-            ? {
-                shippingline1: billingAddressObj.line1,
-                shippingline2: billingAddressObj.line2,
-                shippingline3: billingAddressObj.line3,
-                shippinglocality: billingAddressObj.locality,
-                shippingpincode: billingAddressObj.pincode,
-                shippingcountry: billingAddressObj.country,
-                shippingstate: billingAddressObj.state,
-                shippingdistrict: billingAddressObj.city
-            } 
-            : {
-                shippingline1: shippingAddress.address1 || null,
-                shippingline2: shippingAddress.address2 || null,
-                shippingline3: shippingAddress.address3 || null,
-                shippinglocality: shippingAddress.locality || null,
-                shippingpincode: shippingAddress.pincode || null,
-                shippingcountry: shippingAddress.country || null,
-                shippingstate: shippingAddress.state || null,
-                shippingdistrict: shippingAddress.city || null
+            // Prepare address with proper format (backend expects direct IDs to avoid 500 errors)
+            const billingAddressObj = {
+                line1: billingAddress.address1 || null,
+                line2: billingAddress.address2 || null,
+                line3: billingAddress.address3 || null,
+                locality: billingAddress.locality || null,
+                pincode: billingAddress.pincode || null,
+                country: billingAddress.country || null,
+                state: billingAddress.state || null,
+                city: billingAddress.city || null,
+                district: billingAddress.city || null  // ✅ Fix: Include district data like shipping address
             };
-        
-        const customerDataToSave = {
+
+            // Prepare shipping address with EXACT same format as web app
+            const shippingAddressObj = sameAsBilling
+                ? {
+                    shippingline1: billingAddressObj.line1,
+                    shippingline2: billingAddressObj.line2,
+                    shippingline3: billingAddressObj.line3,
+                    shippinglocality: billingAddressObj.locality,
+                    shippingpincode: billingAddressObj.pincode,
+                    shippingcountry: billingAddressObj.country,
+                    shippingstate: billingAddressObj.state,
+                    shippingdistrict: billingAddressObj.city
+                }
+                : {
+                    shippingline1: shippingAddress.address1 || null,
+                    shippingline2: shippingAddress.address2 || null,
+                    shippingline3: shippingAddress.address3 || null,
+                    shippinglocality: shippingAddress.locality || null,
+                    shippingpincode: shippingAddress.pincode || null,
+                    shippingcountry: shippingAddress.country || null,
+                    shippingstate: shippingAddress.state || null,
+                    shippingdistrict: shippingAddress.city || null
+                };
+
+            const customerDataToSave = {
                 name: customerName || '',
                 fatherName: fatherName || '',
                 gender: gender || 'Male',
@@ -695,14 +695,21 @@ const CustomerDetailsScreen: React.FC = () => {
                 customerType: customerType || 'Non Customer',
                 customerGrouping: customerGrouping || null,
                 salutation: salutation || 'Mr',
-                contacts: phoneNumbers,
+                contacts: phoneNumbers.map(p => ({
+                    id: p.id,
+                    phone: p.number,
+                    type: p.type,
+                    valid: p.validity === 'Valid',
+                    WhatsApp: p.whatsapp === 'Yes',
+                    DND: p.dnd === 'Yes'
+                })),
                 address: billingAddressObj,
                 shippingAddress: shippingAddressObj
             };
 
             console.log('💾 === PAYLOAD TO SAVE ===');
             console.log('💾 Full payload:', JSON.stringify(customerDataToSave, null, 2));
-            
+
             // Detailed shipping address request logs
             console.log('💾 === SHIPPING ADDRESS REQUEST DETAILS ===');
             console.log('💾 Shipping Address Object:', JSON.stringify(shippingAddressObj, null, 2));
@@ -710,18 +717,18 @@ const CustomerDetailsScreen: React.FC = () => {
             console.log('💾 Billing Address Source:', JSON.stringify(billingAddressObj, null, 2));
 
             const response = await updateCustomer(customerData.id, customerDataToSave);
-            
+
             console.log('💾 === API RESPONSE ===');
             console.log('💾 Response status:', response.status);
             console.log('💾 Response data:', response.data);
-            
+
             // Log address details specifically
             const responseData = response.data?.response?.data;
             if (responseData) {
                 console.log('💾 === ADDRESS RESPONSE DETAILS ===');
                 console.log('💾 Billing Address:', JSON.stringify(responseData.address, null, 2));
                 console.log('💾 Shipping Address:', JSON.stringify(responseData.shippingAddress, null, 2));
-                
+
                 // Additional shipping address debug info
                 console.log('💾 === SHIPPING ADDRESS RESPONSE DEBUG ===');
                 console.log('💾 Shipping Address Type:', typeof responseData.shippingAddress);
@@ -731,18 +738,18 @@ const CustomerDetailsScreen: React.FC = () => {
                 console.log('💾 Shipping Address State:', responseData.shippingAddress?.shippingstate);
                 console.log('💾 Shipping Address District:', responseData.shippingAddress?.shippingdistrict);
             }
-            
+
             if (response.data?.code === 200) {
                 console.log('✅ Customer saved successfully!');
                 Alert.alert('Success', 'Customer details saved successfully!');
                 setEditing(false);
-                
+
                 // Refresh data
                 const refreshResponse = await getCustomerDetails(customerId || '');
                 if (refreshResponse.data?.code === 200 && refreshResponse.data?.response?.data) {
                     const refreshedCustomer = refreshResponse.data.response.data.customer;
                     setCustomerData(refreshedCustomer);
-                    
+
                     // Update all form state variables with refreshed data
                     if (refreshedCustomer.customerType) setCustomerType(refreshedCustomer.customerType);
                     if (refreshedCustomer.salutation) setSalutation(refreshedCustomer.salutation);
@@ -760,7 +767,7 @@ const CustomerDetailsScreen: React.FC = () => {
                     if (refreshedCustomer.gstType) setGstType(refreshedCustomer.gstType);
                     if (refreshedCustomer.gstin) setGstin(refreshedCustomer.gstin);
                     if (refreshedCustomer.customerGrouping) setCustomerGrouping(refreshedCustomer.customerGrouping);
-                    
+
                     // Update billing address
                     if (refreshedCustomer.address) {
                         setBillingAddress({
@@ -773,7 +780,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             city: refreshedCustomer.address.district?.id || '',  // ✅ Fix: Read from district field
                             pincode: refreshedCustomer.address.pincode || ''
                         });
-                        
+
                         // Fetch states and cities if needed
                         if (refreshedCustomer.address.country?.id) {
                             fetchStates(refreshedCustomer.address.country.id);
@@ -782,7 +789,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             fetchCities(refreshedCustomer.address.state.id);
                         }
                     }
-                    
+
                     // Update shipping address
                     if (refreshedCustomer.shippingAddress) {
                         setShippingAddress({
@@ -796,7 +803,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             pincode: refreshedCustomer.shippingAddress.shippingpincode || ''
                         });
                     }
-                    
+
                     // Update phone numbers
                     if (refreshedCustomer.contacts && refreshedCustomer.contacts.length > 0) {
                         const mappedPhones = refreshedCustomer.contacts.map((contact: any, index: number) => ({
@@ -809,7 +816,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         }));
                         setPhoneNumbers(mappedPhones);
                     }
-                    
+
                     console.log('✅ UI refreshed with latest data');
                 }
             } else {
@@ -849,12 +856,12 @@ const CustomerDetailsScreen: React.FC = () => {
                     </View>
                     <ScrollView className="max-h-80">
                         {options.map((option) => (
-                            <TouchableOpacity 
-                                key={option.key} 
+                            <TouchableOpacity
+                                key={option.key}
                                 onPress={() => {
                                     onSelect(option);
                                     onClose();
-                                }} 
+                                }}
                                 className="p-4 border-b border-gray-100"
                             >
                                 <Text className={`text-gray-800 font-medium ${selectedKey === option.key ? 'text-teal-600 font-bold' : ''}`}>
@@ -903,12 +910,12 @@ const CustomerDetailsScreen: React.FC = () => {
                                     <Text className="text-gray-400">No options available</Text>
                                 </View>
                             ) : options.map((option) => (
-                                <TouchableOpacity 
-                                    key={option.id} 
+                                <TouchableOpacity
+                                    key={option.id}
                                     onPress={() => {
                                         onSelect(option);
                                         onClose();
-                                    }} 
+                                    }}
                                     className="p-4 border-b border-gray-100"
                                 >
                                     <Text className={`text-gray-800 font-medium ${selectedId === option.id ? 'text-teal-600 font-bold' : ''}`}>
@@ -1153,7 +1160,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                     </View>
                                 </View>
                             </View>
-                            
+
                             {phoneNumbers.map((phone, index) => (
                                 <View key={phone.id} className={`flex-row ${index % 2 === 0 ? 'bg-white' : 'bg-gray-100'}`}>
                                     <View style={{ width: 120 }} className="p-2">
@@ -1261,13 +1268,13 @@ const CustomerDetailsScreen: React.FC = () => {
                 <Text className="text-gray-900 font-bold text-base mb-4 pb-2 border-b border-gray-100">
                     Address Information
                 </Text>
-                
+
                 <View className="space-y-4">
                     <View className="mb-4">
                         <FormLabel label="Address Line 1" required />
                         <TextInput
                             value={billingAddress.address1}
-                            onChangeText={(text) => setBillingAddress({...billingAddress, address1: text})}
+                            onChangeText={(text) => setBillingAddress({ ...billingAddress, address1: text })}
                             placeholder="Enter address line 1"
                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                             placeholderTextColor="#999"
@@ -1278,7 +1285,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Address Line 2" />
                         <TextInput
                             value={billingAddress.address2}
-                            onChangeText={(text) => setBillingAddress({...billingAddress, address2: text})}
+                            onChangeText={(text) => setBillingAddress({ ...billingAddress, address2: text })}
                             placeholder="Enter address line 2"
                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                             placeholderTextColor="#999"
@@ -1289,7 +1296,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Address Line 3" />
                         <TextInput
                             value={billingAddress.address3}
-                            onChangeText={(text) => setBillingAddress({...billingAddress, address3: text})}
+                            onChangeText={(text) => setBillingAddress({ ...billingAddress, address3: text })}
                             placeholder="Enter address line 3"
                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                             placeholderTextColor="#999"
@@ -1300,7 +1307,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Locality" required />
                         <TextInput
                             value={billingAddress.locality}
-                            onChangeText={(text) => setBillingAddress({...billingAddress, locality: text})}
+                            onChangeText={(text) => setBillingAddress({ ...billingAddress, locality: text })}
                             placeholder="Enter locality"
                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                             placeholderTextColor="#999"
@@ -1360,7 +1367,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Pincode" required />
                         <TextInput
                             value={billingAddress.pincode}
-                            onChangeText={(text) => setBillingAddress({...billingAddress, pincode: text})}
+                            onChangeText={(text) => setBillingAddress({ ...billingAddress, pincode: text })}
                             placeholder="Enter pincode"
                             className="h-12 bg-white border border-gray-300 rounded-lg px-3 text-gray-800"
                             placeholderTextColor="#999"
@@ -1414,13 +1421,13 @@ const CustomerDetailsScreen: React.FC = () => {
                         <Text className="text-sm text-gray-700">Same as Billing</Text>
                     </TouchableOpacity>
                 </View>
-                
+
                 <View className="space-y-4">
                     <View className="mb-4">
                         <FormLabel label="Address Line 1" />
                         <TextInput
                             value={sameAsBilling ? billingAddress.address1 : shippingAddress.address1}
-                            onChangeText={(text) => setShippingAddress({...shippingAddress, address1: text})}
+                            onChangeText={(text) => setShippingAddress({ ...shippingAddress, address1: text })}
                             placeholder="Enter address line 1"
                             className={`h-12 border rounded-lg px-3 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'} text-gray-800`}
                             placeholderTextColor="#999"
@@ -1432,7 +1439,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Address Line 2" />
                         <TextInput
                             value={sameAsBilling ? billingAddress.address2 : shippingAddress.address2}
-                            onChangeText={(text) => setShippingAddress({...shippingAddress, address2: text})}
+                            onChangeText={(text) => setShippingAddress({ ...shippingAddress, address2: text })}
                             placeholder="Enter address line 2"
                             className={`h-12 border rounded-lg px-3 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'} text-gray-800`}
                             placeholderTextColor="#999"
@@ -1444,7 +1451,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Address Line 3" />
                         <TextInput
                             value={sameAsBilling ? billingAddress.address3 : shippingAddress.address3}
-                            onChangeText={(text) => setShippingAddress({...shippingAddress, address3: text})}
+                            onChangeText={(text) => setShippingAddress({ ...shippingAddress, address3: text })}
                             placeholder="Enter address line 3"
                             className={`h-12 border rounded-lg px-3 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'} text-gray-800`}
                             placeholderTextColor="#999"
@@ -1456,7 +1463,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Locality" />
                         <TextInput
                             value={sameAsBilling ? billingAddress.locality : shippingAddress.locality}
-                            onChangeText={(text) => setShippingAddress({...shippingAddress, locality: text})}
+                            onChangeText={(text) => setShippingAddress({ ...shippingAddress, locality: text })}
                             placeholder="Enter locality"
                             className={`h-12 border rounded-lg px-3 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'} text-gray-800`}
                             placeholderTextColor="#999"
@@ -1543,7 +1550,7 @@ const CustomerDetailsScreen: React.FC = () => {
                         <FormLabel label="Pincode" />
                         <TextInput
                             value={sameAsBilling ? billingAddress.pincode : shippingAddress.pincode}
-                            onChangeText={(text) => setShippingAddress({...shippingAddress, pincode: text})}
+                            onChangeText={(text) => setShippingAddress({ ...shippingAddress, pincode: text })}
                             placeholder="Enter pincode"
                             className={`h-12 border rounded-lg px-3 ${sameAsBilling ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-300'} text-gray-800`}
                             placeholderTextColor="#999"
@@ -1565,7 +1572,7 @@ const CustomerDetailsScreen: React.FC = () => {
             </View>
 
             {/* All Dropdown Modals */}
-            
+
             {/* Customer Type Dropdown */}
             {renderDropdownModal(
                 showCustomerTypeDropdown,
@@ -1714,7 +1721,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                 </TouchableOpacity>
                             </View>
                         </View>
-                        
+
                         <View className="p-4">
                             {/* Phone Number */}
                             <View className="mb-4">
@@ -1776,13 +1783,13 @@ const CustomerDetailsScreen: React.FC = () => {
                         </View>
 
                         <View className="flex-row border-t border-gray-200">
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => setShowEditPhoneModal(false)}
                                 className="flex-1 p-3 border-r border-gray-200"
                             >
                                 <Text className="text-center text-gray-600 font-medium">Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={handleSavePhoneEdit}
                                 className="flex-1 p-3"
                             >
@@ -1817,7 +1824,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                         <Text className="text-teal-200 mx-1">›</Text>
                                         <TouchableOpacity onPress={() => setDobCalendarStep('month')}>
                                             <Text className={`text-sm font-semibold ${dobCalendarStep === 'month' ? 'text-white' : 'text-teal-200'}`}>
-                                                {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dobPickMonth]}
+                                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dobPickMonth]}
                                             </Text>
                                         </TouchableOpacity>
                                     </>
@@ -1861,7 +1868,7 @@ const CustomerDetailsScreen: React.FC = () => {
                             {/* STEP 2: Month Selection */}
                             {dobCalendarStep === 'month' && (
                                 <View className="flex-row flex-wrap">
-                                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((monthName, idx) => {
+                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((monthName, idx) => {
                                         const isSelected = idx === dobPickMonth;
                                         const now = new Date();
                                         const isFuture = dobPickYear === now.getFullYear() && idx > now.getMonth();
@@ -1890,7 +1897,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                 return (
                                     <View>
                                         <View className="flex-row mb-2">
-                                            {['S','M','T','W','T','F','S'].map((day, idx) => (
+                                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
                                                 <View key={idx} style={{ width: '14.28%' }} className="items-center py-1">
                                                     <Text className="text-xs text-gray-500 font-medium">{day}</Text>
                                                 </View>
@@ -1905,7 +1912,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                                 const isSelected = dob && parseInt(dob.split('/')[0]) === day && parseInt(dob.split('/')[1]) === dobPickMonth + 1 && parseInt(dob.split('/')[2]) === dobPickYear;
                                                 const isToday = day === now.getDate() && dobPickMonth === now.getMonth() && dobPickYear === now.getFullYear();
                                                 const isFuture = dobPickYear > now.getFullYear() || (dobPickYear === now.getFullYear() && dobPickMonth > now.getMonth()) || (dobPickYear === now.getFullYear() && dobPickMonth === now.getMonth() && day > now.getDate());
-                                                
+
                                                 return (
                                                     <TouchableOpacity
                                                         key={day}
@@ -1959,7 +1966,7 @@ const CustomerDetailsScreen: React.FC = () => {
                                 <Text className="font-bold text-lg text-gray-900 mb-2">
                                     {vehicle.vehicle?.modelCode} - {vehicle.vehicle?.modelName}
                                 </Text>
-                                
+
                                 <View className="space-y-1">
                                     <View className="flex-row mb-1">
                                         <Text className="text-gray-600 w-24 text-sm">Reg No:</Text>
@@ -1982,12 +1989,12 @@ const CustomerDetailsScreen: React.FC = () => {
                                         </Text>
                                     </View>
                                 </View>
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     className="mt-3 bg-teal-600 py-2 px-4 rounded-lg items-center"
-                                    onPress={() => navigation.navigate('VehicleDetails', { 
-                                        vehicle: vehicle, 
-                                        mode: 'view' 
+                                    onPress={() => navigation.navigate('VehicleDetails', {
+                                        vehicle: vehicle,
+                                        mode: 'view'
                                     })}
                                 >
                                     <Text className="text-white font-medium">View Vehicle</Text>
@@ -2004,40 +2011,41 @@ const CustomerDetailsScreen: React.FC = () => {
         <View>
             {/* Booking Buttons */}
             <View className="flex-row gap-3 mb-4">
-                <TouchableOpacity 
+                <TouchableOpacity
                     className="flex-1 h-12 bg-teal-600 rounded-lg items-center justify-center"
                     onPress={() => {
-                        const phoneNumber = phoneNumbers.length > 0 && phoneNumbers[0].number !== '• • • • • • • • 95' 
-                            ? phoneNumbers[0].number 
+                        const phoneNumber = phoneNumbers.length > 0 && phoneNumbers[0].number !== '• • • • • • • • 95'
+                            ? phoneNumbers[0].number
                             : null;
-                        
+
                         if (!phoneNumber) {
                             Alert.alert('No Phone Number', 'Customer phone number not available. Please add a phone number first.');
                             return;
                         }
-                        
+
                         navigation.navigate('BookingActivity' as any, {
                             isConfirmBooking: true,
                             customerId: customerId,
                             customerName: customerName,
-                            customerPhone: phoneNumber
+                            customerPhone: phoneNumber,
+                            cameFrom: 'CustomerDetails'
                         });
                     }}
                 >
                     <Text className="text-white text-sm font-medium">Add Confirm Booking</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                     className="flex-1 h-12 bg-teal-600 rounded-lg items-center justify-center"
                     onPress={() => {
-                        const phoneNumber = phoneNumbers.length > 0 && phoneNumbers[0].number !== '• • • • • • • • 95' 
-                            ? phoneNumbers[0].number 
+                        const phoneNumber = phoneNumbers.length > 0 && phoneNumbers[0].number !== '• • • • • • • • 95'
+                            ? phoneNumbers[0].number
                             : null;
-                        
+
                         if (!phoneNumber) {
                             Alert.alert('No Phone Number', 'Customer phone number not available. Please add a phone number first.');
                             return;
                         }
-                        
+
                         navigation.navigate('BookingActivity' as any, {
                             isAdvancedBooking: true,
                             customerId: customerId,
@@ -2049,7 +2057,7 @@ const CustomerDetailsScreen: React.FC = () => {
                     <Text className="text-white text-sm font-medium">Add Advanced Booking</Text>
                 </TouchableOpacity>
             </View>
-            
+
             {/* Bookings List */}
             {bookings.length === 0 ? (
                 <View className="rounded-lg border border-gray-200 p-8 items-center bg-gray-50">
@@ -2059,13 +2067,13 @@ const CustomerDetailsScreen: React.FC = () => {
             ) : (
                 <View className="space-y-2">
                     {bookings.map((booking, index) => (
-                        <View key={booking.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm p-4">
+                        <View key={booking.id || index} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm p-4 mb-2">
                             {/* Booking Details */}
                             <View className="space-y-2 mb-2">
                                 <Text className="font-bold text-lg text-gray-900 mb-2">
                                     {booking.bookingId}
                                 </Text>
-                                
+
                                 <View className="space-y-1">
                                     <View className="flex-row mb-1">
                                         <Text className="text-gray-600 w-24 text-sm">Vehicle:</Text>
@@ -2090,8 +2098,8 @@ const CustomerDetailsScreen: React.FC = () => {
                                         </View>
                                     )}
                                 </View>
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     className="mt-3 bg-teal-600 py-2 px-4 rounded-lg items-center"
                                     onPress={() => {
                                         // Navigate to booking details or perform action
@@ -2119,8 +2127,8 @@ const CustomerDetailsScreen: React.FC = () => {
                 ) : (
                     <View className="space-y-2">
                         {quotations.map((quotation) => (
-                            <TouchableOpacity 
-                                key={quotation.id} 
+                            <TouchableOpacity
+                                key={quotation.id}
                                 className="bg-white rounded-lg border border-gray-200 p-4 mb-2"
                                 onPress={() => navigation.navigate('QuotationView' as any, { id: quotation.id })}
                             >
@@ -2135,16 +2143,15 @@ const CustomerDetailsScreen: React.FC = () => {
                                     <View className="items-end">
                                         <Text className="text-sm text-gray-500">{quotation.createdOn}</Text>
                                         <View className="mt-2">
-                                            <Text className={`text-xs px-2 py-1 rounded-full ${
-                                                quotation.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                            }`}>
+                                            <Text className={`text-xs px-2 py-1 rounded-full ${quotation.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                }`}>
                                                 {quotation.status}
                                             </Text>
                                         </View>
                                     </View>
                                 </View>
                                 <View className="flex-row justify-between items-center mt-2">
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         className="flex-row items-center"
                                         onPress={(e) => {
                                             e.stopPropagation();

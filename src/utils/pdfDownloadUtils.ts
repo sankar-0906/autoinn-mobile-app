@@ -23,14 +23,14 @@ export interface PDFDownloadOptions {
  */
 export const savePDFToDevice = async (options: PDFDownloadOptions) => {
     const { id, documentId, documentType, apiEndpoint, onSuccess, onError } = options;
-    
+
     try {
         // 1. Download PDF to app cache dir first
         const baseUrl = ENDPOINT.replace(/\/$/, '');
-        const pdfUrl = apiEndpoint === 'quotation' 
+        const pdfUrl = apiEndpoint === 'quotation'
             ? `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`
             : `${baseUrl}/api/jobOrder/generatePDF/${id}`;
-        
+
         // Sanitize: replace '/', spaces and special chars → no sub-directories
         const safeId = documentId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const fileName = `${documentType}_${safeId}.pdf`;
@@ -82,14 +82,14 @@ export const savePDFToDevice = async (options: PDFDownloadOptions) => {
  */
 export const sharePDF = async (options: PDFDownloadOptions) => {
     const { id, documentId, documentType, apiEndpoint, onSuccess, onError } = options;
-    
+
     try {
         // 1. Download to cache first
         const baseUrl = ENDPOINT.replace(/\/$/, '');
-        const pdfUrl = apiEndpoint === 'quotation' 
+        const pdfUrl = apiEndpoint === 'quotation'
             ? `${baseUrl}/api/quotation/generatePdf/${id}?withBrochure=true`
             : `${baseUrl}/api/jobOrder/generatePDF/${id}`;
-        
+
         // Sanitize: replace '/', spaces and special chars so they don't create sub-directories
         const safeId = documentId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const fileName = `${documentType}_${safeId}.pdf`;

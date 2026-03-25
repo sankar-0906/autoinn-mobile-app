@@ -223,6 +223,7 @@ const VehicleDetailsScreen: React.FC = () => {
     useBackButton({
         onBackPress: () => {
             navigation.goBack();
+            return false;
         }
     });
 
@@ -2734,7 +2735,7 @@ const VehicleDetailsScreen: React.FC = () => {
         console.log('Bulk insurance saved:', savedInsurances);
         // Don't modify existing insuranceData - only show bulk uploaded items
         // The existing insurance data should remain separate and only be displayed in the existing insurance section
-        
+
         // Refresh insurance data to show updated state
         if (vehicle?.id) {
             fetchRelatedData(vehicle.id);

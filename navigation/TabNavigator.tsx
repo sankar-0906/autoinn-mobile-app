@@ -64,7 +64,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 export default function TabNavigator() {
     const { canNavigateTo } = useRoleBasedAccess();
-    
+
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
@@ -99,26 +99,26 @@ export default function TabNavigator() {
         >
             {/* Conditionally render tabs based on permissions */}
             {canNavigateTo('Quotations') && (
-                <Tab.Screen 
-                    name="Quotations" 
-                    component={QuotationsListScreen} 
-                    options={{ tabBarLabel: 'Quotations' }} 
+                <Tab.Screen
+                    name="Quotations"
+                    component={QuotationsListScreen}
+                    options={{ tabBarLabel: 'Quotations' }}
                 />
             )}
-            
+
             {canNavigateTo('JobCards') && (
-                <Tab.Screen 
-                    name="JobCards" 
-                    component={JobCardsListScreen} 
-                    options={{ tabBarLabel: 'Job Cards' }} 
+                <Tab.Screen
+                    name="JobCards"
+                    component={JobCardsListScreen}
+                    options={{ tabBarLabel: 'Job Cards' }}
                 />
             )}
-            
+
             {/* Account is always accessible */}
-            <Tab.Screen 
-                name="Account" 
-                component={AccountScreen} 
-                options={{ tabBarLabel: 'Account' }} 
+            <Tab.Screen
+                name="Account"
+                component={AccountScreen}
+                options={{ tabBarLabel: 'Account' }}
             />
         </Tab.Navigator>
     );

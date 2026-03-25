@@ -888,6 +888,7 @@ export default function AddQuotationScreen({ navigation, route }: any) {
                                 value={customerType}
                                 options={customerTypes}
                                 onSelect={setCustomerType}
+                                disabled={true}
                                 modalVisible={showCustomerTypeModal}
                                 setModalVisible={setShowCustomerTypeModal}
                             />

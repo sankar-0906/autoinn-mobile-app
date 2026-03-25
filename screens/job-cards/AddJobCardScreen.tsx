@@ -16,7 +16,8 @@ import {
     StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon, { ChevronDown, Check, Plus, Trash2, Camera, X, ChevronRight, FolderOpen, Download,
+import Icon, {
+    ChevronDown, Check, Plus, Trash2, Camera, X, ChevronRight, FolderOpen, Download,
     Check as CheckIcon, Share2,
 } from 'lucide-react-native';
 import { SearchableDropdown } from '../../components/ui';
@@ -174,22 +175,23 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
 
     // ── Branch auto-fill ──────────────────────────────────────────────────────
     const { autoFilledBranch } = useBranchAutoFill();
-    const { branches } = useBranch();
+    const { branches, nearestBranch } = useBranch();
     const [selectedBranchId, setSelectedBranchId] = useState<string>('');
     const [selectedBranchName, setSelectedBranchName] = useState<string>('');
+    const [isManualSelection, setIsManualSelection] = useState(false);
 
     const branchOptions: Option[] = branches.map(b => ({ label: b.name, value: b.id }));
 
     // Auto-fill branch from GPS hook
     useEffect(() => {
-        if (autoFilledBranch && !selectedBranchId) {
+        if (!isEdit && autoFilledBranch && !isManualSelection) {
             const branch = branches.find(b => b.id === autoFilledBranch);
             if (branch) {
                 setSelectedBranchId(branch.id);
                 setSelectedBranchName(branch.name);
             }
         }
-    }, [autoFilledBranch, branches, selectedBranchId]);
+    }, [autoFilledBranch, branches, isManualSelection, isEdit]);
 
     // ── Vehicle / Customer search hook ────────────────────────────────────────
     const {
@@ -237,7 +239,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             setCouponNumber(editJobCard.couponNo || '');
             if (editJobCard.complaint?.length) {
                 setComplaints(editJobCard.complaint.map((c: any, idx: number) => ({
-                    id: idx + 1, text: c.complaint,
+                    id: idx + 1, text: c.complaint, apiId: c.id
                 })));
             }
             if (editJobCard.parts) {
@@ -302,6 +304,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
     const [serviceType, setServiceType] = useState('');
     const [serviceNumber, setServiceNumber] = useState('');
     const [couponNumber, setCouponNumber] = useState('');
+    interface Complaint { id: number; text: string; apiId?: string; }
     const [complaints, setComplaints] = useState<Complaint[]>([
         { id: 1, text: '' }, { id: 2, text: '' },
     ]);
@@ -379,8 +382,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
 
     // ── Clear vehicle info ────────────────────────────────────────────────────
     const handleClear = () => {
-        setSelectedBranchId('');
-        setSelectedBranchName('');
+        // Branch fields are preserved as per user request
         setMobileDisplay('');
         setVehicleDisplay('');
         setChassisDisplay('');
@@ -395,7 +397,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                 setStep(1);
                 return;
             }
-            
+
             // In create mode, validate vehicle selection
             if (!selectedVehicle) {
                 Alert.alert('Required', 'Please select a Vehicle.');
@@ -403,13 +405,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             }
             setStep(1);
         } else {
-            // In edit mode, just navigate back or close on final step
-            if (isEdit) {
-                navigation.goBack();
-                return;
-            }
-            
-            // In create mode, validate and save
+            // Validate fields before saving
             const validComplaints = complaints.filter(c => c.text.trim() !== '');
             if (validComplaints.length === 0) {
                 Alert.alert('Required', 'At least one complaint is required.');
@@ -420,9 +416,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                 return;
             }
             if (!kms) { Alert.alert('Required', 'Please enter KMs.'); return; }
-            if (!serviceType) { Alert.alert('Required', 'Please select a Service Type.'); return; }
-            if (couponRequired && !serviceNumber) { Alert.alert('Required', 'Service Number is required for this service type.'); return; }
-            if (couponRequired && !couponNumber) { Alert.alert('Required', 'Coupon Number is required for this service type.'); return; }
+            // Service Type and Service Coupon Number are now optional
 
             setSaving(true);
             try {
@@ -446,11 +440,19 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                     customerPhone,
                     kms: Number(kms),
                     serviceType,
-                    serviceNo: serviceNumber || undefined,
-                    couponNo: couponNumber || undefined,
-                    complaintList: complaints.map(c => ({ complaint: c.text, id: '' })),
-                    complaint: validComplaints.map(c => ({ complaint: c.text, id: '' })),
-                    fuelLevel: fuelLevel ? Number(fuelLevel) : undefined,
+                    serviceNo: serviceNumber || '',
+                    couponNo: couponNumber || '',
+                    complaintList: complaints.filter(c => c.text.trim()).map(c => {
+                        const obj: any = { complaint: c.text };
+                        if (c.apiId) obj.id = c.apiId;
+                        return obj;
+                    }),
+                    complaint: validComplaints.map(c => {
+                        const obj: any = { complaint: c.text };
+                        if (c.apiId) obj.id = c.apiId;
+                        return obj;
+                    }),
+                    fuelLevel: fuelLevel ? Number(fuelLevel) : 0,
                     parts: {
                         MirrorRH: mirrorRH,
                         MirrorLH: mirrorLH,
@@ -463,16 +465,27 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                         lhsView: jobImages.lhs?.url || jobImages.lhs?.uri || null,
                         rearView: jobImages.rear?.url || jobImages.rear?.uri || null,
                         topView: jobImages.top?.url || jobImages.top?.uri || null,
-                        additionalImages: additionalImages.map(img => ({
-                            url: img.url || img.uri,
-                        })),
+                        additionalImages: additionalImages.map(img => img.url || img.uri || '').filter(Boolean) as string[],
                     },
                     accidentalDocuments: [],
                 };
 
+                // Add essential fields for update to prevent data loss
+                if (isEdit && editJobCard) {
+                    payload.id = editJobCard.id;
+                    payload.jobNo = editJobCard.jobNo;
+                    payload.jobStatus = editJobCard.jobStatus;
+                    // Removed mechanic, supervisor, serviceManager as they might have separate endpoints
+                    payload.estAmount = (editJobCard as any).estAmount || 0;
+                    payload.jobStartDateTime = (editJobCard as any).jobStartDateTime || null;
+                    payload.jobEndDateTime = (editJobCard as any).jobEndDateTime || null;
+                    // Keep original dateTime if available, or update if web app does
+                    payload.dateTime = new Date().toISOString();
+                }
+
                 let res;
                 if (isEdit) {
-                    res = await updateJobCard(editJobCard.id, { ...payload, id: editJobCard.id });
+                    res = await updateJobCard(editJobCard.id, payload);
                 } else {
                     res = await createJobCard(payload);
                 }
@@ -519,10 +532,10 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
 
     const handleSaveToDevice = async () => {
         if (!selectedServiceItem) return;
-        
+
         setPdfDownloading(true);
         setShowDownloadModal(false);
-        
+
         await savePDFToDevice({
             id: selectedServiceItem.id,
             documentId: selectedServiceItem.jobNo,
@@ -531,16 +544,16 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             onSuccess: (message) => toast.success(message),
             onError: (message) => toast.error(message),
         });
-        
+
         setPdfDownloading(false);
     };
 
     const handleSharePDF = async () => {
         if (!selectedServiceItem) return;
-        
+
         setPdfDownloading(true);
         setShowDownloadModal(false);
-        
+
         await sharePDF({
             id: selectedServiceItem.id,
             documentId: selectedServiceItem.jobNo,
@@ -549,7 +562,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             onSuccess: (message) => toast.success(message),
             onError: (message) => toast.error(message),
         });
-        
+
         setPdfDownloading(false);
     };
 
@@ -738,17 +751,18 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             keyboardShouldPersistTaps="handled"
         >
             <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-                {/* Section header + Clear */}
                 <View className="flex-row items-center justify-between mb-4 pb-2 border-b border-gray-100">
                     <Text className="text-gray-900 font-bold text-base">Vehicle Information</Text>
-                    <TouchableOpacity
-                        onPress={handleClear}
-                        activeOpacity={0.7}
-                        className="flex-row items-center gap-1 px-3 py-1 border border-red-400 rounded-lg"
-                    >
-                        <X size={13} color="#EF4444" />
-                        <Text className="text-red-500 text-xs font-semibold">Clear</Text>
-                    </TouchableOpacity>
+                    {!isEdit && (
+                        <TouchableOpacity
+                            onPress={handleClear}
+                            activeOpacity={0.7}
+                            className="flex-row items-center gap-1 px-3 py-1 border border-red-400 rounded-lg"
+                        >
+                            <X size={13} color="#EF4444" />
+                            <Text className="text-red-500 text-xs font-semibold">Clear</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* Branch */}
@@ -761,8 +775,9 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                         onChange={(v) => {
                             setSelectedBranchId(v);
                             setSelectedBranchName(branchOptions.find(b => b.value === v)?.label || '');
+                            setIsManualSelection(true);
                         }}
-                        readOnly={isEdit}
+                        readOnly={true}
                     />
                 </View>
 
@@ -833,17 +848,17 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                         const needsUpdate = !selectedCustomer.name || primaryContact?.valid === false;
                         if (!needsUpdate) return null;
                         return (
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('UpdateCustomer', {
-                                customerId: selectedCustomer.id,
-                                customerName: selectedCustomer.name,
-                                mobileNo: selectedCustomer.contacts?.[0]?.phone || mobileDisplay,
-                            })}
-                            className="mt-3 h-11 bg-teal-600 rounded-lg items-center justify-center"
-                            activeOpacity={0.8}
-                        >
-                            <Text className="text-white font-semibold text-sm">Update Customer</Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('UpdateCustomer', {
+                                    customerId: selectedCustomer.id,
+                                    customerName: selectedCustomer.name,
+                                    mobileNo: selectedCustomer.contacts?.[0]?.phone || mobileDisplay,
+                                })}
+                                className="mt-3 h-11 bg-teal-600 rounded-lg items-center justify-center"
+                                activeOpacity={0.8}
+                            >
+                                <Text className="text-white font-semibold text-sm">Update Customer</Text>
+                            </TouchableOpacity>
                         );
                     })()}
                 </View>
@@ -979,7 +994,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                     className="flex-1 h-12 bg-teal-600 rounded-lg items-center justify-center"
                     activeOpacity={0.8}
                 >
-                    <Text className="text-white font-semibold">{step === 0 ? 'Next' : (isEdit ? 'Close' : 'Save')}</Text>
+                    <Text className="text-white font-semibold">{step === 0 ? 'Next' : (isEdit ? 'Update' : 'Save')}</Text>
                 </TouchableOpacity>
             </View>
         </ScrollView>
@@ -998,47 +1013,47 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                 <View className="mb-4">
                     <FormLabel label="Kms" required />
                     <TextInput
-                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'}`}
+                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-white border-gray-200' : 'bg-white border-gray-300'}`}
                         placeholder="e.g. 2000"
                         value={kms}
                         onChangeText={setKms}
                         keyboardType="numeric"
-                        editable={!isEdit}
+                        editable={true}
                     />
                 </View>
 
                 <View className="mb-4">
-                    <FormLabel label="Service Type" required />
+                    <FormLabel label="Service Type" />
                     <DropdownField
                         placeholder="Select Service Type"
                         value={serviceType}
                         options={serviceTypeOptions}
                         onChange={setServiceType}
-                        readOnly={isEdit}
+                        readOnly={false}
                     />
                 </View>
 
                 <View className="mb-4">
-                    <FormLabel label={`Service Number${couponRequired ? ' *' : ''}`} />
+                    <FormLabel label="Service Number" />
                     <TextInput
-                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'}`}
+                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-white border-gray-200' : 'bg-white border-gray-300'}`}
                         placeholder="Service No."
                         value={serviceNumber}
                         onChangeText={setServiceNumber}
                         maxLength={2}
                         keyboardType="numeric"
-                        editable={!isEdit}
+                        editable={true}
                     />
                 </View>
 
                 <View>
-                    <FormLabel label={`Service Coupon Number${couponRequired ? ' *' : ''}`} />
+                    <FormLabel label="Service Coupon Number" />
                     <TextInput
-                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'}`}
+                        className={`h-12 border rounded-lg px-3 text-gray-800 ${isEdit ? 'bg-white border-gray-200' : 'bg-white border-gray-300'}`}
                         placeholder="Coupon No."
                         value={couponNumber}
                         onChangeText={setCouponNumber}
-                        editable={!isEdit}
+                        editable={true}
                     />
                 </View>
             </View>
@@ -1047,7 +1062,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             <View className="bg-white rounded-xl border border-gray-100 mb-4 overflow-hidden">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-100">
                     <Text className="text-gray-900 font-bold text-base">Complaints</Text>
-                    {!isEdit && (
+                    {true && (
                         <TouchableOpacity onPress={addComplaint} activeOpacity={0.7} className="p-1">
                             <Plus size={20} color={COLORS.primary} />
                         </TouchableOpacity>
@@ -1061,25 +1076,17 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                 {complaints.map((c, idx) => (
                     <View key={c.id} className={`flex-row px-4 py-3 border-b border-gray-50 ${idx % 2 === 1 ? 'bg-gray-50' : 'bg-white'}`}>
                         <Text className="text-sm font-medium text-gray-700 w-10 mt-2">{c.id}</Text>
-                        {isEdit ? (
-                            <View className="flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 min-h-[56px] justify-center">
-                                <Text className="text-sm text-gray-800">{c.text || 'No complaint entered'}</Text>
-                            </View>
-                        ) : (
-                            <TextInput
-                                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 min-h-[56px]"
-                                placeholder="Enter complaint..."
-                                value={c.text}
-                                onChangeText={(t) => updateComplaint(c.id, t)}
-                                multiline
-                                textAlignVertical="top"
-                            />
-                        )}
-                        {!isEdit && (
-                            <TouchableOpacity onPress={() => removeComplaint(c.id)} className="ml-3 mt-2 p-1 w-10 items-end" activeOpacity={0.7}>
-                                <Trash2 size={18} color={COLORS.red?.[600] || '#DC2626'} />
-                            </TouchableOpacity>
-                        )}
+                        <TextInput
+                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 min-h-[56px]"
+                            placeholder="Enter complaint..."
+                            value={c.text}
+                            onChangeText={(t) => updateComplaint(c.id, t)}
+                            multiline
+                            textAlignVertical="top"
+                        />
+                        <TouchableOpacity onPress={() => removeComplaint(c.id)} className="ml-3 mt-2 p-1 w-10 items-end" activeOpacity={0.7}>
+                            <Trash2 size={18} color={COLORS.red?.[600] || '#DC2626'} />
+                        </TouchableOpacity>
                     </View>
                 ))}
             </View>
@@ -1135,9 +1142,9 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                                                                 <TouchableOpacity
                                                                     onPress={() => handleRemoveAdditionalImage(idx, img)}
                                                                     className="absolute -top-2 -right-2 bg-white rounded-full p-1 border border-gray-200"
-                                                                    disabled={isEdit}
+                                                                    disabled={false}
                                                                 >
-                                                                    <X size={12} color={isEdit ? COLORS.gray[300] : (COLORS.red?.[600] || '#DC2626')} />
+                                                                    <X size={12} color={(COLORS.red?.[600] || '#DC2626')} />
                                                                 </TouchableOpacity>
                                                             </View>
                                                         );
@@ -1147,7 +1154,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                                             <TouchableOpacity
                                                 className="w-full py-1 border border-teal-600 rounded items-center"
                                                 onPress={() => handleUploadPress('additional')}
-                                                disabled={uploadingType === 'additional' || isEdit}
+                                                disabled={uploadingType === 'additional'}
                                             >
                                                 <Text className="text-xs text-teal-600">
                                                     {uploadingType === 'additional' ? 'Uploading...' : '+ Upload'}
@@ -1171,8 +1178,8 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                                                             {uploaded.name}
                                                         </Text>
                                                     </View>
-                                                    <TouchableOpacity onPress={() => handleRemoveImage(key)} className="p-1" disabled={isEdit}>
-                                                        <X size={16} color={isEdit ? COLORS.gray[300] : (COLORS.red?.[600] || '#DC2626')} />
+                                                    <TouchableOpacity onPress={() => handleRemoveImage(key)} className="p-1">
+                                                        <X size={16} color={(COLORS.red?.[600] || '#DC2626')} />
                                                     </TouchableOpacity>
                                                 </View>
                                                 <View className="w-full h-8 items-center justify-center bg-teal-50 rounded flex-row justify-between px-2">
@@ -1194,7 +1201,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                                                 <TouchableOpacity
                                                     className="w-full py-1 border border-teal-600 rounded items-center"
                                                     onPress={() => handleUploadPress(key)}
-                                                    disabled={uploadingType === key || isEdit}
+                                                    disabled={uploadingType === key}
                                                 >
                                                     <Text className="text-xs text-teal-600">
                                                         {uploadingType === key ? 'Uploading...' : '+ Upload'}
@@ -1211,22 +1218,22 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                             Checklist
                         </Text>
                         <View className="flex-row flex-wrap mb-4">
-                            <View className="w-1/2"><Checkbox checked={mirrorRH} onPress={() => setMirrorRH(!mirrorRH)} label="Mirror RH" disabled={isEdit} /></View>
-                            <View className="w-1/2"><Checkbox checked={mirrorLH} onPress={() => setMirrorLH(!mirrorLH)} label="Mirror LH" disabled={isEdit} /></View>
-                            <View className="w-1/2"><Checkbox checked={toolkit} onPress={() => setToolkit(!toolkit)} label="Toolkit" disabled={isEdit} /></View>
-                            <View className="w-1/2"><Checkbox checked={firstAidKit} onPress={() => setFirstAidKit(!firstAidKit)} label="First Aid Kit" disabled={isEdit} /></View>
+                            <View className="w-1/2"><Checkbox checked={mirrorRH} onPress={() => setMirrorRH(!mirrorRH)} label="Mirror RH" /></View>
+                            <View className="w-1/2"><Checkbox checked={mirrorLH} onPress={() => setMirrorLH(!mirrorLH)} label="Mirror LH" /></View>
+                            <View className="w-1/2"><Checkbox checked={toolkit} onPress={() => setToolkit(!toolkit)} label="Toolkit" /></View>
+                            <View className="w-1/2"><Checkbox checked={firstAidKit} onPress={() => setFirstAidKit(!firstAidKit)} label="First Aid Kit" /></View>
                         </View>
 
                         <View>
                             <FormLabel label="Fuel Level" />
                             <View className="flex-row items-center border border-gray-300 bg-white rounded-lg px-3 h-12">
                                 <TextInput
-                                    className={`flex-1 text-sm h-12 border rounded-lg px-3 ${isEdit ? 'bg-gray-50 border-gray-200 text-gray-800' : 'bg-white border-gray-300 text-gray-800'}`}
+                                    className={`flex-1 text-sm h-12 border rounded-lg px-3 ${isEdit ? 'bg-white border-gray-200 text-gray-800' : 'bg-white border-gray-300 text-gray-800'}`}
                                     placeholder="Fuel level"
                                     value={fuelLevel}
                                     onChangeText={setFuelLevel}
                                     keyboardType="numeric"
-                                    editable={!isEdit}
+                                    editable={true}
                                 />
                                 <Text className="text-gray-400 text-sm ml-2">%</Text>
                             </View>
@@ -1462,7 +1469,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
                     >
                         {saving
                             ? <ActivityIndicator size="small" color="white" />
-                            : <Text className="text-white font-semibold">{isEdit ? 'Close' : 'Save'}</Text>
+                            : <Text className="text-white font-semibold">{isEdit ? 'Update' : 'Save'}</Text>
                         }
                     </TouchableOpacity>
                 </View>
@@ -1478,7 +1485,7 @@ export default function AddJobCardScreen({ navigation, route }: { navigation: an
             <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
             <HeaderWithBack
                 title={step === 0 ? (isEdit ? 'Edit Job Order' : 'Add Job Order') : 'Job Order Details'}
-                subtitle={step === 0 ? 'Step 1 of 2 – Vehicle' : 'Step 2 of 2 – Complaints & Docs'}
+                subtitle={isEdit ? (step === 0 ? 'Edit Job Order (Step 1)' : 'Job Order Details (Step 2)') : (step === 0 ? 'Step 1 of 2 – Vehicle' : 'Step 2 of 2 – Complaints & Docs')}
                 onBackPress={() => step === 1 ? setStep(0) : navigation.goBack()}
             />
             <KeyboardAvoidingView

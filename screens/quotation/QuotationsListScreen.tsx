@@ -611,9 +611,16 @@ function QuotationsContent({ navigation }: { navigation: any }) {
     // Refresh data when screen comes into focus (after applying filters)
     useFocusEffect(
         useCallback(() => {
+            const params = (navigation as any).getState().routes.find((r: any) => r.name === 'Quotations')?.params;
+            if (params?.activeTab) {
+                if (TABS.includes(params.activeTab)) {
+                    setActiveTab(params.activeTab);
+                }
+                navigation.setParams({ activeTab: undefined } as any);
+            }
             const isSearch = Boolean(debouncedSearchQuery);
             fetchQuotations(isSearch);
-        }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery, selectedBranches])
+        }, [activeTab, currentPage, itemsPerPage, debouncedSearchQuery, selectedBranches, navigation])
     );
 
     useEffect(() => {
